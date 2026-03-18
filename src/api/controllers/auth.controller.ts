@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../utils';
 import { z } from 'zod';
+import { deriveKey } from '../../lib/crypto';
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -47,16 +48,21 @@ export async function handleLogin(req: Request, res: Response) {
 
   const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
   res.cookie('token', token, { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+
+  const key = deriveKey(email, password);
+  res.cookie('dkey', key.toString('base64'), { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+
   res.json({ message: 'Logged in', user: { name: user.name, email: user.email } });
 }
 
 export async function handleSession(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
   const user = await User.findById(userId).select('-password').lean();
   res.json(user);
 }
 
 export async function handleLogout(req: Request, res: Response) {
   res.clearCookie('token');
+  res.clearCookie('dkey');
   res.json({ message: 'Logged out' });
 }
