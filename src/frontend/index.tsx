@@ -23,9 +23,13 @@ render(
     <Router root={App}>
       <Route path="/" component={Dashboard} />
       <Route path="/orders" component={Orders} />
+      <Route path="/orders/:orderId" component={Products} />
+      <Route path="/orders/:orderId/products/:productId" component={Products} />
+      <Route path="/order/:orderId" component={Products} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/products" component={Products} />
+      <Route path="/products/:productId" component={Products} />
       <Route path="/settings" component={Settings} />
     </Router>
   ),

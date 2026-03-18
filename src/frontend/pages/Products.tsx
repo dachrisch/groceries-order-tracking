@@ -1,39 +1,61 @@
 import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
 import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';
-import { useSearchParams, A } from '@solidjs/router';
-import { ArrowLeft, ExternalLink, X } from 'lucide-solid';
+import { useParams, A, useNavigate, useSearchParams } from '@solidjs/router';
+import { ArrowLeft, ExternalLink, X, List } from 'lucide-solid';
 
 export function Products() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [trends, setTrends] = createSignal<any[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
   const [selectedItem, setSelectedItem] = createSignal<any>(null);
   const [orderDetail, setOrderDetail] = createSignal<any>(null);
 
-  const orderId = () => searchParams.orderId;
+  const orderId = () => params.orderId;
+  const productId = () => params.productId || searchParams.product;
 
   onMount(async () => {
     try {
-      const [trendsRes, orderRes] = await Promise.all([
-        fetch('/api/product-trends'),
-        orderId() ? fetch(`/api/orders/${orderId()}`) : Promise.resolve(null)
-      ]);
-
+      const trendsRes = await fetch('/api/product-trends');
       if (trendsRes.ok) {
         const json = await trendsRes.json();
         setTrends(json);
       }
-
-      if (orderRes && orderRes.ok) {
-        const json = await orderRes.json();
-        setOrderDetail(json);
-      }
     } catch (e) {
-      console.error('Failed to fetch data', e);
+      console.error('Failed to fetch trends', e);
     } finally {
       setLoading(false);
+    }
+  });
+
+  // Handle order detail fetching when orderId changes
+  createEffect(async () => {
+    const id = orderId();
+    if (id) {
+      try {
+        const res = await fetch(`/api/orders/${id}`);
+        if (res.ok) {
+          const json = await res.json();
+          setOrderDetail(json);
+        }
+      } catch (e) {
+        console.error('Failed to fetch order detail', e);
+      }
+    } else {
+      setOrderDetail(null);
+    }
+  });
+
+  // Handle product selection when productId param changes or trends load
+  createEffect(() => {
+    const pId = productId();
+    const currentTrends = trends();
+    if (pId && currentTrends.length > 0) {
+      const item = currentTrends.find(t => String(t._id.id) === String(pId));
+      if (item) setSelectedItem(item);
     }
   });
 
@@ -106,10 +128,13 @@ export function Products() {
             </A>
             <div class="badge badge-primary badge-lg gap-2 py-4">
               Order #{orderId()}
-              <button onClick={() => setSearchParams({ orderId: undefined })} class="hover:text-error transition-colors">
+              <A href={productId() ? `/products/${productId()}` : "/products"} class="hover:text-error transition-colors ml-2">
                 <X size={14} />
-              </button>
+              </A>
             </div>
+            <A href={productId() ? `/products/${productId()}` : "/products"} class="btn btn-ghost btn-sm gap-2">
+              <List size={16} /> Show All Products
+            </A>
           </div>
         </Show>
       </div>
@@ -208,12 +233,12 @@ export function Products() {
                           <td>{orderAmount}</td>
                           <td>{orderPrice.toFixed(2)}€</td>
                           <td>
-                            <button 
+                            <A 
+                              href={orderId() ? `/order/${orderId()}?product=${item._id.id}` : `/products/${item._id.id}`}
                               class="btn btn-ghost btn-xs text-primary"
-                              onClick={() => setSelectedItem(item)}
                             >
                               View Trend
-                            </button>
+                            </A>
                           </td>
                         </tr>
                       );
@@ -253,10 +278,16 @@ export function Products() {
                   <div class="space-y-2 max-h-48 overflow-y-auto pr-2">
                     <For each={[...selectedItem().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
                       {(p) => (
-                        <div class="flex justify-between items-center bg-base-200 p-2 rounded">
-                          <span class="text-sm">{new Date(p.date).toLocaleDateString()}</span>
-                          <span class="font-bold">{p.unitPrice.toFixed(2)}€</span>
-                        </div>
+                        <A 
+                          href={`/order/${p.orderId}?product=${selectedItem()._id.id}`}
+                          class={`flex justify-between items-center w-full p-2 rounded transition-colors text-left ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 ring-1 ring-primary/30' : 'bg-base-200 hover:bg-base-300'}`}
+                        >
+                          <div class="flex flex-col">
+                            <span class="text-xs opacity-50 font-mono">Order #{p.orderId}</span>
+                            <span class="text-sm font-medium">{new Date(p.date).toLocaleDateString()}</span>
+                          </div>
+                          <span class="font-bold text-primary">{p.unitPrice.toFixed(2)}€</span>
+                        </A>
                       )}
                     </For>
                   </div>

@@ -53,7 +53,7 @@ export function Orders() {
                   </div>
 
                   <div class="card-actions justify-end">
-                    <A href={`/products?orderId=${order.id}`} class="btn btn-primary btn-sm gap-2">
+                    <A href={`/order/${order.id}`} class="btn btn-primary btn-sm gap-2">
                       View Items <ChevronRight size={16} />
                     </A>
                   </div>
