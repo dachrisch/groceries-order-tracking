@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount, JSX, Show } from 'solid-js';
 import { useNavigate, useLocation, A } from '@solidjs/router';
-import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon } from 'lucide-solid';
+import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList } from 'lucide-solid';
 
 export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<any>(null);
@@ -88,6 +88,14 @@ export function App(props: { children?: JSX.Element }) {
                       <ShoppingBasket size={20} />
                       <Show when={!sidebarCollapsed()}>
                         <span class="font-medium">Products</span>
+                      </Show>
+                    </A>
+                  </li>
+                  <li>
+                    <A href="/inventory" activeClass="active" class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
+                      <ClipboardList size={20} />
+                      <Show when={!sidebarCollapsed()}>
+                        <span class="font-medium">Inventory</span>
                       </Show>
                     </A>
                   </li>
