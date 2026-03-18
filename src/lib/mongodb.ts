@@ -1,8 +1,13 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'MONGODB_URI_REDACTED';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 export async function connectDB() {
+  if (!MONGODB_URI) {
+    console.error('FATAL: MONGODB_URI environment variable is not set.');
+    process.exit(1);
+  }
+
   if (mongoose.connection.readyState >= 1) return;
 
   try {

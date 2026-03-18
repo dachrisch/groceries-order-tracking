@@ -1,6 +1,10 @@
 import crypto from 'crypto';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'groceries-secret-key-123-change-me';
+if (!process.env.JWT_SECRET) {
+  console.warn('WARNING: JWT_SECRET environment variable is not set. Using a fallback secret.');
+}
+
+export const JWT_SECRET = process.env.JWT_SECRET || 'groceries-secret-key-123-change-me-temporary';
 
 export interface ApiRequest {
   userId: string;

@@ -1,16 +1,26 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { connectDB } from '../lib/mongodb';
 import { JWT_SECRET } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
-import { handleImport, handleGetAggregates, handleGetProductTrends } from './controllers/order.controller';
+import { handleImport, handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Healthcheck endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
 
 // Auth Middleware
 const auth = (req: any, res: any, next: any) => {
@@ -33,14 +43,30 @@ app.post('/api/logout', handleLogout);
 app.get('/api/session', auth, handleSession);
 
 app.post('/api/import', auth, handleImport);
+app.get('/api/stats', auth, handleGetStats);
 app.get('/api/aggregates', auth, handleGetAggregates);
+app.get('/api/orders', auth, handleGetOrders);
+app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/product-trends', auth, handleGetProductTrends);
+
+// Serve static files in production
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// SPA Fallback: Serve index.html for all other routes
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(distPath, 'index.html'));
+  } else {
+    res.status(404).json({ error: 'API endpoint not found' });
+  }
+});
 
 // Start Server
 async function start() {
   await connectDB();
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 

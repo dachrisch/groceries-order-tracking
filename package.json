@@ -8,7 +8,9 @@
     "dev:frontend": "vite",
     "dev:backend": "tsx watch src/api/server.ts",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "build": "vite build",
+    "build": "vite build && npm run build:server",
+    "build:server": "esbuild src/api/server.ts --bundle --platform=node --outfile=dist-server/server.js --format=esm --packages=external",
+    "start:prod": "node dist-server/server.js",
     "serve": "vite preview"
   },
   "repository": {
@@ -41,7 +43,7 @@
     "@types/mongoose": "^5.11.96",
     "concurrently": "^9.1.2",
     "daisyui": "^5.0.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.25.12",
     "tailwindcss": "^4.0.12",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
