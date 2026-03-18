@@ -21,7 +21,7 @@ COPY --from=build /app/package*.json ./
 COPY healthcheck.js ./healthcheck.js
 
 # Install production dependencies only
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 ENV NODE_ENV=production
 ENV PORT=3000
