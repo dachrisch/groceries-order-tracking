@@ -59,6 +59,9 @@ export async function importOrders(
     for (const summary of summaries) {
       const existing = await Order.findOne({ userId, id: summary.id });
       if (existing) {
+        // Early-stop assumes Knuspr returns orders newest-first. If an existing order is
+        // found on page 2+ we assume all subsequent pages are also already imported.
+        // On page 0 we continue processing in case older orders on the same page are new.
         if (offset > 0) {
           shouldContinue = false;
           break;
@@ -74,7 +77,7 @@ export async function importOrders(
       }
       if (!detailRes.ok) continue;
 
-      const detail = await detailRes.json();
+      const { _id: _ignored, ...detail } = await detailRes.json();
       detail.userId = userId;
       detail.orderTimeDate = new Date(detail.orderTime);
 
