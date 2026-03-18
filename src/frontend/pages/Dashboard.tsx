@@ -7,17 +7,26 @@ Chart.register(Title, Tooltip, Legend, Colors, LineElement, PointElement, Linear
 
 export function Dashboard() {
   const [data, setData] = createSignal<any[]>([]);
+  const [stats, setStats] = createSignal<any>(null);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
     try {
-      const res = await fetch('/api/aggregates');
-      if (res.ok) {
-        const json = await res.json();
+      const [aggRes, statsRes] = await Promise.all([
+        fetch('/api/aggregates'),
+        fetch('/api/stats')
+      ]);
+
+      if (aggRes.ok) {
+        const json = await aggRes.json();
         setData(json);
       }
+      if (statsRes.ok) {
+        const json = await statsRes.json();
+        setStats(json);
+      }
     } catch (e) {
-      console.error('Failed to fetch aggregates', e);
+      console.error('Failed to fetch dashboard data', e);
     } finally {
       setLoading(false);
     }
@@ -85,11 +94,11 @@ export function Dashboard() {
             <span>No order data found. Go to <strong>Import</strong> to fetch your Knuspr orders.</span>
           </div>
         }>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="stats shadow bg-primary text-primary-content">
               <div class="stat">
                 <div class="stat-title text-primary-content opacity-70">Total Spend</div>
-                <div class="stat-value">{data().reduce((acc, d) => acc + d.totalAmount, 0).toFixed(2)}€</div>
+                <div class="stat-value text-2xl md:text-3xl">{stats()?.totalSpend.toFixed(2)}€</div>
                 <div class="stat-desc text-primary-content opacity-70">{data().length} months tracked</div>
               </div>
             </div>
@@ -97,17 +106,28 @@ export function Dashboard() {
             <div class="stats shadow bg-secondary text-secondary-content">
               <div class="stat">
                 <div class="stat-title text-secondary-content opacity-70">Total Items</div>
-                <div class="stat-value">{data().reduce((acc, d) => acc + d.itemCount, 0)}</div>
-                <div class="stat-desc text-secondary-content opacity-70">Across {data().reduce((acc, d) => acc + d.orderCount, 0)} orders</div>
+                <div class="stat-value text-2xl md:text-3xl">{stats()?.totalItems}</div>
+                <div class="stat-desc text-secondary-content opacity-70">{stats()?.distinctItems} distinct products</div>
               </div>
             </div>
 
             <div class="stats shadow">
               <div class="stat">
                 <div class="stat-title">Avg Order Value</div>
-                <div class="stat-value">
-                  {(data().reduce((acc, d) => acc + d.totalAmount, 0) / data().reduce((acc, d) => acc + d.orderCount, 0)).toFixed(2)}€
+                <div class="stat-value text-2xl md:text-3xl">
+                  {stats()?.totalOrders ? (stats().totalSpend / stats().totalOrders).toFixed(2) : '0.00'}€
                 </div>
+                <div class="stat-desc">{stats()?.totalOrders} total orders</div>
+              </div>
+            </div>
+
+            <div class="stats shadow">
+              <div class="stat">
+                <div class="stat-title">Orders per Month</div>
+                <div class="stat-value text-2xl md:text-3xl">
+                  {data().length ? (stats()?.totalOrders / data().length).toFixed(1) : '0.0'}
+                </div>
+                <div class="stat-desc">Monthly average</div>
               </div>
             </div>
           </div>

@@ -1,34 +1,58 @@
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
 import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';
+import { useSearchParams, A } from '@solidjs/router';
+import { ArrowLeft, ExternalLink, X } from 'lucide-solid';
 
 export function Products() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [trends, setTrends] = createSignal<any[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
   const [selectedItem, setSelectedItem] = createSignal<any>(null);
+  const [orderDetail, setOrderDetail] = createSignal<any>(null);
+
+  const orderId = () => searchParams.orderId;
 
   onMount(async () => {
     try {
-      const res = await fetch('/api/product-trends');
-      if (res.ok) {
-        const json = await res.json();
+      const [trendsRes, orderRes] = await Promise.all([
+        fetch('/api/product-trends'),
+        orderId() ? fetch(`/api/orders/${orderId()}`) : Promise.resolve(null)
+      ]);
+
+      if (trendsRes.ok) {
+        const json = await trendsRes.json();
         setTrends(json);
       }
+
+      if (orderRes && orderRes.ok) {
+        const json = await orderRes.json();
+        setOrderDetail(json);
+      }
     } catch (e) {
-      console.error('Failed to fetch product trends', e);
+      console.error('Failed to fetch data', e);
     } finally {
       setLoading(false);
     }
   });
 
   const filteredTrends = () => {
+    let items = trends();
+    
+    if (orderId() && orderDetail()) {
+      const orderItemIds = new Set(orderDetail().items.map((i: any) => i.id));
+      items = items.filter(item => orderItemIds.has(item._id.id));
+    }
+
     const term = searchTerm().toLowerCase();
-    if (!term) return trends();
-    return trends().filter(item => 
-      item._id.name.toLowerCase().includes(term) || 
-      String(item._id.id).includes(term)
-    );
+    if (term) {
+      items = items.filter(item => 
+        item._id.name.toLowerCase().includes(term) || 
+        String(item._id.id).includes(term)
+      );
+    }
+    return items;
   };
 
   const getChartData = (item: any) => {
@@ -72,7 +96,56 @@ export function Products() {
 
   return (
     <div class="space-y-8">
-      <h1 class="text-3xl font-bold">Product Trends</h1>
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <h1 class="text-3xl font-bold">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
+        
+        <Show when={orderId()}>
+          <div class="flex items-center gap-4">
+            <A href="/orders" class="btn btn-ghost btn-sm gap-2">
+              <ArrowLeft size={16} /> Back to Orders
+            </A>
+            <div class="badge badge-primary badge-lg gap-2 py-4">
+              Order #{orderId()}
+              <button onClick={() => setSearchParams({ orderId: undefined })} class="hover:text-error transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        </Show>
+      </div>
+
+      <Show when={orderId() && orderDetail()}>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="stats shadow bg-base-100 border border-base-300">
+            <div class="stat">
+              <div class="stat-title">Total Amount</div>
+              <div class="stat-value text-primary">{orderDetail().priceComposition.total.amount.toFixed(2)}€</div>
+              <div class="stat-desc">{orderDetail().itemsCount} items total</div>
+            </div>
+          </div>
+          
+          <div class="stats shadow bg-base-100 border border-base-300">
+            <div class="stat">
+              <div class="stat-title">Order Date</div>
+              <div class="stat-value text-sm whitespace-normal">
+                {new Date(orderDetail().orderTimeDate).toLocaleDateString(undefined, { 
+                  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                })}
+              </div>
+              <div class="stat-desc">{new Date(orderDetail().orderTimeDate).toLocaleTimeString()}</div>
+            </div>
+          </div>
+
+          <div class="stats shadow bg-base-100 border border-base-300">
+            <div class="stat">
+              <div class="stat-title">Delivery Address</div>
+              <div class="stat-desc whitespace-normal text-base-content font-medium mt-1">
+                {orderDetail().address}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
 
       <div class="form-control">
         <input 
@@ -91,8 +164,10 @@ export function Products() {
                 <thead>
                   <tr>
                     <th>Product Name</th>
-                    <th>Purchases</th>
-                    <th>Latest Price</th>
+                    <Show when={orderId()} fallback={<th>Purchases</th>}>
+                      <th>Amount</th>
+                    </Show>
+                    <th>{orderId() ? 'Order Price' : 'Latest Price'}</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -100,11 +175,24 @@ export function Products() {
                   <For each={filteredTrends()}>
                     {(item) => {
                       const latestPrice = [...item.prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                      
+                      // Find specific price in this order if orderId is set
+                      let orderPrice = latestPrice.unitPrice;
+                      let orderAmount: string | number = item.count;
+                      
+                      if (orderId() && orderDetail()) {
+                        const orderItem = orderDetail().items.find((i: any) => i.id === item._id.id);
+                        if (orderItem) {
+                          orderPrice = orderItem.priceComposition.unit.amount;
+                          orderAmount = `${orderItem.amount} ${orderItem.unit || ''}`;
+                        }
+                      }
+
                       return (
                         <tr class={selectedItem()?._id.id === item._id.id ? 'bg-base-200' : ''}>
                           <td class="font-medium max-w-xs truncate">{item._id.name}</td>
-                          <td>{item.count}</td>
-                          <td>{latestPrice.unitPrice.toFixed(2)}€</td>
+                          <td>{orderAmount}</td>
+                          <td>{orderPrice.toFixed(2)}€</td>
                           <td>
                             <button 
                               class="btn btn-ghost btn-xs text-primary"
