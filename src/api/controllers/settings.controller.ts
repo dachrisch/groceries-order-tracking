@@ -61,7 +61,7 @@ export async function handleSyncKnuspr(req: Request, res: Response) {
   if (!integration) return res.status(404).json({ error: 'Knuspr not connected. Go to Settings to connect.' });
 
   try {
-    // @ts-ignore — importOrders signature will be updated in Task 6
+    // @ts-expect-error — importOrders signature will be updated in Task 6
     const result = await importOrders(req.userId, key, integration);
     await Integration.findByIdAndUpdate(integration._id, { lastSyncAt: new Date() });
     res.json(result);
