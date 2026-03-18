@@ -20,7 +20,7 @@ export function deriveKey(email: string, password: string): Buffer {
  * AES-256-GCM is preferred over CBC because it detects tampering via the auth tag.
  */
 export function encrypt(plaintext: string, key: Buffer): string {
-  const iv = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
@@ -33,6 +33,9 @@ export function encrypt(plaintext: string, key: Buffer): string {
  */
 export function decrypt(ciphertext: string, key: Buffer): string {
   const parts = ciphertext.split(':');
+  if (parts.length !== 3) {
+    throw new Error('Invalid ciphertext format — expected ivHex:authTagHex:ciphertextHex');
+  }
   const iv = Buffer.from(parts[0], 'hex');
   const authTag = Buffer.from(parts[1], 'hex');
   const encrypted = Buffer.from(parts[2], 'hex');
