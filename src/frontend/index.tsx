@@ -5,6 +5,7 @@ import { App } from './App';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
+import { Orders } from './pages/Orders';
 import { Products } from './pages/Products';
 import { Import } from './pages/Import';
 import './index.css';
@@ -21,6 +22,7 @@ render(
   () => (
     <Router root={App}>
       <Route path="/" component={Dashboard} />
+      <Route path="/orders" component={Orders} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/products" component={Products} />

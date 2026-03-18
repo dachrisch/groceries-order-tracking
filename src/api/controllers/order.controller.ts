@@ -41,6 +41,76 @@ export async function handleGetAggregates(req: Request, res: Response) {
   }
 }
 
+export async function handleGetStats(req: Request, res: Response) {
+  const userId = (req as any).userId;
+
+  try {
+    const stats = await Order.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+      {
+        $facet: {
+          totals: [
+            {
+              $group: {
+                _id: null,
+                totalSpend: { $sum: "$priceComposition.total.amount" },
+                totalItems: { $sum: "$itemsCount" },
+                totalOrders: { $sum: 1 },
+                firstOrder: { $min: "$orderTimeDate" },
+                lastOrder: { $max: "$orderTimeDate" }
+              }
+            }
+          ],
+          distinctItems: [
+            { $unwind: "$items" },
+            { $group: { _id: "$items.id" } },
+            { $count: "count" }
+          ]
+        }
+      }
+    ]);
+
+    const result = {
+      totalSpend: stats[0].totals[0]?.totalSpend || 0,
+      totalItems: stats[0].totals[0]?.totalItems || 0,
+      totalOrders: stats[0].totals[0]?.totalOrders || 0,
+      distinctItems: stats[0].distinctItems[0]?.count || 0,
+      firstOrder: stats[0].totals[0]?.firstOrder,
+      lastOrder: stats[0].totals[0]?.lastOrder
+    };
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function handleGetOrders(req: Request, res: Response) {
+  const userId = (req as any).userId;
+
+  try {
+    const orders = await Order.find({ userId })
+      .sort({ orderTimeDate: -1 })
+      .select('-items'); // Don't send items for the list view to keep payload small
+    res.json(orders);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function handleGetOrderDetail(req: Request, res: Response) {
+  const userId = (req as any).userId;
+  const { id } = req.params;
+
+  try {
+    const order = await Order.findOne({ userId, id: Number(id) });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 export async function handleGetProductTrends(req: Request, res: Response) {
   const userId = (req as any).userId;
 
