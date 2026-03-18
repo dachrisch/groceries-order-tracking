@@ -7,6 +7,7 @@ export async function connectDB() {
   if (mongoose.connection.readyState >= 1) return;
 
   let uri = MONGODB_URI;
+  let inMemory = false;
 
   // Use in-memory MongoDB for local development if MONGODB_URI is not set
   if (!uri && NODE_ENV !== 'production') {
@@ -14,6 +15,7 @@ export async function connectDB() {
     const { MongoMemoryServer } = await import('mongodb-memory-server');
     const mongoMemoryServer = await MongoMemoryServer.create();
     uri = mongoMemoryServer.getUri();
+    inMemory = true;
   }
 
   if (!uri) {
@@ -23,7 +25,7 @@ export async function connectDB() {
 
   try {
     await mongoose.connect(uri);
-    console.log(`MongoDB Connected: ${uri.startsWith('mongodb+srv') ? 'Remote Cluster' : (mongoMemoryServer ? 'In-Memory' : 'Local Instance')}`);
+    console.log(`MongoDB Connected: ${uri.startsWith('mongodb+srv') ? 'Remote Cluster' : (inMemory ? 'In-Memory' : 'Local Instance')}`);
   } catch (err) {
     console.error('MongoDB Connection Error:', err);
     process.exit(1);
