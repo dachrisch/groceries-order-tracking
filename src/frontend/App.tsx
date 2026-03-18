@@ -22,6 +22,9 @@ export function App(props: { children?: JSX.Element }) {
       }
     } catch (e) {
       console.error('Session fetch failed', e);
+      if (location.pathname !== '/login' && location.pathname !== '/register') {
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }

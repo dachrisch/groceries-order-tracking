@@ -58,6 +58,7 @@ export async function handleLogin(req: Request, res: Response) {
 export async function handleSession(req: Request, res: Response) {
   const userId = req.userId;
   const user = await User.findById(userId).select('-password').lean();
+  if (!user) return res.status(401).json({ error: 'User not found' });
   res.json(user);
 }
 
