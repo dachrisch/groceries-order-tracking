@@ -100,7 +100,7 @@ export function Settings() {
       <h1 class="text-3xl font-bold">Settings</h1>
 
       <Show when={message()}>
-        <div class={`alert ${message()!.type === 'success' ? 'alert-success' : 'alert-error'}`}>
+        <div role="alert" class={`alert ${message()!.type === 'success' ? 'alert-success' : 'alert-error'}`}>
           <span>{message()!.text}</span>
         </div>
       </Show>
@@ -183,8 +183,9 @@ export function Settings() {
                     Enter your Knuspr login credentials. They are encrypted with your app password and stored securely.
                   </p>
                   <div class="form-control">
-                    <label class="label label-text text-xs">Knuspr Email</label>
+                    <label for="knuspr-email" class="label label-text text-xs">Knuspr Email</label>
                     <input
+                      id="knuspr-email"
                       type="email"
                       class="input input-bordered input-sm"
                       placeholder="your@email.de"
@@ -194,8 +195,9 @@ export function Settings() {
                     />
                   </div>
                   <div class="form-control">
-                    <label class="label label-text text-xs">Knuspr Password</label>
+                    <label for="knuspr-password" class="label label-text text-xs">Knuspr Password</label>
                     <input
+                      id="knuspr-password"
                       type="password"
                       class="input input-bordered input-sm"
                       placeholder="••••••••"
