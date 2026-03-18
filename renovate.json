@@ -1,26 +1,30 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    ":preserveSemverRanges",
-    ":separateMajorReleases",
-    ":combinePatchMinorReleases",
-    "group:allNonMajor"
+    "config:recommended"
   ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
   "packageRules": [
     {
-      "matchPackagePatterns": ["^eslint", "^@typescript-eslint"],
-      "groupName": "eslint"
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true
     },
     {
-      "matchPackagePatterns": ["^solid-js", "^@solidjs"],
-      "groupName": "solid"
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
     },
     {
-      "matchPackagePatterns": ["^vite"],
-      "groupName": "vite"
+      "matchUpdateTypes": ["minor"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true
+    },
+    {
+      "matchPaths": ["pyproject.toml"],
+      "automerge": true
     }
-  ],
-  "schedule": ["at any time"],
-  "timezone": "UTC"
+  ]
 }
