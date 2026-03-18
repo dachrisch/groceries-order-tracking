@@ -9,6 +9,7 @@ import { handleLogin, handleRegister, handleSession, handleLogout } from './cont
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
 import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
+import { handleAddToCart } from './controllers/cart.controller';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +52,7 @@ app.get('/api/orders', auth, handleGetOrders);
 app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
+app.post('/api/cart/add', auth, handleAddToCart);
 
 // Settings routes (all require auth):
 app.get('/api/settings/integrations', auth, handleListIntegrations);
