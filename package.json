@@ -45,7 +45,6 @@
     "@types/cookie-parser": "^1.4.8",
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.9",
-    "@types/mongoose": "^5.11.96",
     "@vitest/coverage-v8": "^4.1.0",
     "concurrently": "^9.1.2",
     "daisyui": "^5.0.0",
