@@ -62,7 +62,7 @@ export async function handleSession(req: Request, res: Response) {
 }
 
 export async function handleLogout(req: Request, res: Response) {
-  res.clearCookie('token');
-  res.clearCookie('dkey');
+  res.clearCookie('token', { path: '/', httpOnly: true, sameSite: 'lax' });
+  res.clearCookie('dkey', { path: '/', httpOnly: true, sameSite: 'lax' });
   res.json({ message: 'Logged out' });
 }

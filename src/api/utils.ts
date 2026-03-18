@@ -22,7 +22,7 @@ export function formatZodError(error: any) {
  * is undefined (routes that need it should check explicitly).
  */
 export function derivedKeyMiddleware(req: Request, _res: Response, next: NextFunction) {
-  const dkeyCookie = (req.cookies as any)?.dkey;
+  const dkeyCookie = req.cookies.dkey as string | undefined;
   if (dkeyCookie) {
     try {
       req.derivedKey = Buffer.from(dkeyCookie, 'base64');
