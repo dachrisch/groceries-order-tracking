@@ -1,85 +1,90 @@
 import Order from '../models/Order';
-import User from '../models/User';
+import { decrypt } from './crypto';
+import { loginToKnuspr } from './knuspr-auth';
 
-export function parseCurl(curl: string) {
-  const headers: Record<string, string> = {};
-  const hRegex = /-H\s+'([^:]+):\s*(.+?)'/g;
-  let match;
-  while ((match = hRegex.exec(curl)) !== null) {
-    headers[match[1]] = match[2];
-  }
-  const bRegex = /-b\s+'([^']+)'/;
-  const bMatch = curl.match(bRegex);
-  if (bMatch) {
-    headers['cookie'] = bMatch[1];
-  }
-  return headers;
+const KNUSPR_API_BASE = 'https://www.knuspr.de';
+
+async function fetchWithSession(url: string, session: string) {
+  return fetch(url, {
+    headers: {
+      'Cookie': `PHPSESSION_de-production=${session}`,
+      'x-origin': 'WEB',
+    },
+  });
 }
 
-export async function importOrders(userId: string, curl?: string) {
-  const user = await User.findById(userId);
-  if (!user) throw new Error('User not found');
-
-  let headers = user.knusprCredentials?.headers ? Object.fromEntries(user.knusprCredentials.headers) : null;
-  const cookie = user.knusprCredentials?.cookie;
-
-  if (curl) {
-    const newHeaders = parseCurl(curl);
-    user.knusprCredentials = {
-      headers: new Map(Object.entries(newHeaders)),
-      cookie: newHeaders['cookie'] || '',
-      lastImport: new Date()
-    };
-    await user.save();
-    headers = newHeaders;
+export async function importOrders(
+  userId: string,
+  derivedKey: Buffer,
+  integration: any
+): Promise<{ importedCount: number }> {
+  // Decrypt stored Knuspr credentials
+  let knusprEmail: string;
+  let knusprPassword: string;
+  try {
+    const creds = JSON.parse(decrypt(integration.encryptedCredentials, derivedKey));
+    knusprEmail = creds.email;
+    knusprPassword = creds.password;
+  } catch {
+    throw new Error('Failed to decrypt Knuspr credentials — please reconnect in Settings');
   }
 
-  if (!headers) throw new Error('No credentials found. Please provide a curl command.');
+  // Get fresh Knuspr session
+  let session = await loginToKnuspr(knusprEmail, knusprPassword);
 
-  console.log(`Starting import for user ${user.name}...`);
-  
+  console.log(`Starting Knuspr import for userId ${userId}...`);
+
   let offset = 0;
   const limit = 20;
   let importedCount = 0;
   let shouldContinue = true;
 
   while (shouldContinue) {
-    const url = `https://www.knuspr.de/api/v3/orders/delivered?offset=${offset}&limit=${limit}`;
-    const response = await fetch(url, { headers });
-    
+    const url = `${KNUSPR_API_BASE}/api/v3/orders/delivered?offset=${offset}&limit=${limit}`;
+    let response = await fetchWithSession(url, session);
+
+    // Auto-refresh session once on 401
+    if (response.status === 401) {
+      session = await loginToKnuspr(knusprEmail, knusprPassword);
+      response = await fetchWithSession(url, session);
+    }
+
     if (!response.ok) {
-      if (response.status === 401) throw new Error('Unauthorized. Please provide a new curl command.');
-      throw new Error(`Failed to fetch orders: ${response.statusText}`);
+      throw new Error(`Knuspr API error: ${response.status} ${response.statusText}`);
     }
 
     const summaries = await response.json();
     if (!Array.isArray(summaries) || summaries.length === 0) break;
 
     for (const summary of summaries) {
-      // Check if order already exists
       const existing = await Order.findOne({ userId, id: summary.id });
       if (existing) {
-        // Since orders are sorted by date desc, if we find an existing one, we might stop
-        // unless it's a very old order and we are doing a full backfill.
-        // For simplicity, we stop here if we've found an existing order and we're not at the first page.
         if (offset > 0) {
-            shouldContinue = false;
-            break;
+          shouldContinue = false;
+          break;
         }
         continue;
       }
 
-      // Fetch detail
-      const detailUrl = `https://www.knuspr.de/api/v3/orders/${summary.id}`;
-      const detailResponse = await fetch(detailUrl, { headers });
-      if (!detailResponse.ok) continue;
+      const detailUrl = `${KNUSPR_API_BASE}/api/v3/orders/${summary.id}`;
+      let detailRes = await fetchWithSession(detailUrl, session);
+      if (detailRes.status === 401) {
+        session = await loginToKnuspr(knusprEmail, knusprPassword);
+        detailRes = await fetchWithSession(detailUrl, session);
+      }
+      if (!detailRes.ok) continue;
 
-      const detail = await detailResponse.json();
+      const detail = await detailRes.json();
       detail.userId = userId;
       detail.orderTimeDate = new Date(detail.orderTime);
 
-      await Order.create(detail);
-      importedCount++;
+      // Use upsert to prevent duplicate-key errors on concurrent syncs
+      const upsertResult = await Order.findOneAndUpdate(
+        { userId, id: detail.id },
+        { $setOnInsert: detail },
+        { upsert: true, new: false }
+      );
+      if (!upsertResult) importedCount++; // null means it was inserted (not found before)
     }
 
     if (summaries.length < limit) break;
