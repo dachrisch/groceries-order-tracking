@@ -178,47 +178,55 @@ export function Settings() {
 
               {/* Connect form */}
               <Show when={!knusprIntegration()}>
-                <form onSubmit={handleConnect} class="space-y-3">
-                  <p class="text-sm opacity-70">
+                <form onSubmit={handleConnect} class="space-y-4">
+                  <p class="text-sm opacity-70 mb-4">
                     Enter your Knuspr login credentials. They are encrypted with your app password and stored securely.
                   </p>
-                  <div class="form-control">
-                    <label for="knuspr-email" class="label label-text text-xs">Knuspr Email</label>
-                    <input
-                      id="knuspr-email"
-                      type="email"
-                      class="input input-bordered input-sm"
-                      placeholder="your@email.de"
-                      value={knusprEmail()}
-                      onInput={(e) => setKnusprEmail(e.currentTarget.value)}
-                      required
-                    />
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="form-control w-full">
+                      <label for="knuspr-email" class="label">
+                        <span class="label-text font-semibold text-xs">Knuspr Email</span>
+                      </label>
+                      <input
+                        id="knuspr-email"
+                        type="email"
+                        class="input input-bordered input-sm w-full"
+                        placeholder="your@email.de"
+                        value={knusprEmail()}
+                        onInput={(e) => setKnusprEmail(e.currentTarget.value)}
+                        required
+                      />
+                    </div>
+                    <div class="form-control w-full">
+                      <label for="knuspr-password" class="label">
+                        <span class="label-text font-semibold text-xs">Knuspr Password</span>
+                      </label>
+                      <input
+                        id="knuspr-password"
+                        type="password"
+                        class="input input-bordered input-sm w-full"
+                        placeholder="••••••••"
+                        value={knusprPassword()}
+                        onInput={(e) => setKnusprPassword(e.currentTarget.value)}
+                        required
+                      />
+                    </div>
                   </div>
-                  <div class="form-control">
-                    <label for="knuspr-password" class="label label-text text-xs">Knuspr Password</label>
-                    <input
-                      id="knuspr-password"
-                      type="password"
-                      class="input input-bordered input-sm"
-                      placeholder="••••••••"
-                      value={knusprPassword()}
-                      onInput={(e) => setKnusprPassword(e.currentTarget.value)}
-                      required
-                    />
+                  <div class="pt-2">
+                    <button
+                      type="submit"
+                      class="btn btn-primary btn-sm gap-2 w-full"
+                      disabled={connecting()}
+                    >
+                      <Show when={connecting()}>
+                        <span class="loading loading-spinner loading-xs"></span>
+                      </Show>
+                      <Show when={!connecting()}>
+                        <Link2 size={14} />
+                      </Show>
+                      Connect Knuspr
+                    </button>
                   </div>
-                  <button
-                    type="submit"
-                    class="btn btn-primary btn-sm gap-2 w-full"
-                    disabled={connecting()}
-                  >
-                    <Show when={connecting()}>
-                      <span class="loading loading-spinner loading-xs"></span>
-                    </Show>
-                    <Show when={!connecting()}>
-                      <Link2 size={14} />
-                    </Show>
-                    Connect Knuspr
-                  </button>
                 </form>
               </Show>
             </div>

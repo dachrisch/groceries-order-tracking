@@ -163,7 +163,7 @@ export function Products() {
               <table class="table table-pin-rows">
                 <thead>
                   <tr>
-                    <th>Product Name</th>
+                    <th>Product</th>
                     <Show when={orderId()} fallback={<th>Purchases</th>}>
                       <th>Amount</th>
                     </Show>
@@ -184,13 +184,27 @@ export function Products() {
                         const orderItem = orderDetail().items.find((i: any) => i.id === item._id.id);
                         if (orderItem) {
                           orderPrice = orderItem.priceComposition.unit.amount;
-                          orderAmount = `${orderItem.amount} ${orderItem.unit || ''}`;
+                          orderAmount = `${orderItem.amount}${orderItem.textualAmount ? ` (${orderItem.textualAmount})` : ''}`;
                         }
                       }
 
                       return (
                         <tr class={selectedItem()?._id.id === item._id.id ? 'bg-base-200' : ''}>
-                          <td class="font-medium max-w-xs truncate">{item._id.name}</td>
+                          <td>
+                            <div class="flex items-center gap-3">
+                              <div class="avatar">
+                                <div class="mask mask-squircle w-12 h-12 bg-base-200">
+                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs text-opacity-30">No Image</div>}>
+                                    <img src={item.image} alt={item._id.name} loading="lazy" />
+                                  </Show>
+                                </div>
+                              </div>
+                              <div>
+                                <div class="font-bold max-w-[150px] md:max-w-[200px] truncate">{item._id.name}</div>
+                                <div class="text-xs opacity-50">ID: {item._id.id}</div>
+                              </div>
+                            </div>
+                          </td>
                           <td>{orderAmount}</td>
                           <td>{orderPrice.toFixed(2)}€</td>
                           <td>
@@ -218,8 +232,17 @@ export function Products() {
             }>
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
-                  <h2 class="card-title text-primary">{selectedItem()._id.name}</h2>
-                  <p class="text-sm opacity-70">Price history over time</p>
+                  <div class="flex flex-col md:flex-row gap-6 items-start">
+                    <Show when={selectedItem().image}>
+                      <div class="w-24 md:w-32 aspect-square flex-shrink-0 bg-base-200 rounded-xl overflow-hidden shadow-inner">
+                        <img src={selectedItem().image} alt={selectedItem()._id.name} class="w-full h-full object-contain" />
+                      </div>
+                    </Show>
+                    <div class="flex-grow">
+                      <h2 class="card-title text-primary text-2xl mb-1">{selectedItem()._id.name}</h2>
+                      <p class="text-sm opacity-70">Price history over time • ID: {selectedItem()._id.id}</p>
+                    </div>
+                  </div>
                   
                   <div class="h-64 mt-4">
                     <Line data={getChartData(selectedItem())} options={chartOptions} />

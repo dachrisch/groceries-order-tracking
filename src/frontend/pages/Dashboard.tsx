@@ -1,4 +1,5 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
+import { A } from '@solidjs/router';
 import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';
 import 'chartjs-adapter-date-fns';
@@ -85,13 +86,22 @@ export function Dashboard() {
   };
 
   return (
-    <div class="space-y-8">
-      <h1 class="text-3xl font-bold">Dashboard</h1>
+    <div class="max-w-5xl mx-auto space-y-10 pb-12">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 class="text-4xl font-extrabold tracking-tight">Dashboard</h1>
+          <p class="text-base-content/60 mt-1">Spending insights and order statistics</p>
+        </div>
+      </div>
       
-      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg"></span>}>
+      <Show when={!loading()} fallback={
+        <div class="flex justify-center items-center py-20">
+          <span class="loading loading-spinner loading-lg text-primary"></span>
+        </div>
+      }>
         <Show when={data().length > 0} fallback={
-          <div class="alert alert-info">
-            <span>No order data found. Go to <strong>Import</strong> to fetch your Knuspr orders.</span>
+          <div class="alert alert-info shadow-sm border-info/20">
+            <span>No order data found. Go to <A href="/settings" class="link font-bold">Settings</A> to connect your Knuspr account and sync your orders.</span>
           </div>
         }>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

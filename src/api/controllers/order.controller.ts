@@ -1,26 +1,6 @@
 import { Request, Response } from 'express';
 import Order from '../../models/Order';
-import Integration from '../../models/Integration';
-import { importOrders } from '../../lib/order-importer';
 import mongoose from 'mongoose';
-
-export async function handleImport(req: Request, res: Response) {
-  if (!req.derivedKey) return res.status(401).json({ error: 'Session key missing — please log in again' });
-
-  const userId = req.userId;
-  const integration = await Integration.findOne({ userId, provider: 'knuspr' });
-  if (!integration) {
-    return res.status(400).json({ error: 'Knuspr not connected. Go to Settings to connect.' });
-  }
-
-  try {
-    const result = await importOrders(userId, req.derivedKey, integration);
-    await Integration.findByIdAndUpdate(integration._id, { lastSyncAt: new Date() });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-}
 
 export async function handleGetAggregates(req: Request, res: Response) {
   const userId = (req as any).userId;
@@ -135,7 +115,8 @@ export async function handleGetProductTrends(req: Request, res: Response) {
               orderId: "$id"
             }
           },
-          count: { $sum: 1 }
+          count: { $sum: 1 },
+          image: { $first: { $arrayElemAt: ["$items.images", 0] } }
         }
       },
       { $sort: { "_id.name": 1 } }

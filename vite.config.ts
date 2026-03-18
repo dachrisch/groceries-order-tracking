@@ -7,6 +7,9 @@ export default defineConfig({
     solidPlugin(),
     tailwindcss(),
   ],
+  optimizeDeps: {
+    include: ['lucide-solid'],
+  },
   server: {
     port: 5173,
     proxy: {

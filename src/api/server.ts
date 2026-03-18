@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { connectDB } from '../lib/mongodb';
 import { JWT_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
-import { handleImport, handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
+import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,7 +44,6 @@ app.post('/api/login', handleLogin);
 app.post('/api/logout', handleLogout);
 app.get('/api/session', auth, handleSession);
 
-app.post('/api/import', auth, handleImport);
 app.get('/api/stats', auth, handleGetStats);
 app.get('/api/aggregates', auth, handleGetAggregates);
 app.get('/api/orders', auth, handleGetOrders);

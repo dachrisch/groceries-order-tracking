@@ -7,7 +7,6 @@ import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
 import { Orders } from './pages/Orders';
 import { Products } from './pages/Products';
-import { Import } from './pages/Import';
 import { Settings } from './pages/Settings';
 import './index.css';
 
@@ -27,7 +26,6 @@ render(
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/products" component={Products} />
-      <Route path="/import" component={Import} />
       <Route path="/settings" component={Settings} />
     </Router>
   ),
