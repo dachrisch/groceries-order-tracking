@@ -9,10 +9,16 @@ export function Import() {
   const [error, setError] = createSignal('');
 
   onMount(async () => {
-    const res = await fetch('/api/settings/integrations');
-    if (res.ok) {
-      const integrations = await res.json();
-      setConnected(integrations.some((i: any) => i.provider === 'knuspr'));
+    try {
+      const res = await fetch('/api/settings/integrations');
+      if (res.ok) {
+        const integrations = await res.json();
+        setConnected(integrations.some((i: any) => i.provider === 'knuspr'));
+      } else {
+        setConnected(false);
+      }
+    } catch {
+      setConnected(false);
     }
   });
 
