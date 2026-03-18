@@ -12,7 +12,7 @@ export async function loginToKnuspr(email: string, password: string): Promise<st
       'Content-Type': 'application/json',
       'x-origin': 'WEB',
     },
-    body: JSON.stringify({ email, password, name: '' }),
+    body: JSON.stringify({ email, password, name: '' }), // name: '' is required by the Knuspr login API (observed via Chrome DevTools)
   });
 
   if (!response.ok) {
