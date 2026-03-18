@@ -1,8 +1,13 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://homeuser:unvisited-straggler6-spirits-envoy-antler@cluster0.mhyen.mongodb.net/groceries_tracking?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 export async function connectDB() {
+  if (!MONGODB_URI) {
+    console.error('FATAL: MONGODB_URI environment variable is not set.');
+    process.exit(1);
+  }
+
   if (mongoose.connection.readyState >= 1) return;
 
   try {
