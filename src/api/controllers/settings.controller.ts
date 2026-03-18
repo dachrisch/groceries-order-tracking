@@ -8,8 +8,12 @@ import { importOrders } from '../../lib/order-importer';
 import '../utils';
 
 export async function handleListIntegrations(req: Request, res: Response) {
-  const integrations = await Integration.find({ userId: req.userId }).select('provider lastSyncAt createdAt');
-  res.json(integrations);
+  try {
+    const integrations = await Integration.find({ userId: req.userId }).select('provider lastSyncAt createdAt');
+    res.json(integrations);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function handleConnectKnuspr(req: Request, res: Response) {
@@ -17,29 +21,36 @@ export async function handleConnectKnuspr(req: Request, res: Response) {
   if (!key) return res.status(401).json({ error: 'Session key missing — please log in again' });
 
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'email and password required' });
-
-  // Validate credentials against Knuspr before storing
-  try {
-    await loginToKnuspr(email, password);
-  } catch (err: any) {
-    return res.status(400).json({ error: `Knuspr login failed: ${err.message}` });
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
+    return res.status(400).json({ error: 'email and password required' });
   }
 
-  const encryptedCredentials = encrypt(JSON.stringify({ email, password }), key);
+  try {
+    // Validate credentials against Knuspr before storing
+    await loginToKnuspr(email, password);
 
-  await Integration.findOneAndUpdate(
-    { userId: req.userId, provider: 'knuspr' },
-    { encryptedCredentials, lastSyncAt: null },
-    { upsert: true, new: true }
-  );
+    const encryptedCredentials = encrypt(JSON.stringify({ email, password }), key);
 
-  res.json({ message: 'Knuspr connected successfully' });
+    await Integration.findOneAndUpdate(
+      { userId: req.userId, provider: 'knuspr' },
+      { encryptedCredentials, lastSyncAt: null },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: 'Knuspr connected successfully' });
+  } catch (err: any) {
+    const isCredentialError = err.message?.includes('Knuspr login') || err.message?.includes('Invalid Knuspr');
+    return res.status(isCredentialError ? 400 : 500).json({ error: err.message });
+  }
 }
 
 export async function handleDisconnectKnuspr(req: Request, res: Response) {
-  await Integration.deleteOne({ userId: req.userId, provider: 'knuspr' });
-  res.json({ message: 'Knuspr disconnected' });
+  try {
+    await Integration.deleteOne({ userId: req.userId, provider: 'knuspr' });
+    res.json({ message: 'Knuspr disconnected' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function handleSyncKnuspr(req: Request, res: Response) {
