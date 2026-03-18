@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
@@ -21,12 +21,12 @@ app.use(cookieParser());
 app.use(derivedKeyMiddleware);
 
 // Healthcheck endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).send('OK');
 });
 
 // Auth Middleware
-const auth = (req: any, res: any, next: any) => {
+const auth = (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -34,7 +34,7 @@ const auth = (req: any, res: any, next: any) => {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
     req.userId = decoded.userId;
     next();
-  } catch (err) {
+  } catch {
     res.status(401).json({ error: 'Unauthorized' });
   }
 };
