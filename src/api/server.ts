@@ -4,9 +4,10 @@ import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { connectDB } from '../lib/mongodb';
-import { JWT_SECRET } from './utils';
+import { JWT_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
 import { handleImport, handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
+import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(derivedKeyMiddleware);
 
 // Healthcheck endpoint
 app.get('/health', (req, res) => {
@@ -48,6 +50,12 @@ app.get('/api/aggregates', auth, handleGetAggregates);
 app.get('/api/orders', auth, handleGetOrders);
 app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/product-trends', auth, handleGetProductTrends);
+
+// Settings routes (all require auth):
+app.get('/api/settings/integrations', auth, handleListIntegrations);
+app.post('/api/settings/integrations/knuspr', auth, handleConnectKnuspr);
+app.delete('/api/settings/integrations/knuspr', auth, handleDisconnectKnuspr);
+app.post('/api/settings/integrations/knuspr/sync', auth, handleSyncKnuspr);
 
 // Serve static files in production
 const distPath = path.join(__dirname, '../dist');
