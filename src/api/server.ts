@@ -7,6 +7,7 @@ import { connectDB } from '../lib/mongodb';
 import { JWT_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
+import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +50,7 @@ app.get('/api/aggregates', auth, handleGetAggregates);
 app.get('/api/orders', auth, handleGetOrders);
 app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/product-trends', auth, handleGetProductTrends);
+app.get('/api/inventory', auth, handleGetInventory);
 
 // Settings routes (all require auth):
 app.get('/api/settings/integrations', auth, handleListIntegrations);
