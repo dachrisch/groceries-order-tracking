@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":preserveSemverRanges",
+    ":separateMajorReleases",
+    ":combinePatchMinorReleases",
+    "group:allNonMajor"
+  ],
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["^eslint", "^@typescript-eslint"],
+      "groupName": "eslint"
+    },
+    {
+      "matchPackagePatterns": ["^solid-js", "^@solidjs"],
+      "groupName": "solid"
+    },
+    {
+      "matchPackagePatterns": ["^vite"],
+      "groupName": "vite"
+    }
+  ],
+  "schedule": ["at any time"],
+  "timezone": "UTC"
+}
