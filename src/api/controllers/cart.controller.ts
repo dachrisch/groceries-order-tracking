@@ -1,9 +1,21 @@
 import { Request, Response } from 'express';
+import { z } from 'zod';
 import Integration from '../../models/Integration';
 import { decrypt } from '../../lib/crypto';
+import { formatZodError } from '../utils';
 
-export const handleAddToCart = async (req: Request, res: Response) => {
-  const { productId, count } = req.body;
+const addToCartSchema = z.object({
+  productId: z.string().min(1, 'Product ID is required'),
+  count: z.number().optional()
+});
+
+export async function handleAddToCart(req: Request, res: Response) {
+  const result = addToCartSchema.safeParse(req.body);
+  if (!result.success) {
+    return res.status(400).json({ error: formatZodError(result.error) });
+  }
+
+  const { productId, count } = result.data;
   const integration = await Integration.findOne({ userId: req.userId });
   
   if (!integration || !integration.headers) {
@@ -42,4 +54,4 @@ export const handleAddToCart = async (req: Request, res: Response) => {
     console.error('Add to cart failed:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-};
+}
