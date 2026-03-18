@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount, JSX, Show } from 'solid-js';
 import { useNavigate, useLocation, A } from '@solidjs/router';
-import { LogOut, LayoutDashboard, ShoppingBasket, Import as ImportIcon, ShoppingBag, ChevronRight, ChevronLeft } from 'lucide-solid';
+import { LogOut, LayoutDashboard, ShoppingBasket, Import as ImportIcon, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon } from 'lucide-solid';
 
 export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<any>(null);
@@ -95,6 +95,14 @@ export function App(props: { children?: JSX.Element }) {
                     </Show>
                   </A>
                 </li>
+                <li>
+                  <A href="/settings" activeClass="active" class={`flex items-center gap-4 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
+                    <SettingsIcon size={20} />
+                    <Show when={!sidebarCollapsed()}>
+                      <span>Settings</span>
+                    </Show>
+                  </A>
+                </li>
               </ul>
 
               <div class="flex-grow"></div>
@@ -156,6 +164,7 @@ export function App(props: { children?: JSX.Element }) {
                   <li><A href="/orders" onClick={() => (document.getElementById('mobile-drawer') as HTMLInputElement).checked = false} activeClass="active"><ShoppingBag size={20} /> Orders</A></li>
                   <li><A href="/products" onClick={() => (document.getElementById('mobile-drawer') as HTMLInputElement).checked = false} activeClass="active"><ShoppingBasket size={20} /> Products</A></li>
                   <li><A href="/import" onClick={() => (document.getElementById('mobile-drawer') as HTMLInputElement).checked = false} activeClass="active"><ImportIcon size={20} /> Import Orders</A></li>
+                  <li><A href="/settings" onClick={() => (document.getElementById('mobile-drawer') as HTMLInputElement).checked = false} activeClass="active"><SettingsIcon size={20} /> Settings</A></li>
                   <div class="flex-grow"></div>
                   <li class="mt-auto border-t pt-4">
                     <div class="flex items-center gap-3 p-4">
