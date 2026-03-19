@@ -29,7 +29,7 @@ jobs:
           cache-dependency-path: ${{ inputs.project }}/package.json
       - name: 🔍 Run eslint ${{ inputs.project }}
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           npm run lint
       - name: 👷 Building ${{ inputs.project }}
         run: npm run build > typescript.log
