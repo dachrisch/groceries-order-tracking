@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import User from '../../models/User';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET } from '../utils';
+import { JWT_SECRET, formatZodError } from '../utils';
 import { z } from 'zod';
 import { deriveKey } from '../../lib/crypto';
 
@@ -20,7 +20,7 @@ const loginSchema = z.object({
 export async function handleRegister(req: Request, res: Response) {
   const result = registerSchema.safeParse(req.body);
   if (!result.success) {
-    return res.status(400).json({ error: result.error.message });
+    return res.status(400).json({ error: formatZodError(result.error) });
   }
 
   const { name, email, password } = result.data;
@@ -37,7 +37,7 @@ export async function handleRegister(req: Request, res: Response) {
 export async function handleLogin(req: Request, res: Response) {
   const result = loginSchema.safeParse(req.body);
   if (!result.success) {
-    return res.status(400).json({ error: result.error.message });
+    return res.status(400).json({ error: formatZodError(result.error) });
   }
 
   const { email, password } = result.data;
