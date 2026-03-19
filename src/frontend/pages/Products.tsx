@@ -1,13 +1,11 @@
 import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
-import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';
-import { useParams, A, useNavigate, useSearchParams } from '@solidjs/router';
-import { ArrowLeft, ExternalLink, X, List } from 'lucide-solid';
+import { useParams, A, useSearchParams } from '@solidjs/router';
+import { ArrowLeft, X, List } from 'lucide-solid';
 
 export function Products() {
   const params = useParams();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [trends, setTrends] = createSignal<unknown[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');

@@ -1,4 +1,4 @@
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, onMount, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';

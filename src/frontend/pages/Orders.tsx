@@ -1,5 +1,5 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
-import { useNavigate, A } from '@solidjs/router';
+import { A } from '@solidjs/router';
 import { Calendar, ShoppingBag, ChevronRight } from 'lucide-solid';
 
 export function Orders() {
