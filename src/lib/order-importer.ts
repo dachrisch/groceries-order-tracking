@@ -13,6 +13,13 @@ async function fetchWithSession(url: string, session: string) {
   });
 }
 
+interface KnusprCategory {
+  id: number;
+  name: string;
+  slug: string;
+  level: number;
+}
+
 export async function importOrders(
   userId: string,
   derivedKey: Buffer,
@@ -31,16 +38,17 @@ export async function importOrders(
 
   // Get fresh Knuspr session
   let { session } = await loginToKnuspr(knusprEmail, knusprPassword);
-  const categoriesCache = new Map<number, any[]>();
+  const categoriesCache = new Map<number, KnusprCategory[]>();
 
-  async function getCategories(productId: number, session: string) {
-    if (categoriesCache.has(productId)) return categoriesCache.get(productId);
+  async function getCategories(productId: number, session: string): Promise<KnusprCategory[]> {
+    if (categoriesCache.has(productId)) return categoriesCache.get(productId)!;
     try {
       const res = await fetchWithSession(`${KNUSPR_API_BASE}/api/v1/products/${productId}/categories`, session);
       if (res.ok) {
         const data = await res.json();
-        categoriesCache.set(productId, data.categories || []);
-        return data.categories || [];
+        const categories = data.categories || [];
+        categoriesCache.set(productId, categories);
+        return categories;
       }
     } catch (e) {
       console.error(`Failed to fetch categories for product ${productId}:`, e);

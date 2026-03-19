@@ -142,7 +142,7 @@ export function Inventory() {
 
   const filteredItems = () => {
     const all = items();
-    let filtered = all;
+    let filtered;
     if (tab() === 'running-out') {
       filtered = all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
     } else if (tab() === 'reorder') {
