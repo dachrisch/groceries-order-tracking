@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
-import Integration from '../../models/Integration';
 import {
   setupTestDB, clearDB, teardownTestDB,
   registerUser, loginUser, getSessionUserId,
@@ -124,10 +123,11 @@ describe('GET /api/inventory', () => {
     // Mock session and string price response
     vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
     const originalFetch = global.fetch;
+    type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: { price: "2.50" } })
-    }) as any;
+    }) as unknown as MockFetch;
 
     try {
       const res = await request(app).get('/api/inventory').set('Cookie', cookies);

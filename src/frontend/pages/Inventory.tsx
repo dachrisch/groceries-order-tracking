@@ -241,10 +241,10 @@ export function Inventory() {
                         <Show when={item.currentPrice} fallback={
                           <div class="text-sm font-bold opacity-20">€--</div>
                         }>
-                           <div class="text-sm font-bold">€{Number(item.currentPrice)?.toFixed(2)}</div>
-                           <Show when={Math.abs((Number(item.currentPrice) ?? 0) - item.avgPrice) >= 0.01}>
-                             <div class={`text-[10px] font-bold ${(Number(item.currentPrice) ?? 0) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
-                               {(Number(item.currentPrice) ?? 0) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs((Number(item.currentPrice) ?? 0) - item.avgPrice).toFixed(2)}€
+                           <div class="text-sm font-bold">€{Number(item.currentPrice).toFixed(2)}</div>
+                           <Show when={Math.abs(Number(item.currentPrice) - item.avgPrice) >= 0.01}>
+                             <div class={`text-[10px] font-bold ${Number(item.currentPrice) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
+                               {Number(item.currentPrice) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs(Number(item.currentPrice) - item.avgPrice).toFixed(2)}€
                              </div>
                            </Show>
                         </Show>
