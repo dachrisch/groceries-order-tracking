@@ -28,6 +28,6 @@ EXPOSE ${PORT}
 
 # Health check using dedicated Node.js script
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget --spider http://localhost:${PORT}/metrics
+  CMD node healthcheck.js
 
 CMD ["npm", "run", "start:prod"]
