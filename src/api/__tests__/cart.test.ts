@@ -161,3 +161,25 @@ describe('POST /api/cart/add', () => {
     expect(res.body.error).toMatch(/409/);
   });
 });
+
+describe('GET /api/cart', () => {
+  let cookies: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    await clearDB();
+    vi.unstubAllGlobals();
+    await registerUser();
+    cookies = await loginUser();
+    userId = await getSessionUserId(cookies);
+  });
+
+  it('returns { cart: null } when Knuspr is not connected', async () => {
+    const res = await request(app)
+      .get('/api/cart')
+      .set('Cookie', cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart).toBeNull();
+  });
+});

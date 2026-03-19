@@ -63,6 +63,46 @@ function normalizeCart(data: any): NormalizedCart {
   };
 }
 
+export async function handleGetCart(req: Request, res: Response) {
+  if (!req.derivedKey) {
+    return res.json({ cart: null });
+  }
+
+  const integration = await Integration.findOne({ userId: req.userId, provider: 'knuspr' });
+  if (!integration?.encryptedCredentials) {
+    return res.json({ cart: null });
+  }
+
+  let knusprEmail: string;
+  let knusprPassword: string;
+  try {
+    const creds = JSON.parse(decrypt(integration.encryptedCredentials, req.derivedKey));
+    knusprEmail = creds.email;
+    knusprPassword = creds.password;
+  } catch {
+    return res.json({ cart: null });
+  }
+
+  try {
+    const { session } = await loginToKnuspr(knusprEmail, knusprPassword);
+    const sessionCookie = `PHPSESSION_de-production=${session}`;
+
+    const cartResponse = await fetch(
+      'https://www.knuspr.de/services/frontend-service/v2/cart-review/check-cart',
+      { headers: { 'Cookie': sessionCookie, 'x-origin': 'WEB' } }
+    );
+
+    if (!cartResponse.ok) {
+      return res.json({ cart: null });
+    }
+
+    const cartData = await cartResponse.json();
+    return res.json({ cart: normalizeCart(cartData.data) });
+  } catch {
+    return res.json({ cart: null });
+  }
+}
+
 export async function handleAddToCart(req: Request, res: Response) {
   const result = addToCartSchema.safeParse(req.body);
   if (!result.success) {
