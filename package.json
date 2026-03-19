@@ -14,6 +14,10 @@
     "serve": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
+    "release": "standard-version && git push --follow-tags origin HEAD",
+    "release:patch": "standard-version --release-as patch && git push --follow-tags origin HEAD",
+    "release:minor": "standard-version --release-as minor && git push --follow-tags origin HEAD",
+    "release:major": "standard-version --release-as major && git push --follow-tags origin HEAD",
     "db:dump": "tsx scripts/db-dump.ts"
   },
   "repository": {
