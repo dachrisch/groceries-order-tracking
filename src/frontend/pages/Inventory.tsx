@@ -3,11 +3,12 @@ import { createSignal, onMount, For, Show } from 'solid-js';
 import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
 
 interface InventoryItem {
-  _id: string;
+  _id: number;  // MongoDB aggregation returns numeric IDs — use String(_id) when keying addedItems/pendingQtys
   name: string;
   image?: string;
   avgInterval: number;
   daysSinceLast: number;
+  avgQuantity: number;
 }
 
 interface CartItem {
@@ -32,7 +33,10 @@ const REORDER_THRESHOLD = 0.7;
 export function Inventory() {
   const [items, setItems] = createSignal<InventoryItem[]>([]);
   const [loading, setLoading] = createSignal(true);
-  const [reordering, setReordering] = createSignal<string | null>(null);
+  const [cartLoading, setCartLoading] = createSignal(false);
+  const [reorderingItem, setReorderingItem] = createSignal<string | null>(null);
+  const [addingToCart, setAddingToCart] = createSignal(false);
+  const [pendingQtys, setPendingQtys] = createSignal<Map<string, number>>(new Map());
   const [error, setError] = createSignal<string | null>(null);
   const [tab, setTab] = createSignal('running-out');
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -62,10 +66,31 @@ export function Inventory() {
     }
   };
 
-  const reorder = async (productId: string) => {
-    if (reordering() || addedItems().has(productId)) return;
+  const fetchCart = async () => {
+    setCartLoading(true);
+    try {
+      const res = await fetch('/api/cart');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.cart) {
+          setCart(data.cart);
+          setAddedItems(new Set(
+            (data.cart as Cart).items.map((i: CartItem) => String(i.productId))
+          ));
+        }
+      }
+    } catch {
+      // silent fail — cart is best-effort
+    } finally {
+      setCartLoading(false);
+    }
+  };
 
-    setReordering(productId);
+  const reorder = async (productId: string) => {
+    if (reorderingItem() || addedItems().has(productId)) return;
+
+    setReorderingItem(productId);
+    setAddingToCart(true);
     try {
       const res = await fetch('/api/cart/add', {
         method: 'POST',
@@ -84,11 +109,12 @@ export function Inventory() {
     } catch {
       showToast('Connection error. Could not add to cart.', 'error');
     } finally {
-      setReordering(null);
+      setReorderingItem(null);
+      setAddingToCart(false);
     }
   };
 
-  onMount(fetchInventory);
+  onMount(() => Promise.all([fetchInventory(), fetchCart()]));
 
   const filteredItems = () => {
     const all = items();
@@ -107,10 +133,10 @@ export function Inventory() {
         <h1 class="text-3xl font-bold">Inventory</h1>
         <button
           class="btn btn-ghost btn-sm gap-2"
-          onClick={fetchInventory}
-          disabled={loading()}
+          onClick={() => Promise.all([fetchInventory(), fetchCart()])}
+          disabled={loading() || cartLoading()}
         >
-          <RefreshCw size={16} class={loading() ? 'animate-spin' : ''} />
+          <RefreshCw size={16} class={loading() || cartLoading() ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
@@ -188,26 +214,53 @@ export function Inventory() {
                   </div>
                   <div class="card-actions justify-end mt-4">
                     <button
-                      class={`btn btn-sm gap-2 ${addedItems().has(item._id) ? 'btn-success' : 'btn-primary'}`}
-                      onClick={() => reorder(item._id)}
-                      disabled={reordering() === item._id || addedItems().has(item._id)}
+                      class={`btn btn-sm gap-2 ${addedItems().has(String(item._id)) ? 'btn-success' : 'btn-primary'}`}
+                      onClick={() => reorder(String(item._id))}
+                      disabled={reorderingItem() === String(item._id) || addedItems().has(String(item._id))}
                     >
-                      <Show when={reordering() === item._id}>
+                      <Show when={reorderingItem() === String(item._id)}>
                         <span class="loading loading-spinner loading-xs" />
                       </Show>
-                      <Show when={!reordering() && addedItems().has(item._id)}>
+                      <Show when={!reorderingItem() && addedItems().has(String(item._id))}>
                         <Check size={16} />
                       </Show>
-                      <Show when={!reordering() && !addedItems().has(item._id)}>
+                      <Show when={!reorderingItem() && !addedItems().has(String(item._id))}>
                         <ShoppingCart size={16} />
                       </Show>
-                      {reordering() === item._id ? 'Adding...' : addedItems().has(item._id) ? 'Added' : 'Reorder'}
+                      {reorderingItem() === String(item._id) ? 'Adding...' : addedItems().has(String(item._id)) ? 'Added' : 'Reorder'}
                     </button>
                   </div>
                 </div>
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      {/* Cart Loading Skeleton */}
+      <Show when={cartLoading()}>
+        <div class="card bg-base-100 border border-base-300 shadow-xl">
+          <div class="card-body">
+            <div class="skeleton h-6 w-40 mb-4" />
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
+                <div class="flex-1 space-y-2">
+                  <div class="skeleton h-4 w-full" />
+                  <div class="skeleton h-3 w-24" />
+                </div>
+                <div class="skeleton h-5 w-14" />
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
+                <div class="flex-1 space-y-2">
+                  <div class="skeleton h-4 w-3/4" />
+                  <div class="skeleton h-3 w-20" />
+                </div>
+                <div class="skeleton h-5 w-14" />
+              </div>
+            </div>
+          </div>
         </div>
       </Show>
 
