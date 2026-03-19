@@ -3,7 +3,8 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
-import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
+import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
+
 import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
@@ -40,6 +41,7 @@ app.get('/api/stats', auth, handleGetStats);
 app.get('/api/aggregates', auth, handleGetAggregates);
 app.get('/api/orders', auth, handleGetOrders);
 app.get('/api/orders/:id', auth, handleGetOrderDetail);
+app.get('/api/products/:id/price', auth, handleGetProductPrice);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
 app.get('/api/cart', auth, handleGetCart);

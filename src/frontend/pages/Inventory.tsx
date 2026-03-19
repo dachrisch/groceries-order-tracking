@@ -3,13 +3,16 @@ import { createSignal, onMount, For, Show } from 'solid-js';
 import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
 
 interface InventoryItem {
-  _id: number;  // MongoDB aggregation returns numeric IDs — use String(_id) when keying addedItems/pendingQtys
+  _id: number;
   name: string;
   image?: string;
+  categories?: { id: number; name: string; slug: string; level: number }[];
   avgInterval: number;
   daysSinceLast: number;
   avgQuantity: number;
+  avgPrice: number;
 }
+
 
 interface CartItem {
   productId: number;
@@ -139,17 +142,22 @@ export function Inventory() {
 
   const filteredItems = () => {
     const all = items();
+    let filtered;
     if (tab() === 'running-out') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
+      filtered = all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
+    } else if (tab() === 'reorder') {
+      filtered = all.filter(i => i.daysSinceLast >= i.avgInterval);
+    } else {
+      filtered = all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
     }
-    if (tab() === 'reorder') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval);
-    }
-    return all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
+    // Sort by avg rebuy time (avgInterval)
+    return filtered.sort((a, b) => a.avgInterval - b.avgInterval);
   };
 
+
   return (
-    <div class="space-y-6">
+    <div class="space-y-6 pb-48">
+
       <div class="flex justify-between items-center">
         <h1 class="text-3xl font-bold">Inventory</h1>
         <button
@@ -211,16 +219,24 @@ export function Inventory() {
               return (
               <div class="card bg-base-100 shadow-xl border border-base-300 hover:shadow-2xl transition-shadow">
                 <div class="card-body">
-                  <div class="flex items-center gap-3">
-                    <div class="avatar flex-shrink-0">
-                      <div class="mask mask-squircle w-12 h-12 bg-base-200">
-                        <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
-                          <img src={item.image?.replace('https://www.knuspr.de', 'https://cdn.knuspr.de')} alt={item.name} loading="lazy" />
+                    <div class="flex items-center gap-3">
+                      <div class="avatar flex-shrink-0">
+                        <div class="mask mask-squircle w-12 h-12 bg-base-200">
+                          <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
+                            <img src={item.image?.replace('https://www.knuspr.de', 'https://cdn.knuspr.de')} alt={item.name} loading="lazy" />
+                          </Show>
+                        </div>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <h2 class="card-title text-lg leading-tight truncate">{item.name}</h2>
+                        <Show when={item.categories?.length}>
+                          <p class="text-[10px] opacity-40 truncate">
+                            {item.categories?.[item.categories.length - 1]?.name}
+                          </p>
                         </Show>
                       </div>
                     </div>
-                    <h2 class="card-title text-lg leading-tight">{item.name}</h2>
-                  </div>
+
                   <div class="space-y-2 mt-2">
                     <progress
                       class={`progress w-full ${
@@ -286,98 +302,75 @@ export function Inventory() {
         </div>
       </Show>
 
-      {/* Cart Loading Skeleton */}
-      <Show when={cartLoading()}>
-        <div class="card bg-base-100 border border-base-300 shadow-xl">
-          <div class="card-body">
-            <div class="skeleton h-6 w-40 mb-4" />
-            <div class="space-y-3">
-              <div class="flex items-center gap-3">
-                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
-                <div class="flex-1 space-y-2">
-                  <div class="skeleton h-4 w-full" />
-                  <div class="skeleton h-3 w-24" />
+      {/* Sticky Bottom Cart Container */}
+      <Show when={cart() || cartLoading()}>
+        <div class="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pointer-events-none">
+          <div class="max-w-7xl mx-auto flex justify-end">
+            <div class="card bg-base-100 border border-base-300 shadow-2xl w-full md:w-96 pointer-events-auto overflow-hidden">
+              <div class="card-body p-0">
+                {/* Header (Expandable maybe? For now just summary) */}
+                <div class="bg-primary text-primary-content p-4 flex items-center justify-between cursor-pointer" onClick={() => {
+                  const el = document.getElementById('cart-items-drawer');
+                  if (el) el.classList.toggle('hidden');
+                }}>
+                  <div class="flex items-center gap-2 font-bold">
+                    <ShoppingCart size={20} />
+                    <span>€{cart()?.totalPrice.toFixed(2) ?? '0.00'}</span>
+                    <span class="badge badge-sm badge-ghost">{(cart()?.items.length ?? 0)}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Show when={cartLoading()}>
+                      <span class="loading loading-spinner loading-xs" />
+                    </Show>
+                    <a
+                      href="https://www.knuspr.de/bestellung/mein-warenkorb"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn btn-xs btn-outline btn-ghost border-white/20 hover:border-white/40 text-white gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Open <ExternalLink size={12} />
+                    </a>
+                  </div>
                 </div>
-                <div class="skeleton h-5 w-14" />
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
-                <div class="flex-1 space-y-2">
-                  <div class="skeleton h-4 w-3/4" />
-                  <div class="skeleton h-3 w-20" />
+
+                {/* Collapsible item list */}
+                <div id="cart-items-drawer" class="max-h-80 overflow-y-auto divide-y divide-base-300 bg-base-100 hidden">
+                  <For each={cart()?.items}>
+                    {(cartItem) => {
+                      const invItem = items().find(i => String(i._id) === String(cartItem.productId));
+                      const diff = invItem ? cartItem.price - invItem.avgPrice : 0;
+
+                      return (
+                        <div class="flex items-center gap-3 p-3">
+                          <div class="avatar flex-shrink-0">
+                            <div class="mask mask-squircle w-8 h-8 bg-base-200">
+                              <img src={cartItem.imgUrl} alt={cartItem.productName} loading="lazy" />
+                            </div>
+                          </div>
+                          <div class="flex-1 min-w-0">
+                            <p class="text-xs font-medium truncate">{cartItem.productName}</p>
+                            <p class="text-[10px] opacity-60">
+                              €{cartItem.price.toFixed(2)}
+                              <Show when={invItem && Math.abs(diff) > 0.01}>
+                                <span class={`ml-2 ${diff > 0 ? 'text-error' : 'text-success'}`}>
+                                  {diff > 0 ? '+' : ''}{diff.toFixed(2)}€
+                                </span>
+                              </Show>
+                            </p>
+                          </div>
+                          <div class="text-right flex-shrink-0 text-xs font-semibold">
+                            ×{cartItem.quantity}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  </For>
                 </div>
-                <div class="skeleton h-5 w-14" />
               </div>
             </div>
           </div>
         </div>
-      </Show>
-
-      {/* Cart Summary */}
-      <Show when={cart()}>
-        {(c) => (
-          <div class="card bg-base-100 border border-base-300 shadow-xl">
-            <div class="card-body">
-              <div class="flex items-center justify-between mb-4">
-                <h2 class="card-title text-xl">
-                  <ShoppingCart size={20} />
-                  Your Knuspr Cart
-                  <span class="badge badge-primary">{c().items.length}</span>
-                </h2>
-                <a
-                  href="https://www.knuspr.de/bestellung/mein-warenkorb"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="btn btn-outline btn-sm gap-2"
-                >
-                  Open on Knuspr
-                  <ExternalLink size={14} />
-                </a>
-              </div>
-
-              <div class="divide-y divide-base-300">
-                <For each={c().items}>
-                  {(cartItem) => (
-                    <div class="flex items-center gap-3 py-3">
-                      <div class="avatar flex-shrink-0">
-                        <div class="mask mask-squircle w-10 h-10 bg-base-200">
-                          <img src={cartItem.imgUrl} alt={cartItem.productName} loading="lazy" />
-                        </div>
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        <p class="font-medium truncate">{cartItem.productName}</p>
-                        <p class="text-xs opacity-60">{cartItem.textualAmount}</p>
-                        <Show when={cartItem.multipack}>
-                          {(mp) => (
-                            <span class="badge badge-warning badge-xs mt-1">
-                              {mp().needAmount} for €{mp().price.toFixed(2)}&nbsp;−{Math.round(mp().savedPercents)}%
-                            </span>
-                          )}
-                        </Show>
-                      </div>
-                      <div class="text-right flex-shrink-0">
-                        <p class="font-semibold">€{cartItem.price.toFixed(2)}</p>
-                        <p class="text-xs opacity-60">×{cartItem.quantity}</p>
-                      </div>
-                    </div>
-                  )}
-                </For>
-              </div>
-
-              <div class="divider my-2" />
-              <div class="flex justify-between items-center">
-                <span class="text-base-content/60 text-sm">Total</span>
-                <span class="text-xl font-bold">€{c().totalPrice.toFixed(2)}</span>
-              </div>
-              <Show when={c().totalSavings > 0}>
-                <div class="flex justify-between items-center text-success text-sm">
-                  <span>You save</span>
-                  <span>−€{c().totalSavings.toFixed(2)}</span>
-                </div>
-              </Show>
-            </div>
-          </div>
-        )}
       </Show>
 
       {/* Toast Notification */}
