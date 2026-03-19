@@ -182,4 +182,93 @@ describe('GET /api/cart', () => {
     expect(res.status).toBe(200);
     expect(res.body.cart).toBeNull();
   });
+
+  it('returns normalized cart when Knuspr responds successfully', async () => {
+    await Integration.create({
+      userId,
+      provider: 'knuspr',
+      encryptedCredentials: 'encrypted',
+      encryptedHeaders: null,
+    });
+
+    const mockCartResponse = {
+      data: {
+        cartId: 999,
+        totalPrice: 5.59,
+        totalSavings: 0,
+        items: {
+          '4864': {
+            productId: 4864,
+            productName: 'Kugler Obatzda',
+            price: 5.59,
+            quantity: 1,
+            imgPath: '/images/grocery/products/4864/img.jpg',
+            textualAmount: '270 g',
+            multipack: null,
+          },
+        },
+      },
+    };
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockCartResponse,
+    }));
+
+    const res = await request(app)
+      .get('/api/cart')
+      .set('Cookie', cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart.cartId).toBe(999);
+    expect(res.body.cart.totalPrice).toBe(5.59);
+    expect(res.body.cart.items).toHaveLength(1);
+    expect(res.body.cart.items[0].productId).toBe(4864);
+    expect(res.body.cart.items[0].imgUrl).toBe(
+      'https://www.knuspr.de/images/grocery/products/4864/img.jpg'
+    );
+    expect(res.body.cart.items[0].multipack).toBeUndefined();
+
+    const fetchMock = vi.mocked(fetch);
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://www.knuspr.de/services/frontend-service/v2/cart-review/check-cart'
+    );
+  });
+
+  it('returns { cart: null } when Knuspr check-cart fails', async () => {
+    await Integration.create({
+      userId,
+      provider: 'knuspr',
+      encryptedCredentials: 'encrypted',
+      encryptedHeaders: null,
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('network error')));
+
+    const res = await request(app)
+      .get('/api/cart')
+      .set('Cookie', cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart).toBeNull();
+  });
+
+  it('returns { cart: null } when Knuspr returns non-ok status', async () => {
+    await Integration.create({
+      userId,
+      provider: 'knuspr',
+      encryptedCredentials: 'encrypted',
+      encryptedHeaders: null,
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 503 }));
+
+    const res = await request(app)
+      .get('/api/cart')
+      .set('Cookie', cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart).toBeNull();
+  });
 });
