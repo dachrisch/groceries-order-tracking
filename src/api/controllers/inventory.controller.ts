@@ -181,7 +181,10 @@ export async function handleGetInventory(req: Request, res: Response) {
           if (res.ok) {
             const data = await res.json();
             // The Knuspr API often returns price in data.price or just price
-            item.currentPrice = data.data?.price || data.price;
+            const price = data.data?.price || data.price;
+            if (price !== undefined) {
+              item.currentPrice = Number(price);
+            }
           }
         } catch (e) {
           console.error(`Failed to fetch price for ${item._id}:`, e);
