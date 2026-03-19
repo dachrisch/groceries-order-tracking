@@ -2,12 +2,66 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import Integration from '../../models/Integration';
 import { decrypt } from '../../lib/crypto';
+import { loginToKnuspr } from '../../lib/knuspr-auth';
 import { formatZodError } from '../utils';
 
 const addToCartSchema = z.object({
-  productId: z.string().min(1, 'Product ID is required'),
+  productId: z.union([z.string(), z.number()]).transform(Number),
   count: z.number().optional()
 });
+
+interface KnusprCartItem {
+  productId: number;
+  productName: string;
+  price: number;
+  quantity: number;
+  imgPath: string;
+  textualAmount: string;
+  multipack?: { price: number; savedPercents: number; needAmount: number } | null;
+}
+
+interface NormalizedCart {
+  cartId: number;
+  totalPrice: number;
+  totalSavings: number;
+  items: {
+    productId: number;
+    productName: string;
+    price: number;
+    quantity: number;
+    imgUrl: string;
+    textualAmount: string;
+    multipack?: { price: number; savedPercents: number; needAmount: number };
+  }[];
+}
+
+function normalizeCart(data: any): NormalizedCart {
+  const items = Object.values(data.items as Record<string, KnusprCartItem>).map(item => {
+    const normalized: NormalizedCart['items'][0] = {
+      productId: item.productId,
+      productName: item.productName,
+      price: item.price,
+      quantity: item.quantity,
+      imgUrl: `https://www.knuspr.de${item.imgPath}`,
+      textualAmount: item.textualAmount,
+    };
+    if (item.multipack) {
+      normalized.multipack = {
+        price: item.multipack.price,
+        savedPercents: item.multipack.savedPercents,
+        needAmount: item.multipack.needAmount,
+      };
+    }
+    return normalized;
+  });
+
+  return {
+    cartId: data.cartId,
+    totalPrice: data.totalPrice,
+    totalSavings: data.totalSavings ?? 0,
+    items,
+  };
+}
 
 export async function handleAddToCart(req: Request, res: Response) {
   const result = addToCartSchema.safeParse(req.body);
@@ -16,42 +70,73 @@ export async function handleAddToCart(req: Request, res: Response) {
   }
 
   const { productId, count } = result.data;
-  const integration = await Integration.findOne({ userId: req.userId });
-  
-  if (!integration || !integration.headers) {
-    return res.status(404).json({ error: 'No integration found' });
-  }
 
   if (!req.derivedKey) {
     return res.status(401).json({ error: 'Session key missing — please re-login' });
   }
 
-  try {
-    // Decrypt headers
-    const decryptedHeaders = decrypt(integration.headers, req.derivedKey);
-    const headers = JSON.parse(decryptedHeaders);
+  const integration = await Integration.findOne({ userId: req.userId, provider: 'knuspr' });
+  if (!integration?.encryptedCredentials) {
+    return res.status(404).json({ error: 'Knuspr not connected. Go to Settings to connect.' });
+  }
 
-    const response = await fetch('https://www.knuspr.de/services/frontend-service/metric/add-to-cart', {
+  let knusprEmail: string;
+  let knusprPassword: string;
+  try {
+    const creds = JSON.parse(decrypt(integration.encryptedCredentials, req.derivedKey));
+    knusprEmail = creds.email;
+    knusprPassword = creds.password;
+  } catch {
+    return res.status(401).json({ error: 'Failed to decrypt Knuspr credentials — please reconnect in Settings' });
+  }
+
+  try {
+    const { session } = await loginToKnuspr(knusprEmail, knusprPassword);
+
+    const sessionCookie = `PHPSESSION_de-production=${session}`;
+    const knusprHeaders = {
+      'Content-Type': 'application/json',
+      'Cookie': sessionCookie,
+      'x-origin': 'WEB',
+      'origin': 'https://www.knuspr.de',
+    };
+
+    // Add item to cart
+    const addResponse = await fetch('https://www.knuspr.de/api/v1/cart/item', {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: knusprHeaders,
       body: JSON.stringify({
-        context: { id: null, type: 'GENERAL' },
-        component: { id: null, type: 'PRODUCT_LIST' },
-        isAuthenticated: true,
-        userId: headers['x-knuspr-userid'] || "3896299", // Fallback or extract
-        item: { id: productId, type: 'PRODUCT', position: 1, count: count || 1 }
-      })
+        amount: count ?? 1,
+        productId,
+        actionId: null,
+        source: 'reorder',
+      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Knuspr API error:', errorText);
-      return res.status(response.status).json({ error: 'Knuspr API error' });
+    if (!addResponse.ok) {
+      const errorText = await addResponse.text();
+      console.error('Knuspr add-to-cart error:', addResponse.status, errorText);
+      return res.status(addResponse.status).json({ error: `Knuspr API error: ${addResponse.status}` });
     }
 
-    res.json({ success: true });
-  } catch (err) {
+    // Verify cart and return state
+    let cart: NormalizedCart | null = null;
+    try {
+      const cartResponse = await fetch(
+        'https://www.knuspr.de/services/frontend-service/v2/cart-review/check-cart',
+        { headers: { 'Cookie': sessionCookie, 'x-origin': 'WEB' } }
+      );
+      if (cartResponse.ok) {
+        const cartData = await cartResponse.json();
+        cart = normalizeCart(cartData.data);
+      }
+    } catch (err) {
+      console.error('check-cart failed (non-fatal):', err);
+    }
+
+    res.json({ success: true, cart });
+  } catch (err: any) {
     console.error('Add to cart failed:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 }
