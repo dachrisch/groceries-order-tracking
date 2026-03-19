@@ -1,7 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
-import { connectDB } from '../lib/mongodb';
+import { connectDB, dumpDB } from '../lib/mongodb';
 import { app } from './app';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,3 +31,11 @@ async function start() {
 }
 
 start();
+
+// On Ctrl+C or process stop: dump in-memory DB to dev-seed.json so next start is pre-filled
+async function shutdown() {
+  await dumpDB();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

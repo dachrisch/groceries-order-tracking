@@ -13,7 +13,8 @@
     "start:prod": "node dist-server/server.js",
     "serve": "vite preview",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:dump": "tsx scripts/db-dump.ts"
   },
   "repository": {
     "type": "git",

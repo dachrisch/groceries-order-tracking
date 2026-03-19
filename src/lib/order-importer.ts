@@ -30,7 +30,7 @@ export async function importOrders(
   }
 
   // Get fresh Knuspr session
-  let session = await loginToKnuspr(knusprEmail, knusprPassword);
+  let { session } = await loginToKnuspr(knusprEmail, knusprPassword);
 
   console.log(`Starting Knuspr import for userId ${userId}...`);
 
@@ -45,7 +45,7 @@ export async function importOrders(
 
     // Auto-refresh session once on 401
     if (response.status === 401) {
-      session = await loginToKnuspr(knusprEmail, knusprPassword);
+      ({ session } = await loginToKnuspr(knusprEmail, knusprPassword));
       response = await fetchWithSession(url, session);
     }
 
@@ -72,7 +72,7 @@ export async function importOrders(
       const detailUrl = `${KNUSPR_API_BASE}/api/v3/orders/${summary.id}`;
       let detailRes = await fetchWithSession(detailUrl, session);
       if (detailRes.status === 401) {
-        session = await loginToKnuspr(knusprEmail, knusprPassword);
+        ({ session } = await loginToKnuspr(knusprEmail, knusprPassword));
         detailRes = await fetchWithSession(detailUrl, session);
       }
       if (!detailRes.ok) continue;
@@ -85,7 +85,7 @@ export async function importOrders(
       const upsertResult = await Order.findOneAndUpdate(
         { userId, id: detail.id },
         { $setOnInsert: detail },
-        { upsert: true, new: false }
+        { upsert: true, returnDocument: 'before' }
       );
       if (!upsertResult) importedCount++; // null means it was inserted (not found before)
     }

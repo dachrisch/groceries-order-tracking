@@ -5,3 +5,4 @@ dist-server/
 .env.local
 .DS_Store
 *.log
+dev-seed.json

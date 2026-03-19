@@ -34,7 +34,7 @@ export async function handleConnectKnuspr(req: Request, res: Response) {
     await Integration.findOneAndUpdate(
       { userId: req.userId, provider: 'knuspr' },
       { encryptedCredentials, lastSyncAt: null },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     res.json({ message: 'Knuspr connected successfully' });

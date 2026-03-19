@@ -1,11 +1,16 @@
 const KNUSPR_LOGIN_URL = 'https://www.knuspr.de/services/frontend-service/login';
 
+export interface KnusprSession {
+  session: string; // PHPSESSION_de-production value
+  userId: string;
+}
+
 /**
  * Authenticates with Knuspr using email+password.
- * Returns the PHPSESSION token needed for subsequent Knuspr API calls.
+ * Returns the PHPSESSION token and userId needed for subsequent Knuspr API calls.
  * Throws if credentials are invalid or network fails.
  */
-export async function loginToKnuspr(email: string, password: string): Promise<string> {
+export async function loginToKnuspr(email: string, password: string): Promise<KnusprSession> {
   const response = await fetch(KNUSPR_LOGIN_URL, {
     method: 'POST',
     headers: {
@@ -30,5 +35,7 @@ export async function loginToKnuspr(email: string, password: string): Promise<st
     throw new Error('Knuspr login succeeded but no session token returned');
   }
 
-  return session; // This is the PHPSESSION_de-production value
+  const userId: string = String(data.data.userId ?? data.data.id ?? '');
+
+  return { session, userId };
 }

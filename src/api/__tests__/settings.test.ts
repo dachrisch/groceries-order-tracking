@@ -11,7 +11,7 @@ import {
 
 // Mock the external Knuspr API calls so tests are self-contained
 vi.mock('../../lib/knuspr-auth', () => ({
-  loginToKnuspr: vi.fn().mockResolvedValue({ sessionCookie: 'mock-session' }),
+  loginToKnuspr: vi.fn().mockResolvedValue({ session: 'mock-session', userId: '12345' }),
 }));
 
 vi.mock('../../lib/order-importer', () => ({
