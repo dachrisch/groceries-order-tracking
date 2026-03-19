@@ -1,11 +1,10 @@
 import { createSignal } from 'solid-js';
-import { useNavigate, A } from '@solidjs/router';
+import { A } from '@solidjs/router';
 
 export function Login() {
   const [email, setEmail] = createSignal('');
   const [password, setPassword] = createSignal('');
   const [error, setError] = createSignal('');
-  const navigate = useNavigate();
 
   const handleLogin = async (e: Event) => {
     e.preventDefault();
@@ -24,7 +23,7 @@ export function Login() {
         const data = await res.json();
         setError(data.error || 'Login failed');
       }
-    } catch (e) {
+    } catch {
       setError('An error occurred. Please try again.');
     }
   };

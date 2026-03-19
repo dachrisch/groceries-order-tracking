@@ -111,7 +111,7 @@ export function Settings() {
 
           <Show when={loading()}>
             <div class="flex justify-center py-8">
-              <span class="loading loading-spinner loading-md"></span>
+              <span class="loading loading-spinner loading-md" />
             </div>
           </Show>
 
@@ -156,7 +156,7 @@ export function Settings() {
                         disabled={syncing()}
                       >
                         <Show when={syncing()}>
-                          <span class="loading loading-spinner loading-xs"></span>
+                          <span class="loading loading-spinner loading-xs" />
                         </Show>
                         <Show when={!syncing()}>
                           <RefreshCw size={14} />
@@ -219,7 +219,7 @@ export function Settings() {
                       disabled={connecting()}
                     >
                       <Show when={connecting()}>
-                        <span class="loading loading-spinner loading-xs"></span>
+                        <span class="loading loading-spinner loading-xs" />
                       </Show>
                       <Show when={!connecting()}>
                         <Link2 size={14} />

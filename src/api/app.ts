@@ -6,7 +6,7 @@ import { handleLogin, handleRegister, handleSession, handleLogout } from './cont
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats } from './controllers/order.controller';
 import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
-import { handleAddToCart } from './controllers/cart.controller';
+import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 
 export const app = express();
 
@@ -42,6 +42,7 @@ app.get('/api/orders', auth, handleGetOrders);
 app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
+app.get('/api/cart', auth, handleGetCart);
 app.post('/api/cart/add', auth, handleAddToCart);
 
 app.get('/api/settings/integrations', auth, handleListIntegrations);

@@ -82,11 +82,11 @@ describe('Order endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
 
-      const jan = res.body.find((m: any) => m._id.month === 1);
+      const jan = res.body.find((m: { _id: { month: number } }) => m._id.month === 1);
       expect(jan.orderCount).toBe(2);
       expect(jan.totalAmount).toBe(8500); // 4250 * 2
 
-      const feb = res.body.find((m: any) => m._id.month === 2);
+      const feb = res.body.find((m: { _id: { month: number } }) => m._id.month === 2);
       expect(feb.orderCount).toBe(1);
     });
 

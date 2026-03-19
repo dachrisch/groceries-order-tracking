@@ -14,7 +14,7 @@ async function seedFromFile() {
 
   try {
     const raw = fs.readFileSync(DEV_SEED_FILE, 'utf8');
-    const seed = EJSON.parse(raw) as Record<string, any[]>;
+    const seed = EJSON.parse(raw) as Record<string, unknown[]>;
     const db = mongoose.connection.db!;
 
     for (const [collection, docs] of Object.entries(seed)) {
@@ -24,8 +24,8 @@ async function seedFromFile() {
       }
     }
     console.log('Database seeded from dev-seed.json');
-  } catch (err: any) {
-    console.error('Seed failed:', err.message);
+  } catch (err: unknown) {
+    console.error('Seed failed:', (err as Error).message);
   }
 }
 
@@ -34,15 +34,15 @@ export async function dumpDB() {
   try {
     const db = mongoose.connection.db!;
     const collections = await db.listCollections().toArray();
-    const seed: Record<string, any[]> = {};
+    const seed: Record<string, unknown[]> = {};
     for (const col of collections) {
       seed[col.name] = await db.collection(col.name).find({}).toArray();
     }
     fs.writeFileSync(DEV_SEED_FILE, EJSON.stringify(seed, { relaxed: false }, 2));
     const total = Object.values(seed).reduce((n, d) => n + d.length, 0);
     console.log(`Database saved to dev-seed.json (${total} docs)`);
-  } catch (err: any) {
-    console.error('Auto-dump failed:', err.message);
+  } catch (err: unknown) {
+    console.error('Auto-dump failed:', (err as Error).message);
   }
 }
 

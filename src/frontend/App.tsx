@@ -3,7 +3,7 @@ import { useNavigate, useLocation, A } from '@solidjs/router';
 import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList } from 'lucide-solid';
 
 export function App(props: { children?: JSX.Element }) {
-  const [user, setUser] = createSignal<any>(null);
+  const [user, setUser] = createSignal<{ name: string; email: string } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ export function App(props: { children?: JSX.Element }) {
       const res = await fetch('/api/session');
       if (res.ok) {
         const data = await res.json();
-        setUser(data);
+        setUser(data as { name: string; email: string });
       } else {
         if (location.pathname !== '/login' && location.pathname !== '/register') {
           navigate('/login');
@@ -60,7 +60,7 @@ export function App(props: { children?: JSX.Element }) {
                 <div class="flex-none">
                   <label for="mobile-drawer" class="btn btn-square btn-ghost">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                   </label>
                 </div>
@@ -70,7 +70,7 @@ export function App(props: { children?: JSX.Element }) {
               </div>
 
               {/* Desktop header spacer (aligns with sidebar header height) */}
-              <div class="h-20 shrink-0 hidden lg:block"></div>
+              <div class="h-20 shrink-0 hidden lg:block" />
 
               {/* Scrollable page content */}
               <main class="flex-1 overflow-y-auto p-4 lg:p-10">
@@ -82,7 +82,7 @@ export function App(props: { children?: JSX.Element }) {
 
             {/* Sidebar (drawer-side) — always open on desktop, slide-in on mobile */}
             <div class="drawer-side z-30">
-              <label for="mobile-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+              <label for="mobile-drawer" aria-label="close sidebar" class="drawer-overlay" />
               <div
                 class={`bg-base-100 text-base-content flex flex-col h-full transition-all duration-300 ease-in-out shadow-xl
                   ${sidebarCollapsed() ? 'w-20' : 'w-72'}`}
@@ -147,8 +147,8 @@ export function App(props: { children?: JSX.Element }) {
                 <div class="mt-auto border-t border-base-300 bg-base-100/50 p-4 space-y-3">
                   <div class={`flex items-center gap-3 p-2 rounded-xl bg-base-200/50 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
                     <div class="avatar placeholder flex-shrink-0">
-                      <div class="bg-primary text-primary-content rounded-full w-10 shadow-sm ring-2 ring-primary/10">
-                        <span class="text-xl">🥨</span>
+                      <div class="bg-primary text-primary-content rounded-full w-10 shadow-sm ring-2 ring-primary/10 flex items-center justify-center">
+                        <span class="text-xl leading-none">🥨</span>
                       </div>
                     </div>
                     <Show when={!sidebarCollapsed()}>
@@ -180,7 +180,7 @@ export function App(props: { children?: JSX.Element }) {
 
       <Show when={loading()}>
         <div class="flex items-center justify-center h-screen">
-          <span class="loading loading-spinner loading-lg"></span>
+          <span class="loading loading-spinner loading-lg" />
         </div>
       </Show>
     </div>

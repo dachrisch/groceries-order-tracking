@@ -35,14 +35,14 @@ interface NormalizedCart {
   }[];
 }
 
-function normalizeCart(data: any): NormalizedCart {
+function normalizeCart(data: { items: Record<string, KnusprCartItem>; cartId: number; totalPrice: number; totalSavings?: number }): NormalizedCart {
   const items = Object.values(data.items as Record<string, KnusprCartItem>).map(item => {
     const normalized: NormalizedCart['items'][0] = {
       productId: item.productId,
       productName: item.productName,
       price: item.price,
       quantity: item.quantity,
-      imgUrl: `https://www.knuspr.de${item.imgPath}`,
+      imgUrl: `https://cdn.knuspr.de${item.imgPath}`,
       textualAmount: item.textualAmount,
     };
     if (item.multipack) {
@@ -61,6 +61,46 @@ function normalizeCart(data: any): NormalizedCart {
     totalSavings: data.totalSavings ?? 0,
     items,
   };
+}
+
+export async function handleGetCart(req: Request, res: Response) {
+  if (!req.derivedKey) {
+    return res.json({ cart: null });
+  }
+
+  const integration = await Integration.findOne({ userId: req.userId, provider: 'knuspr' });
+  if (!integration?.encryptedCredentials) {
+    return res.json({ cart: null });
+  }
+
+  let knusprEmail: string;
+  let knusprPassword: string;
+  try {
+    const creds = JSON.parse(decrypt(integration.encryptedCredentials, req.derivedKey));
+    knusprEmail = creds.email;
+    knusprPassword = creds.password;
+  } catch {
+    return res.json({ cart: null });
+  }
+
+  try {
+    const { session } = await loginToKnuspr(knusprEmail, knusprPassword);
+    const sessionCookie = `PHPSESSION_de-production=${session}`;
+
+    const cartResponse = await fetch(
+      'https://www.knuspr.de/services/frontend-service/v2/cart-review/check-cart',
+      { headers: { 'Cookie': sessionCookie, 'x-origin': 'WEB' } }
+    );
+
+    if (!cartResponse.ok) {
+      return res.json({ cart: null });
+    }
+
+    const cartData = await cartResponse.json();
+    return res.json({ cart: normalizeCart(cartData.data) });
+  } catch {
+    return res.json({ cart: null });
+  }
 }
 
 export async function handleAddToCart(req: Request, res: Response) {
@@ -135,8 +175,9 @@ export async function handleAddToCart(req: Request, res: Response) {
     }
 
     res.json({ success: true, cart });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Add to cart failed:', err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
   }
 }

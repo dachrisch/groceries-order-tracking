@@ -3,11 +3,12 @@ import { createSignal, onMount, For, Show } from 'solid-js';
 import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
 
 interface InventoryItem {
-  _id: string;
+  _id: number;  // MongoDB aggregation returns numeric IDs — use String(_id) when keying addedItems/pendingQtys
   name: string;
   image?: string;
   avgInterval: number;
   daysSinceLast: number;
+  avgQuantity: number;
 }
 
 interface CartItem {
@@ -32,7 +33,10 @@ const REORDER_THRESHOLD = 0.7;
 export function Inventory() {
   const [items, setItems] = createSignal<InventoryItem[]>([]);
   const [loading, setLoading] = createSignal(true);
-  const [reordering, setReordering] = createSignal<string | null>(null);
+  const [cartLoading, setCartLoading] = createSignal(false);
+  const [reorderingItem, setReorderingItem] = createSignal<string | null>(null);
+  const [addingToCart, setAddingToCart] = createSignal(false);
+  const [pendingQtys, setPendingQtys] = createSignal<Map<string, number>>(new Map());
   const [error, setError] = createSignal<string | null>(null);
   const [tab, setTab] = createSignal('running-out');
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -62,15 +66,55 @@ export function Inventory() {
     }
   };
 
-  const reorder = async (productId: string) => {
-    if (reordering() || addedItems().has(productId)) return;
+  const fetchCart = async () => {
+    setCartLoading(true);
+    try {
+      const res = await fetch('/api/cart');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.cart) {
+          setCart(data.cart);
+          setAddedItems(new Set(
+            (data.cart as Cart).items.map((i: CartItem) => String(i.productId))
+          ));
+        }
+      }
+    } catch {
+      // silent fail — cart is best-effort
+    } finally {
+      setCartLoading(false);
+    }
+  };
 
-    setReordering(productId);
+  // All interactions with addedItems and pendingQtys use String(item._id) because
+  // those Sets/Maps are keyed by string, while InventoryItem._id is numeric from MongoDB.
+
+  const openStepper = (item: InventoryItem) => {
+    const id = String(item._id);
+    if (addedItems().has(id)) return; // already in cart
+    setReorderingItem(id);
+    // Intentional: keep qty if stepper was previously opened for this item
+    if (!pendingQtys().has(id)) {
+      setPendingQtys(prev => new Map(prev).set(id, item.avgQuantity));
+    }
+  };
+
+  const adjustQty = (itemId: string, delta: number) => {
+    const current = pendingQtys().get(itemId) ?? 1;
+    const next = Math.max(1, current + delta);
+    setPendingQtys(prev => new Map(prev).set(itemId, next));
+  };
+
+  const addToCart = async (productId: string) => {
+    if (addingToCart()) return;
+    const qty = pendingQtys().get(productId) ?? 1;
+
+    setAddingToCart(true);
     try {
       const res = await fetch('/api/cart/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, count: 1 })
+        body: JSON.stringify({ productId, count: qty })
       });
 
       if (res.ok) {
@@ -78,17 +122,20 @@ export function Inventory() {
         setAddedItems(prev => new Set([...prev, productId]));
         if (data.cart) setCart(data.cart);
         showToast('Added to Knuspr cart!');
+        setReorderingItem(null);  // collapse stepper only on success
       } else {
         showToast('Failed to add item to cart.', 'error');
+        // stepper stays open so user can retry with same qty
       }
     } catch {
       showToast('Connection error. Could not add to cart.', 'error');
+      // stepper stays open so user can retry
     } finally {
-      setReordering(null);
+      setAddingToCart(false);
     }
   };
 
-  onMount(fetchInventory);
+  onMount(() => Promise.all([fetchInventory(), fetchCart()]));
 
   const filteredItems = () => {
     const all = items();
@@ -107,10 +154,10 @@ export function Inventory() {
         <h1 class="text-3xl font-bold">Inventory</h1>
         <button
           class="btn btn-ghost btn-sm gap-2"
-          onClick={fetchInventory}
-          disabled={loading()}
+          onClick={() => Promise.all([fetchInventory(), fetchCart()])}
+          disabled={loading() || cartLoading()}
         >
-          <RefreshCw size={16} class={loading() ? 'animate-spin' : ''} />
+          <RefreshCw size={16} class={loading() || cartLoading() ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
@@ -159,14 +206,16 @@ export function Inventory() {
               <p class="text-base-content/60">All your groceries in this category are well stocked.</p>
             </div>
           }>
-            {(item) => (
+            {(item) => {
+              const id = String(item._id);
+              return (
               <div class="card bg-base-100 shadow-xl border border-base-300 hover:shadow-2xl transition-shadow">
                 <div class="card-body">
                   <div class="flex items-center gap-3">
                     <div class="avatar flex-shrink-0">
                       <div class="mask mask-squircle w-12 h-12 bg-base-200">
                         <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
-                          <img src={item.image} alt={item.name} loading="lazy" />
+                          <img src={item.image?.replace('https://www.knuspr.de', 'https://cdn.knuspr.de')} alt={item.name} loading="lazy" />
                         </Show>
                       </div>
                     </div>
@@ -187,27 +236,80 @@ export function Inventory() {
                     </p>
                   </div>
                   <div class="card-actions justify-end mt-4">
-                    <button
-                      class={`btn btn-sm gap-2 ${addedItems().has(item._id) ? 'btn-success' : 'btn-primary'}`}
-                      onClick={() => reorder(item._id)}
-                      disabled={reordering() === item._id || addedItems().has(item._id)}
+                    <Show
+                      when={reorderingItem() === id}
+                      fallback={
+                        <button
+                          class={`btn btn-sm gap-2 ${addedItems().has(id) ? 'btn-success' : 'btn-primary'}`}
+                          onClick={() => openStepper(item)}
+                          disabled={addedItems().has(id)}
+                        >
+                          <Show when={addedItems().has(id)} fallback={<ShoppingCart size={16} />}>
+                            <Check size={16} />
+                          </Show>
+                          {addedItems().has(id) ? 'Added' : 'Reorder'}
+                        </button>
+                      }
                     >
-                      <Show when={reordering() === item._id}>
-                        <span class="loading loading-spinner loading-xs" />
-                      </Show>
-                      <Show when={!reordering() && addedItems().has(item._id)}>
-                        <Check size={16} />
-                      </Show>
-                      <Show when={!reordering() && !addedItems().has(item._id)}>
-                        <ShoppingCart size={16} />
-                      </Show>
-                      {reordering() === item._id ? 'Adding...' : addedItems().has(item._id) ? 'Added' : 'Reorder'}
-                    </button>
+                      <div class="flex items-center gap-1">
+                        <button
+                          class="btn btn-sm btn-ghost btn-square"
+                          onClick={() => adjustQty(id, -1)}
+                          disabled={addingToCart()}
+                        >−</button>
+                        <span class="w-8 text-center font-mono text-sm">
+                          {pendingQtys().get(id) ?? item.avgQuantity}
+                        </span>
+                        <button
+                          class="btn btn-sm btn-ghost btn-square"
+                          onClick={() => adjustQty(id, 1)}
+                          disabled={addingToCart()}
+                        >+</button>
+                        <button
+                          class="btn btn-sm btn-primary gap-1"
+                          onClick={() => addToCart(id)}
+                          disabled={addingToCart()}
+                        >
+                          <Show when={addingToCart()}>
+                            <span class="loading loading-spinner loading-xs" />
+                          </Show>
+                          Add
+                        </button>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               </div>
-            )}
+              );
+            }}
           </For>
+        </div>
+      </Show>
+
+      {/* Cart Loading Skeleton */}
+      <Show when={cartLoading()}>
+        <div class="card bg-base-100 border border-base-300 shadow-xl">
+          <div class="card-body">
+            <div class="skeleton h-6 w-40 mb-4" />
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
+                <div class="flex-1 space-y-2">
+                  <div class="skeleton h-4 w-full" />
+                  <div class="skeleton h-3 w-24" />
+                </div>
+                <div class="skeleton h-5 w-14" />
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="skeleton w-10 h-10 rounded-lg shrink-0" />
+                <div class="flex-1 space-y-2">
+                  <div class="skeleton h-4 w-3/4" />
+                  <div class="skeleton h-3 w-20" />
+                </div>
+                <div class="skeleton h-5 w-14" />
+              </div>
+            </div>
+          </div>
         </div>
       </Show>
 

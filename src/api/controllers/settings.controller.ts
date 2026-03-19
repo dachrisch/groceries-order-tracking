@@ -11,8 +11,8 @@ export async function handleListIntegrations(req: Request, res: Response) {
   try {
     const integrations = await Integration.find({ userId: req.userId }).select('provider lastSyncAt createdAt');
     res.json(integrations);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
@@ -38,9 +38,9 @@ export async function handleConnectKnuspr(req: Request, res: Response) {
     );
 
     res.json({ message: 'Knuspr connected successfully' });
-  } catch (err: any) {
-    const isCredentialError = err.message?.includes('Knuspr login') || err.message?.includes('Invalid Knuspr');
-    return res.status(isCredentialError ? 400 : 500).json({ error: err.message });
+  } catch (err: unknown) {
+    const isCredentialError = (err as Error).message?.includes('Knuspr login') || (err as Error).message?.includes('Invalid Knuspr');
+    return res.status(isCredentialError ? 400 : 500).json({ error: (err as Error).message });
   }
 }
 
@@ -48,8 +48,8 @@ export async function handleDisconnectKnuspr(req: Request, res: Response) {
   try {
     await Integration.deleteOne({ userId: req.userId, provider: 'knuspr' });
     res.json({ message: 'Knuspr disconnected' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
@@ -64,7 +64,7 @@ export async function handleSyncKnuspr(req: Request, res: Response) {
     const result = await importOrders(req.userId, key, integration);
     await Integration.findByIdAndUpdate(integration._id, { lastSyncAt: new Date() });
     res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }

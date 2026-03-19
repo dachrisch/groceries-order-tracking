@@ -25,7 +25,7 @@ export function Register() {
         const data = await res.json();
         setError(data.error || 'Registration failed');
       }
-    } catch (e) {
+    } catch {
       setError('An error occurred. Please try again.');
     }
   };
