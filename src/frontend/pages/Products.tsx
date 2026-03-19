@@ -3,14 +3,22 @@ import { Line } from 'solid-chartjs';
 import { useParams, A, useSearchParams } from '@solidjs/router';
 import { ArrowLeft, X, List } from 'lucide-solid';
 
+interface TrendItem {
+  _id: { id: number; name: string };
+  prices: Array<{ date: string; unitPrice: number; orderId: number }>;
+  count: number;
+  image?: string;
+  categories?: Array<{ id: number; name: string; slug: string; level: number }>;
+}
+
 export function Products() {
   const params = useParams();
   const [searchParams] = useSearchParams();
-  const [trends, setTrends] = createSignal<unknown[]>([]);
+  const [trends, setTrends] = createSignal<TrendItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
-  const [selectedItem, setSelectedItem] = createSignal<unknown>(null);
-  const [orderDetail, setOrderDetail] = createSignal<unknown>(null);
+  const [selectedItem, setSelectedItem] = createSignal<TrendItem | null>(null);
+  const [orderDetail, setOrderDetail] = createSignal<any>(null);
 
   const orderId = () => params.orderId;
   const productId = () => params.productId || searchParams.product;
@@ -228,8 +236,15 @@ export function Products() {
                                 </div>
                               </div>
                               <div>
-                                <div class="font-bold max-w-[150px] md:max-w-[200px] truncate">{item._id.name}</div>
-                                <div class="text-xs opacity-50">ID: {item._id.id}</div>
+                                <div class="font-bold max-w-[150px] md:max-w-[200px] truncate" title={item._id.name}>{item._id.name}</div>
+                                <div class="flex items-center gap-2">
+                                  <span class="text-xs opacity-50">ID: {item._id.id}</span>
+                                  <Show when={item.categories && item.categories.length > 0}>
+                                    <span class="badge badge-ghost badge-xs opacity-40 text-[9px] uppercase font-semibold">
+                                      {item.categories![item.categories!.length - 1].name}
+                                    </span>
+                                  </Show>
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -258,44 +273,46 @@ export function Products() {
                 <p>Select a product to view price history</p>
               </div>
             }>
-              <div class="card bg-base-100 shadow-xl">
-                <div class="card-body">
-                  <div class="flex flex-col md:flex-row gap-6 items-start">
-                    <Show when={selectedItem().image}>
-                      <div class="w-24 md:w-32 aspect-square flex-shrink-0 bg-base-200 rounded-xl overflow-hidden shadow-inner">
-                        <img src={selectedItem().image} alt={selectedItem()._id.name} class="w-full h-full object-contain" />
+              {(item) => (
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <div class="flex flex-col md:flex-row gap-6 items-start">
+                      <Show when={item().image}>
+                        <div class="w-24 md:w-32 aspect-square flex-shrink-0 bg-base-200 rounded-xl overflow-hidden shadow-inner">
+                          <img src={item().image} alt={item()._id.name} class="w-full h-full object-contain" />
+                        </div>
+                      </Show>
+                      <div class="flex-grow">
+                        <h2 class="card-title text-primary text-2xl mb-1">{item()._id.name}</h2>
+                        <p class="text-sm opacity-70">Price history over time • ID: {item()._id.id}</p>
                       </div>
-                    </Show>
-                    <div class="flex-grow">
-                      <h2 class="card-title text-primary text-2xl mb-1">{selectedItem()._id.name}</h2>
-                      <p class="text-sm opacity-70">Price history over time • ID: {selectedItem()._id.id}</p>
+                    </div>
+                    
+                    <div class="h-64 mt-4">
+                      <Line data={getChartData(item())} options={chartOptions} />
+                    </div>
+
+                    <div class="divider">Purchase History</div>
+                    
+                    <div class="space-y-2 max-h-48 overflow-y-auto pr-2">
+                      <For each={[...item().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
+                        {(p) => (
+                          <A 
+                            href={`/order/${p.orderId}?product=${item()._id.id}`}
+                            class={`flex justify-between items-center w-full p-2 rounded transition-colors text-left ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 ring-1 ring-primary/30' : 'bg-base-200 hover:bg-base-300'}`}
+                          >
+                            <div class="flex flex-col">
+                              <span class="text-xs opacity-50 font-mono">Order #{p.orderId}</span>
+                              <span class="text-sm font-medium">{new Date(p.date).toLocaleDateString()}</span>
+                            </div>
+                            <span class="font-bold text-primary">{p.unitPrice.toFixed(2)}€</span>
+                          </A>
+                        )}
+                      </For>
                     </div>
                   </div>
-                  
-                  <div class="h-64 mt-4">
-                    <Line data={getChartData(selectedItem())} options={chartOptions} />
-                  </div>
-
-                  <div class="divider">Purchase History</div>
-                  
-                  <div class="space-y-2 max-h-48 overflow-y-auto pr-2">
-                    <For each={[...selectedItem().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
-                      {(p) => (
-                        <A 
-                          href={`/order/${p.orderId}?product=${selectedItem()._id.id}`}
-                          class={`flex justify-between items-center w-full p-2 rounded transition-colors text-left ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 ring-1 ring-primary/30' : 'bg-base-200 hover:bg-base-300'}`}
-                        >
-                          <div class="flex flex-col">
-                            <span class="text-xs opacity-50 font-mono">Order #{p.orderId}</span>
-                            <span class="text-sm font-medium">{new Date(p.date).toLocaleDateString()}</span>
-                          </div>
-                          <span class="font-bold text-primary">{p.unitPrice.toFixed(2)}€</span>
-                        </A>
-                      )}
-                    </For>
-                  </div>
                 </div>
-              </div>
+              )}
             </Show>
           </div>
         </div>

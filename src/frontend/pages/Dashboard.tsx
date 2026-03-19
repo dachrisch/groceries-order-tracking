@@ -6,9 +6,25 @@ import 'chartjs-adapter-date-fns';
 
 Chart.register(Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController);
 
+interface AggregateData {
+  _id: { year: number; month: number };
+  totalAmount: number;
+  itemCount: number;
+  orderCount: number;
+}
+
+interface StatsData {
+  totalSpend: number;
+  totalItems: number;
+  totalOrders: number;
+  distinctItems: number;
+  firstOrder?: string;
+  lastOrder?: string;
+}
+
 export function Dashboard() {
-  const [data, setData] = createSignal<unknown[]>([]);
-  const [stats, setStats] = createSignal<unknown>(null);
+  const [data, setData] = createSignal<AggregateData[]>([]);
+  const [stats, setStats] = createSignal<StatsData | null>(null);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
@@ -105,41 +121,47 @@ export function Dashboard() {
           </div>
         }>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="stats shadow bg-primary text-primary-content">
-              <div class="stat">
-                <div class="stat-title text-primary-content opacity-70">Total Spend</div>
-                <div class="stat-value text-2xl md:text-3xl">{stats()?.totalSpend.toFixed(2)}€</div>
-                <div class="stat-desc text-primary-content opacity-70">{data().length} months tracked</div>
-              </div>
-            </div>
-            
-            <div class="stats shadow bg-secondary text-secondary-content">
-              <div class="stat">
-                <div class="stat-title text-secondary-content opacity-70">Total Items</div>
-                <div class="stat-value text-2xl md:text-3xl">{stats()?.totalItems}</div>
-                <div class="stat-desc text-secondary-content opacity-70">{stats()?.distinctItems} distinct products</div>
-              </div>
-            </div>
+            <Show when={stats()}>
+              {(s) => (
+                <>
+                  <div class="stats shadow bg-primary text-primary-content">
+                    <div class="stat">
+                      <div class="stat-title text-primary-content opacity-70">Total Spend</div>
+                      <div class="stat-value text-2xl md:text-3xl">{s().totalSpend.toFixed(2)}€</div>
+                      <div class="stat-desc text-primary-content opacity-70">{data().length} months tracked</div>
+                    </div>
+                  </div>
+                  
+                  <div class="stats shadow bg-secondary text-secondary-content">
+                    <div class="stat">
+                      <div class="stat-title text-secondary-content opacity-70">Total Items</div>
+                      <div class="stat-value text-2xl md:text-3xl">{s().totalItems}</div>
+                      <div class="stat-desc text-secondary-content opacity-70">{s().distinctItems} distinct products</div>
+                    </div>
+                  </div>
 
-            <div class="stats shadow">
-              <div class="stat">
-                <div class="stat-title">Avg Order Value</div>
-                <div class="stat-value text-2xl md:text-3xl">
-                  {stats()?.totalOrders ? (stats().totalSpend / stats().totalOrders).toFixed(2) : '0.00'}€
-                </div>
-                <div class="stat-desc">{stats()?.totalOrders} total orders</div>
-              </div>
-            </div>
+                  <div class="stats shadow">
+                    <div class="stat">
+                      <div class="stat-title">Avg Order Value</div>
+                      <div class="stat-value text-2xl md:text-3xl">
+                        {s().totalOrders ? (s().totalSpend / s().totalOrders).toFixed(2) : '0.00'}€
+                      </div>
+                      <div class="stat-desc">{s().totalOrders} total orders</div>
+                    </div>
+                  </div>
 
-            <div class="stats shadow">
-              <div class="stat">
-                <div class="stat-title">Orders per Month</div>
-                <div class="stat-value text-2xl md:text-3xl">
-                  {data().length ? (stats()?.totalOrders / data().length).toFixed(1) : '0.0'}
-                </div>
-                <div class="stat-desc">Monthly average</div>
-              </div>
-            </div>
+                  <div class="stats shadow">
+                    <div class="stat">
+                      <div class="stat-title">Orders per Month</div>
+                      <div class="stat-value text-2xl md:text-3xl">
+                        {data().length ? (s().totalOrders / data().length).toFixed(1) : '0.0'}
+                      </div>
+                      <div class="stat-desc">Monthly average</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </Show>
           </div>
 
           <div class="card bg-base-100 shadow-xl">

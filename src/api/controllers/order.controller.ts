@@ -1,29 +1,12 @@
 import { Request, Response } from 'express';
 import Order from '../../models/Order';
-import Integration from '../../models/Integration';
-import { decrypt } from '../../lib/crypto';
-import { loginToKnuspr } from '../../lib/knuspr-auth';
+import { getKnusprSession } from '../../lib/knuspr-auth';
 import mongoose from 'mongoose';
-
-async function getKnusprSession(req: Request) {
-  if (!req.derivedKey) {
-    throw new Error('Session key missing — please re-login');
-  }
-
-  const integration = await Integration.findOne({ userId: req.userId, provider: 'knuspr' });
-  if (!integration?.encryptedCredentials) {
-    throw new Error('Knuspr not connected. Go to Settings to connect.');
-  }
-
-  const creds = JSON.parse(decrypt(integration.encryptedCredentials, req.derivedKey));
-  const { session } = await loginToKnuspr(creds.email, creds.password);
-  return session;
-}
 
 export async function handleGetProductPrice(req: Request, res: Response) {
   const { id } = req.params;
   try {
-    const session = await getKnusprSession(req);
+    const session = await getKnusprSession(req.userId, req.derivedKey);
     const response = await fetch(`https://www.knuspr.de/api/v1/products/${id}/prices`, {
       headers: {
         'Cookie': `PHPSESSION_de-production=${session}`,
@@ -156,7 +139,8 @@ export async function handleGetProductTrends(req: Request, res: Response) {
             }
           },
           count: { $sum: 1 },
-          image: { $first: { $arrayElemAt: ["$items.images", 0] } }
+          image: { $first: { $arrayElemAt: ["$items.images", 0] } },
+          categories: { $first: "$items.categories" }
         }
       },
       { $sort: { "_id.name": 1 } }
