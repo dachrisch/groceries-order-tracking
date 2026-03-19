@@ -44,9 +44,12 @@ export async function handleGetInventory(req: Request, res: Response) {
           _id: '$items.id',
           name: { $first: '$items.name' },
           image: { $first: { $arrayElemAt: ['$items.images', 0] } },
-          purchases: { $push: { date: '$orderTimeDate', amount: '$items.amount' } }
+          categories: { $first: '$items.categories' },
+          purchases: { $push: { date: '$orderTimeDate', amount: '$items.amount', price: '$items.priceComposition.unit.amount' } }
         }
       },
+
+
 
       // Stage 4: Sort tuples by date desc, keep most recent 5
       {
@@ -82,7 +85,8 @@ export async function handleGetInventory(req: Request, res: Response) {
                 ]
               }
             ]
-          }
+          },
+          avgPrice: { $avg: '$purchases.price' }
         }
       },
 
@@ -143,11 +147,15 @@ export async function handleGetInventory(req: Request, res: Response) {
           _id: 1,
           name: 1,
           image: 1,
+          categories: 1,
           avgInterval: 1,
           daysSinceLast: 1,
           avgQuantity: 1,
+          avgPrice: 1,
         }
       }
+
+
     ]);
 
     res.json(inventory);

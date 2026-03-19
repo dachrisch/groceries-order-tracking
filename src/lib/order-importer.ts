@@ -31,8 +31,25 @@ export async function importOrders(
 
   // Get fresh Knuspr session
   let { session } = await loginToKnuspr(knusprEmail, knusprPassword);
+  const categoriesCache = new Map<number, any[]>();
+
+  async function getCategories(productId: number, session: string) {
+    if (categoriesCache.has(productId)) return categoriesCache.get(productId);
+    try {
+      const res = await fetchWithSession(`${KNUSPR_API_BASE}/api/v1/products/${productId}/categories`, session);
+      if (res.ok) {
+        const data = await res.json();
+        categoriesCache.set(productId, data.categories || []);
+        return data.categories || [];
+      }
+    } catch (e) {
+      console.error(`Failed to fetch categories for product ${productId}:`, e);
+    }
+    return [];
+  }
 
   console.log(`Starting Knuspr import for userId ${userId}...`);
+
 
   let offset = 0;
   const limit = 20;
@@ -80,6 +97,15 @@ export async function importOrders(
       const { _id: _ignored, ...detail } = await detailRes.json();
       detail.userId = userId;
       detail.orderTimeDate = new Date(detail.orderTime);
+
+      // Fetch categories for each item in the order
+      if (Array.isArray(detail.items)) {
+        for (const item of detail.items) {
+          if (item.id) {
+            item.categories = await getCategories(item.id, session);
+          }
+        }
+      }
 
       // Use upsert to prevent duplicate-key errors on concurrent syncs
       const upsertResult = await Order.findOneAndUpdate(

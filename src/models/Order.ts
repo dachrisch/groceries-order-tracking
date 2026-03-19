@@ -18,7 +18,13 @@ const orderItemSchema = new mongoose.Schema({
     }
   },
   orderFieldId: { type: Number },
-  compensated: { type: Boolean }
+  compensated: { type: Boolean },
+  categories: [{
+    id: { type: Number },
+    name: { type: String },
+    slug: { type: String },
+    level: { type: Number }
+  }]
 });
 
 const orderSchema = new mongoose.Schema({
