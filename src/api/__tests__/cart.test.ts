@@ -100,7 +100,7 @@ describe('POST /api/cart/add', () => {
     expect(res.body.cart.items).toHaveLength(1);
     expect(res.body.cart.items[0].productId).toBe(12345);
     expect(res.body.cart.items[0].productName).toBe('Test Milk');
-    expect(res.body.cart.items[0].imgUrl).toBe('https://www.knuspr.de/images/grocery/products/12345/img.jpg');
+    expect(res.body.cart.items[0].imgUrl).toBe('https://cdn.knuspr.de/images/grocery/products/12345/img.jpg');
     expect(res.body.cart.items[0].multipack).toBeUndefined();
 
     const fetchMock = vi.mocked(fetch);
@@ -225,7 +225,7 @@ describe('GET /api/cart', () => {
     expect(res.body.cart.items).toHaveLength(1);
     expect(res.body.cart.items[0].productId).toBe(4864);
     expect(res.body.cart.items[0].imgUrl).toBe(
-      'https://www.knuspr.de/images/grocery/products/4864/img.jpg'
+      'https://cdn.knuspr.de/images/grocery/products/4864/img.jpg'
     );
     expect(res.body.cart.items[0].multipack).toBeUndefined();
 

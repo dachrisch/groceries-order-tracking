@@ -42,7 +42,7 @@ function normalizeCart(data: any): NormalizedCart {
       productName: item.productName,
       price: item.price,
       quantity: item.quantity,
-      imgUrl: `https://www.knuspr.de${item.imgPath}`,
+      imgUrl: `https://cdn.knuspr.de${item.imgPath}`,
       textualAmount: item.textualAmount,
     };
     if (item.multipack) {

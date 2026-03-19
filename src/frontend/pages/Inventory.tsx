@@ -215,7 +215,7 @@ export function Inventory() {
                     <div class="avatar flex-shrink-0">
                       <div class="mask mask-squircle w-12 h-12 bg-base-200">
                         <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
-                          <img src={item.image} alt={item.name} loading="lazy" />
+                          <img src={item.image?.replace('https://www.knuspr.de', 'https://cdn.knuspr.de')} alt={item.name} loading="lazy" />
                         </Show>
                       </div>
                     </div>
