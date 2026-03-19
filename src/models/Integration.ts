@@ -1,44 +1,28 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
+import { IntegrationProvider } from '../types/enums'; // Assuming this enum exists
 
-/**
- * Supported integration providers.
- */
-export enum IntegrationProvider {
-  KNUSPR = 'knuspr',
-}
-
-/**
- * Interface for the Integration model.
- */
-export interface IIntegration extends Document {
-  userId: mongoose.Types.ObjectId;
-  provider: IntegrationProvider;
-  /** Encrypted JSON string of credentials (e.g., { email, password }) */
-  encryptedCredentials?: string;
-  /** Encrypted JSON string of full request headers */
-  headers?: string;
-  /** Encrypted JSON string of session cookies */
-  cookies?: string;
-  /** Timestamp of the last successful sync */
-  lastSyncAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+// Interface for the Integration document
+interface IIntegration extends Document {
+  userId: Schema.Types.ObjectId;
+  provider: IntegrationProvider; // Use enum
+  encryptedCredentials: {
+    headers: string; // Storing encrypted JSON string of headers
+    cookies: string; // Storing encrypted JSON string of cookies
+  };
+  lastSyncAt?: Date; // Or use timestamps: true
 }
 
 const integrationSchema = new Schema<IIntegration>({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  provider: {
-    type: String,
-    enum: Object.values(IntegrationProvider),
-    required: true
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  provider: { type: String, required: true, enum: IntegrationProvider, index: true },
+  encryptedCredentials: {
+    headers: { type: String, required: true },
+    cookies: { type: String, required: true },
   },
-  encryptedCredentials: { type: String },
-  headers: { type: String },
-  cookies: { type: String },
-  lastSyncAt: { type: Date }
-}, { timestamps: true });
+  // lastSyncAt: { type: Date, default: Date.now } // If timestamps: true is used, this might be auto-managed
+}, { timestamps: true }); // Using timestamps for auto-managed createdAt/updatedAt
 
-// Ensure one document per (userId, provider) pair
+// Ensure unique provider per user
 integrationSchema.index({ userId: 1, provider: 1 }, { unique: true });
 
-export default mongoose.models.Integration || mongoose.model<IIntegration>('Integration', integrationSchema);
+export default model<IIntegration>('Integration', integrationSchema);
