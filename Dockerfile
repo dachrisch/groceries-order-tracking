@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/package*.json ./
+COPY --from=build /app/healthcheck.js ./
 
 # Install production dependencies only
 RUN npm install --omit=dev --legacy-peer-deps
