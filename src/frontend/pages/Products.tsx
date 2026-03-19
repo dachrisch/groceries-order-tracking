@@ -30,11 +30,12 @@ export function Products() {
   });
 
   // Handle order detail fetching when orderId changes
-  createEffect(async () => {
+  createEffect(() => {
     const id = orderId();
-    if (id) {
+    
+    const fetchOrderDetail = async (orderId: string) => {
       try {
-        const res = await fetch(`/api/orders/${id}`);
+        const res = await fetch(`/api/orders/${orderId}`);
         if (res.ok) {
           const json = await res.json();
           setOrderDetail(json);
@@ -42,6 +43,10 @@ export function Products() {
       } catch (e) {
         console.error('Failed to fetch order detail', e);
       }
+    };
+
+    if (id) {
+      fetchOrderDetail(id);
     } else {
       setOrderDetail(null);
     }

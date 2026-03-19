@@ -23,6 +23,7 @@ export default ts.config(
     },
     rules: {
       ...solid.configs.recommended.rules,
+      'solid/reactivity': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-namespace': 'off',
