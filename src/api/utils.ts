@@ -12,8 +12,8 @@ declare global {
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'groceries-secret-key-123-change-me';
 
-export function formatZodError(error: { errors: Array<{ path: string[], message: string }> }) {
-  return error.errors.map((e: { path: string[], message: string }) => `${e.path.join('.')}: ${e.message}`).join(', ');
+export function formatZodError(error: { issues: Array<{ path: PropertyKey[], message: string }> }) {
+  return error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
 }
 
 /**
