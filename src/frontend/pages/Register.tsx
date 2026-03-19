@@ -32,7 +32,7 @@ export function Register() {
 
   return (
     <div class="flex items-center justify-center min-h-screen bg-base-300">
-      <div class="card w-96 bg-base-100 shadow-xl">
+      <div class="card w-full max-w-sm bg-base-100 shadow-xl mx-4">
         <div class="card-body">
           <h2 class="card-title text-2xl font-bold mb-4">Register</h2>
           <form onSubmit={handleRegister} class="space-y-4">

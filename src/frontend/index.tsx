@@ -32,7 +32,6 @@ render(
       <Route path="/products" component={Products} />
       <Route path="/products/:productId" component={Products} />
       <Route path="/inventory" component={Inventory} />
-      <Route path="/inventory" component={Inventory} />
       <Route path="/settings" component={Settings} />
     </Router>
   ),
