@@ -38,65 +38,79 @@ export async function handleGetInventory(req: Request, res: Response) {
         $unwind: '$items' 
       },
       
-      // Stage 3: Group by item ID to collect purchase history
-      { 
+      // Stage 3: Group by item ID — push {date, amount} tuples to keep them aligned
+      {
         $group: {
           _id: '$items.id',
           name: { $first: '$items.name' },
           image: { $first: { $arrayElemAt: ['$items.images', 0] } },
-          purchases: { $push: '$orderTimeDate' }
+          purchases: { $push: { date: '$orderTimeDate', amount: '$items.amount' } }
         }
       },
-      
-      // Stage 4: Sort and slice purchase history
-      // Keep only the most recent 5 purchases for trend analysis
-      { 
+
+      // Stage 4: Sort tuples by date desc, keep most recent 5
+      {
         $project: {
-          _id: 1, 
-          name: 1, 
+          _id: 1,
+          name: 1,
           image: 1,
-          purchases: { 
+          purchases: {
             $slice: [
-              { $sortArray: { input: '$purchases', sortBy: -1 } }, 
+              { $sortArray: { input: '$purchases', sortBy: { date: -1 } } },
               5
-            ] 
+            ]
           }
         }
       },
-      
+
       // Stage 5: Filter items purchased at least twice
-      // We need at least one interval (2 points) to calculate trends
-      { 
-        $match: { 'purchases.1': { $exists: true } } 
-      },
-      
-      // Stage 6: Calculate intervals between consecutive purchases in days
-      { 
+      { $match: { 'purchases.1': { $exists: true } } },
+
+      // Stage 6: Extract dates and amounts from sorted tuples; compute avgQuantity
+      {
         $addFields: {
-          lastPurchase: { $arrayElemAt: ['$purchases', 0] },
+          lastPurchase: { $arrayElemAt: ['$purchases.date', 0] },
+          purchaseDates: '$purchases.date',
+          amounts: '$purchases.amount',
+          avgQuantity: {
+            $max: [
+              1,
+              {
+                $round: [
+                  { $avg: '$purchases.amount' },
+                  0
+                ]
+              }
+            ]
+          }
+        }
+      },
+
+      // Stage 7: Calculate intervals from purchaseDates (same logic as before)
+      {
+        $addFields: {
           intervals: {
             $map: {
-              input: { $range: [0, { $subtract: [{ $size: '$purchases' }, 1] }] },
+              input: { $range: [0, { $subtract: [{ $size: '$purchaseDates' }, 1] }] },
               as: 'idx',
               in: {
                 $divide: [
-                  { 
+                  {
                     $subtract: [
-                      { $arrayElemAt: ['$purchases', '$$idx'] }, 
-                      { $arrayElemAt: ['$purchases', { $add: ['$$idx', 1] }] }
+                      { $arrayElemAt: ['$purchaseDates', '$$idx'] },
+                      { $arrayElemAt: ['$purchaseDates', { $add: ['$$idx', 1] }] }
                     ]
                   },
-                  1000 * 60 * 60 * 24 // Convert ms to days
+                  1000 * 60 * 60 * 24
                 ]
               }
             }
           }
         }
       },
-      
-      // Stage 7: Calculate weighted average interval and days since last purchase
-      // Prioritizes recent behavior: last interval 50%, 2nd last 30%, 3rd last 20%
-      { 
+
+      // Stage 8: Weighted average interval and daysSinceLast (unchanged logic)
+      {
         $addFields: {
           avgInterval: {
             $let: {
@@ -107,32 +121,33 @@ export async function handleGetInventory(req: Request, res: Response) {
               },
               in: {
                 $add: [
-                  { $multiply: ['$$g1', 0.5] }, // 50% weight for most recent
-                  { 
-                    $cond: [
-                      '$$g2', 
-                      { $multiply: ['$$g2', 0.3] }, 
-                      { $multiply: ['$$g1', 0.3] }
-                    ] 
-                  }, // 30% weight
-                  { 
-                    $cond: [
-                      '$$g3', 
-                      { $multiply: ['$$g3', 0.2] }, 
-                      { $multiply: ['$$g1', 0.2] }
-                    ] 
-                  }  // 20% weight
+                  { $multiply: ['$$g1', 0.5] },
+                  { $cond: ['$$g2', { $multiply: ['$$g2', 0.3] }, { $multiply: ['$$g1', 0.3] }] },
+                  { $cond: ['$$g3', { $multiply: ['$$g3', 0.2] }, { $multiply: ['$$g1', 0.2] }] }
                 ]
               }
             }
           },
-          daysSinceLast: { 
+          daysSinceLast: {
             $divide: [
-              { $subtract: [now, '$lastPurchase'] }, 
-              1000 * 60 * 60 * 24 
-            ] 
+              { $subtract: [now, '$lastPurchase'] },
+              1000 * 60 * 60 * 24
+            ]
           }
-      }}
+        }
+      },
+
+      // Final: Shape public output — strip internal pipeline fields
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          image: 1,
+          avgInterval: 1,
+          daysSinceLast: 1,
+          avgQuantity: 1,
+        }
+      }
     ]);
 
     res.json(inventory);
