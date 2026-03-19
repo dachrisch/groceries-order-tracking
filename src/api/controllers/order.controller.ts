@@ -3,7 +3,7 @@ import Order from '../../models/Order';
 import mongoose from 'mongoose';
 
 export async function handleGetAggregates(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
 
   try {
     const amountOverTime = await Order.aggregate([
@@ -23,13 +23,13 @@ export async function handleGetAggregates(req: Request, res: Response) {
     ]);
 
     res.json(amountOverTime);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
 export async function handleGetStats(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
 
   try {
     const stats = await Order.aggregate([
@@ -67,39 +67,39 @@ export async function handleGetStats(req: Request, res: Response) {
     };
 
     res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
 export async function handleGetOrders(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
 
   try {
     const orders = await Order.find({ userId })
       .sort({ orderTimeDate: -1 })
       .select('-items'); // Don't send items for the list view to keep payload small
     res.json(orders);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
 export async function handleGetOrderDetail(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
   const { id } = req.params;
 
   try {
     const order = await Order.findOne({ userId, id: Number(id) });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }
 
 export async function handleGetProductTrends(req: Request, res: Response) {
-  const userId = (req as any).userId;
+  const userId = req.userId;
 
   try {
     const trends = await Order.aggregate([
@@ -123,7 +123,7 @@ export async function handleGetProductTrends(req: Request, res: Response) {
     ]);
 
     res.json(trends);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
   }
 }

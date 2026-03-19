@@ -3,7 +3,7 @@ import { useNavigate, A } from '@solidjs/router';
 import { Calendar, ShoppingBag, ChevronRight } from 'lucide-solid';
 
 export function Orders() {
-  const [orders, setOrders] = createSignal<any[]>([]);
+  const [orders, setOrders] = createSignal<unknown[]>([]);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
@@ -24,7 +24,7 @@ export function Orders() {
     <div class="space-y-8">
       <h1 class="text-3xl font-bold">Your Orders</h1>
 
-      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg"></span>}>
+      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <For each={orders()}>
             {(order) => (

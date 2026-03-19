@@ -151,7 +151,7 @@ export async function handleGetInventory(req: Request, res: Response) {
     ]);
 
     res.json(inventory);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in handleGetInventory:', error);
     res.status(500).json({ error: 'Failed to aggregate inventory data' });
   }

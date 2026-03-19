@@ -16,7 +16,7 @@ async function fetchWithSession(url: string, session: string) {
 export async function importOrders(
   userId: string,
   derivedKey: Buffer,
-  integration: any
+  integration: { encryptedCredentials: string }
 ): Promise<{ importedCount: number }> {
   // Decrypt stored Knuspr credentials
   let knusprEmail: string;

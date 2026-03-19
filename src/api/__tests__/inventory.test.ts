@@ -50,7 +50,7 @@ describe('GET /api/inventory', () => {
     const res = await request(app).get('/api/inventory').set('Cookie', cookies);
 
     expect(res.status).toBe(200);
-    const item = res.body.find((i: any) => i._id === 42);
+    const item = res.body.find((i: { _id: number }) => i._id === 42);
     expect(item).toBeDefined();
     expect(item.avgQuantity).toBeGreaterThanOrEqual(1);
     expect(typeof item.avgQuantity).toBe('number');
@@ -71,7 +71,7 @@ describe('GET /api/inventory', () => {
     const res = await request(app).get('/api/inventory').set('Cookie', cookies);
 
     expect(res.status).toBe(200);
-    const item = res.body.find((i: any) => i._id === 55);
+    const item = res.body.find((i: { _id: number }) => i._id === 55);
     expect(item.avgQuantity).toBe(1);
   });
 
@@ -88,7 +88,7 @@ describe('GET /api/inventory', () => {
 
     const res = await request(app).get('/api/inventory').set('Cookie', cookies);
 
-    const item = res.body.find((i: any) => i._id === 77);
+    const item = res.body.find((i: { _id: number }) => i._id === 77);
     expect(item).toBeDefined();
     // ~31 days between Jan 1 and Feb 1
     expect(item.avgInterval).toBeCloseTo(31, 0);

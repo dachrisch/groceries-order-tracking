@@ -35,7 +35,7 @@ interface NormalizedCart {
   }[];
 }
 
-function normalizeCart(data: any): NormalizedCart {
+function normalizeCart(data: { items: Record<string, KnusprCartItem>; cartId: number; totalPrice: number; totalSavings?: number }): NormalizedCart {
   const items = Object.values(data.items as Record<string, KnusprCartItem>).map(item => {
     const normalized: NormalizedCart['items'][0] = {
       productId: item.productId,
@@ -175,8 +175,9 @@ export async function handleAddToCart(req: Request, res: Response) {
     }
 
     res.json({ success: true, cart });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Add to cart failed:', err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
   }
 }

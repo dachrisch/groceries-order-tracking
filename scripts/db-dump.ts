@@ -33,7 +33,7 @@ async function dump() {
   const db = mongoose.connection.db!;
   const collections = await db.listCollections().toArray();
 
-  const seed: Record<string, any[]> = {};
+  const seed: Record<string, unknown[]> = {};
 
   for (const col of collections) {
     const docs = await db.collection(col.name).find({}).toArray();

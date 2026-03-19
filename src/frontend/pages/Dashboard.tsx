@@ -7,8 +7,8 @@ import 'chartjs-adapter-date-fns';
 Chart.register(Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController);
 
 export function Dashboard() {
-  const [data, setData] = createSignal<any[]>([]);
-  const [stats, setStats] = createSignal<any>(null);
+  const [data, setData] = createSignal<unknown[]>([]);
+  const [stats, setStats] = createSignal<unknown>(null);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
@@ -96,7 +96,7 @@ export function Dashboard() {
       
       <Show when={!loading()} fallback={
         <div class="flex justify-center items-center py-20">
-          <span class="loading loading-spinner loading-lg text-primary"></span>
+          <span class="loading loading-spinner loading-lg text-primary" />
         </div>
       }>
         <Show when={data().length > 0} fallback={

@@ -8,11 +8,11 @@ export function Products() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [trends, setTrends] = createSignal<any[]>([]);
+  const [trends, setTrends] = createSignal<unknown[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
-  const [selectedItem, setSelectedItem] = createSignal<any>(null);
-  const [orderDetail, setOrderDetail] = createSignal<any>(null);
+  const [selectedItem, setSelectedItem] = createSignal<unknown>(null);
+  const [orderDetail, setOrderDetail] = createSignal<unknown>(null);
 
   const orderId = () => params.orderId;
   const productId = () => params.productId || searchParams.product;
@@ -63,7 +63,7 @@ export function Products() {
     let items = trends();
     
     if (orderId() && orderDetail()) {
-      const orderItemIds = new Set(orderDetail().items.map((i: any) => i.id));
+      const orderItemIds = new Set(orderDetail().items.map((i: { id: number }) => i.id));
       items = items.filter(item => orderItemIds.has(item._id.id));
     }
 
@@ -77,7 +77,7 @@ export function Products() {
     return items;
   };
 
-  const getChartData = (item: any) => {
+  const getChartData = (item: { prices: Array<{ date: string, unitPrice: number }> }) => {
     const sortedPrices = [...item.prices].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     return {
@@ -102,7 +102,7 @@ export function Products() {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (context: any) => `${context.parsed.y.toFixed(2)}€`
+          label: (context: { parsed: { y: number } }) => `${context.parsed.y.toFixed(2)}€`
         }
       }
     },
@@ -110,7 +110,7 @@ export function Products() {
       y: {
         beginAtZero: false,
         ticks: {
-          callback: (value: any) => `${value.toFixed(2)}€`
+          callback: (value: number) => `${value.toFixed(2)}€`
         }
       }
     }
@@ -181,7 +181,7 @@ export function Products() {
         />
       </div>
 
-      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg"></span>}>
+      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <div class="card bg-base-100 shadow-xl overflow-hidden">
             <div class="max-h-[600px] overflow-y-auto">
@@ -206,7 +206,7 @@ export function Products() {
                       let orderAmount: string | number = item.count;
                       
                       if (orderId() && orderDetail()) {
-                        const orderItem = orderDetail().items.find((i: any) => i.id === item._id.id);
+                        const orderItem = orderDetail().items.find((i: { id: number }) => i.id === item._id.id);
                         if (orderItem) {
                           orderPrice = orderItem.priceComposition.unit.amount;
                           orderAmount = `${orderItem.amount}${orderItem.textualAmount ? ` (${orderItem.textualAmount})` : ''}`;
