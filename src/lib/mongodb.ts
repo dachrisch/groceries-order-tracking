@@ -53,7 +53,11 @@ export async function connectDB() {
   let inMemory = false;
 
   // Use in-memory MongoDB for local development if MONGODB_URI is not set
-  if (!uri && NODE_ENV !== 'production') {
+  if (!uri) {
+    if (NODE_ENV === 'production') {
+      console.warn('WARNING: MONGODB_URI environment variable is not set. Database operations will fail, but server will start for health checks.');
+      return;
+    }
     console.log('Starting in-memory MongoDB server...');
     const { MongoMemoryServer } = await import('mongodb-memory-server');
     const mongoMemoryServer = await MongoMemoryServer.create();
