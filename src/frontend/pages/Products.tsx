@@ -11,6 +11,24 @@ interface TrendItem {
   categories?: Array<{ id: number; name: string; slug: string; level: number }>;
 }
 
+interface OrderDetail {
+  id: number;
+  itemsCount: number;
+  priceComposition: {
+    total: { amount: number };
+  };
+  orderTimeDate: string;
+  address: string;
+  items: Array<{
+    id: number;
+    amount: number;
+    textualAmount?: string;
+    priceComposition: {
+      unit: { amount: number };
+    };
+  }>;
+}
+
 export function Products() {
   const params = useParams();
   const [searchParams] = useSearchParams();
@@ -18,7 +36,7 @@ export function Products() {
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
   const [selectedItem, setSelectedItem] = createSignal<TrendItem | null>(null);
-  const [orderDetail, setOrderDetail] = createSignal<any>(null);
+  const [orderDetail, setOrderDetail] = createSignal<OrderDetail | null>(null);
 
   const orderId = () => params.orderId;
   const productId = () => params.productId || searchParams.product;
@@ -73,8 +91,9 @@ export function Products() {
   const filteredTrends = () => {
     let items = trends();
     
-    if (orderId() && orderDetail()) {
-      const orderItemIds = new Set(orderDetail().items.map((i: { id: number }) => i.id));
+    const detail = orderDetail();
+    if (orderId() && detail) {
+      const orderItemIds = new Set(detail.items.map((i: { id: number }) => i.id));
       items = items.filter(item => orderItemIds.has(item._id.id));
     }
 
@@ -150,37 +169,39 @@ export function Products() {
         </Show>
       </div>
 
-      <Show when={orderId() && orderDetail()}>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="stats shadow bg-base-100 border border-base-300">
-            <div class="stat">
-              <div class="stat-title">Total Amount</div>
-              <div class="stat-value text-primary">{orderDetail().priceComposition.total.amount.toFixed(2)}€</div>
-              <div class="stat-desc">{orderDetail().itemsCount} items total</div>
-            </div>
-          </div>
-          
-          <div class="stats shadow bg-base-100 border border-base-300">
-            <div class="stat">
-              <div class="stat-title">Order Date</div>
-              <div class="stat-value text-sm whitespace-normal">
-                {new Date(orderDetail().orderTimeDate).toLocaleDateString(undefined, { 
-                  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-                })}
+      <Show when={orderDetail()}>
+        {(detail) => (
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="stats shadow bg-base-100 border border-base-300">
+              <div class="stat">
+                <div class="stat-title">Total Amount</div>
+                <div class="stat-value text-primary">{detail().priceComposition.total.amount.toFixed(2)}€</div>
+                <div class="stat-desc">{detail().itemsCount} items total</div>
               </div>
-              <div class="stat-desc">{new Date(orderDetail().orderTimeDate).toLocaleTimeString()}</div>
             </div>
-          </div>
+            
+            <div class="stats shadow bg-base-100 border border-base-300">
+              <div class="stat">
+                <div class="stat-title">Order Date</div>
+                <div class="stat-value text-sm whitespace-normal">
+                  {new Date(detail().orderTimeDate).toLocaleDateString(undefined, { 
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                  })}
+                </div>
+                <div class="stat-desc">{new Date(detail().orderTimeDate).toLocaleTimeString()}</div>
+              </div>
+            </div>
 
-          <div class="stats shadow bg-base-100 border border-base-300">
-            <div class="stat">
-              <div class="stat-title">Delivery Address</div>
-              <div class="stat-desc whitespace-normal text-base-content font-medium mt-1">
-                {orderDetail().address}
+            <div class="stats shadow bg-base-100 border border-base-300">
+              <div class="stat">
+                <div class="stat-title">Delivery Address</div>
+                <div class="stat-desc whitespace-normal text-base-content font-medium mt-1">
+                  {detail().address}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </Show>
 
       <div class="form-control">
@@ -208,21 +229,23 @@ export function Products() {
                   </tr>
                 </thead>
                 <tbody>
-                  <For each={filteredTrends()}>
-                    {(item) => {
-                      const latestPrice = [...item.prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-                      
-                      // Find specific price in this order if orderId is set
-                      let orderPrice = latestPrice.unitPrice;
-                      let orderAmount: string | number = item.count;
-                      
-                      if (orderId() && orderDetail()) {
-                        const orderItem = orderDetail().items.find((i: { id: number }) => i.id === item._id.id);
-                        if (orderItem) {
-                          orderPrice = orderItem.priceComposition.unit.amount;
-                          orderAmount = `${orderItem.amount}${orderItem.textualAmount ? ` (${orderItem.textualAmount})` : ''}`;
+                    <For each={filteredTrends()}>
+                      {(item) => {
+                        const latestPrice = [...item.prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                        
+                        // Find specific price in this order if orderId is set
+                        let orderPrice = latestPrice.unitPrice;
+                        let orderAmount: string | number = item.count;
+                        
+                        const detail = orderDetail();
+                        if (orderId() && detail) {
+                          const orderItem = detail.items.find((i: { id: number }) => i.id === item._id.id);
+                          if (orderItem) {
+                            orderPrice = orderItem.priceComposition.unit.amount;
+                            orderAmount = `${orderItem.amount}${orderItem.textualAmount ? ` (${orderItem.textualAmount})` : ''}`;
+                          }
                         }
-                      }
+
 
                       return (
                         <tr class={selectedItem()?._id.id === item._id.id ? 'bg-base-200' : ''}>

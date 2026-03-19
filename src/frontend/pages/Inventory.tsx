@@ -242,15 +242,11 @@ export function Inventory() {
                           <div class="text-sm font-bold opacity-20">€--</div>
                         }>
                            <div class="text-sm font-bold">€{item.currentPrice?.toFixed(2)}</div>
-                           {(() => {
-                             const diff = (item.currentPrice ?? 0) - item.avgPrice;
-                             if (Math.abs(diff) < 0.01) return null;
-                             return (
-                               <div class={`text-[10px] font-bold ${diff > 0 ? 'text-error' : 'text-success'}`}>
-                                 {diff > 0 ? '↑' : '↓'} {Math.abs(diff).toFixed(2)}€
-                               </div>
-                             );
-                           })()}
+                           <Show when={Math.abs((item.currentPrice ?? 0) - item.avgPrice) >= 0.01}>
+                             <div class={`text-[10px] font-bold ${(item.currentPrice ?? 0) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
+                               {(item.currentPrice ?? 0) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs((item.currentPrice ?? 0) - item.avgPrice).toFixed(2)}€
+                             </div>
+                           </Show>
                         </Show>
                       </div>
                     </div>

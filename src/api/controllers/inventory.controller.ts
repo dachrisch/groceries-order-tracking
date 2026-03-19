@@ -170,7 +170,7 @@ export async function handleGetInventory(req: Request, res: Response) {
     }
 
     if (session) {
-      const fetchPrice = async (item: any) => {
+      const fetchPrice = async (item: { _id: number; currentPrice?: number }) => {
         try {
           const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id}/prices`, {
             headers: {
