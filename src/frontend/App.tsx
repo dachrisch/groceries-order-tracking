@@ -147,8 +147,8 @@ export function App(props: { children?: JSX.Element }) {
                 <div class="mt-auto border-t border-base-300 bg-base-100/50 p-4 space-y-3">
                   <div class={`flex items-center gap-3 p-2 rounded-xl bg-base-200/50 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
                     <div class="avatar placeholder flex-shrink-0">
-                      <div class="bg-primary text-primary-content rounded-full w-10 shadow-sm ring-2 ring-primary/10">
-                        <span class="text-xl">🥨</span>
+                      <div class="bg-primary text-primary-content rounded-full w-10 shadow-sm ring-2 ring-primary/10 flex items-center justify-center">
+                        <span class="text-xl leading-none">🥨</span>
                       </div>
                     </div>
                     <Show when={!sidebarCollapsed()}>
