@@ -18,17 +18,16 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/package*.json ./
-COPY healthcheck.js ./healthcheck.js
 
 # Install production dependencies only
 RUN npm install --omit=dev --legacy-peer-deps
 
 ENV NODE_ENV=production
 ENV PORT=3000
-EXPOSE 3000
+EXPOSE ${PORT}
 
 # Health check using dedicated Node.js script
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-  CMD node healthcheck.js
+  CMD wget --spider http://localhost:${PORT}/metrics
 
 CMD ["npm", "run", "start:prod"]

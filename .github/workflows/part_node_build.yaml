@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: 🟢🏗️🧪📊 Build & run node tests
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        description: The project to build
+        type: string
+
+permissions:
+  checks: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.project }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: 🟢⚙️ Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          cache: "npm"
+          cache-dependency-path: ${{ inputs.project }}/package.json
+      - name: 🔍 Run eslint ${{ inputs.project }}
+        run: |
+          npm ci
+          npm run lint
+      - name: 👷 Building ${{ inputs.project }}
+        run: npm run build > typescript.log
+      - name: 🔍📝 Annotate Code Linting Results
+        uses: DerLev/eslint-annotations@v2
+        with:
+          typescript-log: ${{ inputs.project }}/typescript.log
+      - name: 🧪 Run vitest
+        run: |
+          npm run test -- --reporter=default --reporter=junit

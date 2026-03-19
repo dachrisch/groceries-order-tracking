@@ -1,21 +1,21 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
-name: 🏗️🧪🚀 Build, Test and Deploy everything
-
+name: 🏗️🧪🍂 Build & Test branches
+# https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions
 on:
   push:
-    tags:
+    branches:
+      - "*"
+    tags-ignore:
+      - "*"
+  pull_request:
+    branches:
       - "*"
 
 permissions:
   contents: write
   checks: write
   security-events: write
-
-concurrency:
-  group: build-test-deploy
-  cancel-in-progress: true
-
 
 jobs:
   node-project:
@@ -29,7 +29,6 @@ jobs:
     with:
       dockerfile: Dockerfile
       image_name: groceries-order-tracking
-      version: "${{ github.ref_name }}"
 
   image-test:
     needs:
@@ -39,15 +38,3 @@ jobs:
     with:
       artifact_name: ${{ needs.docker-image.outputs.artifact_name }}
       image_name: groceries-order-tracking
-
-  image-push:
-    needs:
-      - docker-image
-      - image-test
-    secrets: inherit
-    uses: ./.github/workflows/part_docker_push_artifact.yaml
-    with:
-      artifact_name: ${{ needs.docker-image.outputs.artifact_name }}
-      image_name: dachrisch/groceries-order-tracking
-      local_image_name: groceries-order-tracking
-      version: "${{ github.ref_name }}"
