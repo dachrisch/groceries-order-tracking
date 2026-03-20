@@ -126,7 +126,7 @@ describe('GET /api/inventory', () => {
     type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ data: { price: "2.50" } })
+      json: async () => ({ price: { amount: "2.50" } })
     }) as unknown as MockFetch;
 
     try {
