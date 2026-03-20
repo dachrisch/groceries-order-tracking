@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import mongoose from 'mongoose';
+import Order from '../../models/Order';
 import Integration from '../../models/Integration';
 import { decrypt } from '../../lib/crypto';
 import { loginToKnuspr } from '../../lib/knuspr-auth';
@@ -28,6 +30,7 @@ interface NormalizedCart {
     productId: number;
     productName: string;
     price: number;
+    avgPrice?: number;
     quantity: number;
     imgUrl: string;
     textualAmount: string;
@@ -35,12 +38,31 @@ interface NormalizedCart {
   }[];
 }
 
-function normalizeCart(data: { items: Record<string, KnusprCartItem>; cartId: number; totalPrice: number; totalSavings?: number }): NormalizedCart {
-  const items = Object.values(data.items as Record<string, KnusprCartItem>).map(item => {
+async function normalizeCart(userId: string, data: { items: Record<string, KnusprCartItem>; cartId: number; totalPrice: number; totalSavings?: number }): Promise<NormalizedCart> {
+  const knusprItems = Object.values(data.items as Record<string, KnusprCartItem>);
+  const productIds = knusprItems.map(i => i.productId);
+
+  // Fetch average prices for these products from history
+  const avgPrices = await Order.aggregate([
+    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+    { $unwind: '$items' },
+    { $match: { 'items.id': { $in: productIds } } },
+    {
+      $group: {
+        _id: '$items.id',
+        avgPrice: { $avg: '$items.priceComposition.unit.amount' }
+      }
+    }
+  ]);
+
+  const priceMap = new Map(avgPrices.map(p => [p._id, p.avgPrice]));
+
+  const items = knusprItems.map(item => {
     const normalized: NormalizedCart['items'][0] = {
       productId: item.productId,
       productName: item.productName,
       price: item.price,
+      avgPrice: priceMap.get(item.productId),
       quantity: item.quantity,
       imgUrl: `https://cdn.knuspr.de${item.imgPath}`,
       textualAmount: item.textualAmount,
@@ -97,8 +119,9 @@ export async function handleGetCart(req: Request, res: Response) {
     }
 
     const cartData = await cartResponse.json();
-    return res.json({ cart: normalizeCart(cartData.data) });
-  } catch {
+    return res.json({ cart: await normalizeCart(req.userId, cartData.data) });
+  } catch (err) {
+    console.error('get-cart failed:', err);
     return res.json({ cart: null });
   }
 }
@@ -168,7 +191,7 @@ export async function handleAddToCart(req: Request, res: Response) {
       );
       if (cartResponse.ok) {
         const cartData = await cartResponse.json();
-        cart = normalizeCart(cartData.data);
+        cart = await normalizeCart(req.userId, cartData.data);
       }
     } catch (err) {
       console.error('check-cart failed (non-fatal):', err);

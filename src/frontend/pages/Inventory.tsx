@@ -19,6 +19,7 @@ interface CartItem {
   productId: number;
   productName: string;
   price: number;
+  avgPrice?: number;
   quantity: number;
   imgUrl: string;
   textualAmount: string;
@@ -352,9 +353,6 @@ export function Inventory() {
                 <div id="cart-items-drawer" class="max-h-80 overflow-y-auto divide-y divide-base-300 bg-base-100 hidden">
                   <For each={cart()?.items}>
                     {(cartItem) => {
-                      const invItem = items().find(i => String(i._id) === String(cartItem.productId));
-                      const diff = invItem ? cartItem.price - invItem.avgPrice : 0;
-
                       return (
                         <div class="flex items-center gap-3 p-3">
                           <div class="avatar flex-shrink-0">
@@ -366,9 +364,9 @@ export function Inventory() {
                             <p class="text-xs font-medium truncate">{cartItem.productName}</p>
                             <p class="text-[10px] opacity-60">
                               €{cartItem.price.toFixed(2)}
-                              <Show when={invItem && Math.abs(diff) > 0.01}>
-                                <span class={`ml-2 ${diff > 0 ? 'text-error' : 'text-success'}`}>
-                                  {diff > 0 ? '+' : ''}{diff.toFixed(2)}€
+                              <Show when={cartItem.avgPrice && Math.abs(cartItem.price - cartItem.avgPrice) > 0.01}>
+                                <span class={`ml-2 ${(cartItem.price - cartItem.avgPrice!) > 0 ? 'text-error' : 'text-success'}`}>
+                                  {(cartItem.price - cartItem.avgPrice!) > 0 ? '+' : ''}{(cartItem.price - cartItem.avgPrice!).toFixed(2)}€
                                 </span>
                               </Show>
                             </p>
