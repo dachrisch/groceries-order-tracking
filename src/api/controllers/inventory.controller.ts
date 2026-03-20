@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import Order from '../../models/Order';
+import { getKnusprSession } from '../../lib/knuspr-auth';
 import mongoose from 'mongoose';
 import '../utils';
 
@@ -49,14 +50,13 @@ export async function handleGetInventory(req: Request, res: Response) {
         }
       },
 
-
-
       // Stage 4: Sort tuples by date desc, keep most recent 5
       {
         $project: {
           _id: 1,
           name: 1,
           image: 1,
+          categories: 1,
           purchases: {
             $slice: [
               { $sortArray: { input: '$purchases', sortBy: { date: -1 } } },
@@ -90,7 +90,7 @@ export async function handleGetInventory(req: Request, res: Response) {
         }
       },
 
-      // Stage 7: Calculate intervals from purchaseDates (same logic as before)
+      // Stage 7: Calculate intervals from purchaseDates
       {
         $addFields: {
           intervals: {
@@ -113,7 +113,7 @@ export async function handleGetInventory(req: Request, res: Response) {
         }
       },
 
-      // Stage 8: Weighted average interval and daysSinceLast (unchanged logic)
+      // Stage 8: Weighted average interval and daysSinceLast
       {
         $addFields: {
           avgInterval: {
@@ -141,7 +141,7 @@ export async function handleGetInventory(req: Request, res: Response) {
         }
       },
 
-      // Final: Shape public output — strip internal pipeline fields
+      // Stage 9: Shape public output
       {
         $project: {
           _id: 1,
@@ -153,10 +153,54 @@ export async function handleGetInventory(req: Request, res: Response) {
           avgQuantity: 1,
           avgPrice: 1,
         }
+      },
+
+      // Stage 10: Sort by average rebuy time
+      {
+        $sort: { avgInterval: 1 }
       }
-
-
     ]);
+
+    // Fetch current prices from Knuspr if session is available
+    let session: string | null = null;
+    try {
+      session = await getKnusprSession(userId, req.derivedKey);
+    } catch (e) {
+      console.warn('Failed to get Knuspr session for inventory prices:', e);
+    }
+
+    if (session) {
+      const fetchPrice = async (item: { _id: number; currentPrice?: number }) => {
+        try {
+          const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id}/prices`, {
+            headers: {
+              'Cookie': `PHPSESSION_de-production=${session}`,
+              'x-origin': 'WEB',
+            },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            // Handle both { price: { amount: 2.49 } } and { price: 2.49 }
+            const priceData = data.price ?? data.data?.price;
+            const price = (typeof priceData === 'object' && priceData !== null) 
+              ? priceData.amount 
+              : priceData;
+
+            if (price !== undefined && price !== null) {
+              item.currentPrice = Number(price);
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to fetch price for ${item._id}:`, e);
+        }
+      };
+
+      // Limit concurrency by processing in chunks of 10
+      for (let i = 0; i < inventory.length; i += 10) {
+        const chunk = inventory.slice(i, i + 10);
+        await Promise.all(chunk.map(fetchPrice));
+      }
+    }
 
     res.json(inventory);
   } catch (error: unknown) {

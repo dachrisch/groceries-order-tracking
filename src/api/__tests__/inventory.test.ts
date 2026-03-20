@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import {
@@ -6,6 +6,18 @@ import {
   registerUser, loginUser, getSessionUserId,
   createOrder,
 } from './helpers';
+
+// Mock getKnusprSession and global fetch
+vi.mock('../../lib/knuspr-auth', async () => {
+  const actual = await vi.importActual('../../lib/knuspr-auth');
+  return {
+    ...actual,
+    getKnusprSession: vi.fn(),
+  };
+});
+
+// Import the mocked function
+import { getKnusprSession } from '../../lib/knuspr-auth';
 
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
@@ -93,5 +105,39 @@ describe('GET /api/inventory', () => {
     // ~31 days between Jan 1 and Feb 1
     expect(item.avgInterval).toBeCloseTo(31, 0);
     expect(item.daysSinceLast).toBeGreaterThan(0);
+  });
+
+  it('handles string prices from Knuspr API by converting to numbers', async () => {
+    // Seed 2 orders for product 220
+    await createOrder(userId, {
+      id: 111,
+      orderTimeDate: new Date('2024-01-01'),
+      items: [makeItem(220, 'Sojasprossen', 1, 100)],
+    });
+    await createOrder(userId, {
+      id: 222,
+      orderTimeDate: new Date('2024-01-10'),
+      items: [makeItem(220, 'Sojasprossen', 1, 101)],
+    });
+
+    // Mock session and string price response
+    vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
+    const originalFetch = global.fetch;
+    type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ price: { amount: "2.50" } })
+    }) as unknown as MockFetch;
+
+    try {
+      const res = await request(app).get('/api/inventory').set('Cookie', cookies);
+      expect(res.status).toBe(200);
+      const item = res.body.find((i: { _id: number }) => i._id === 220);
+      expect(item).toBeDefined();
+      expect(item.currentPrice).toBe(2.5);
+      expect(typeof item.currentPrice).toBe('number');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

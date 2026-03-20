@@ -11,6 +11,7 @@ interface InventoryItem {
   daysSinceLast: number;
   avgQuantity: number;
   avgPrice: number;
+  currentPrice?: number;
 }
 
 
@@ -18,6 +19,7 @@ interface CartItem {
   productId: number;
   productName: string;
   price: number;
+  avgPrice?: number;
   quantity: number;
   imgUrl: string;
   textualAmount: string;
@@ -142,16 +144,13 @@ export function Inventory() {
 
   const filteredItems = () => {
     const all = items();
-    let filtered;
     if (tab() === 'running-out') {
-      filtered = all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
+      return all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
     } else if (tab() === 'reorder') {
-      filtered = all.filter(i => i.daysSinceLast >= i.avgInterval);
+      return all.filter(i => i.daysSinceLast >= i.avgInterval);
     } else {
-      filtered = all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
+      return all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
     }
-    // Sort by avg rebuy time (avgInterval)
-    return filtered.sort((a, b) => a.avgInterval - b.avgInterval);
   };
 
 
@@ -218,8 +217,8 @@ export function Inventory() {
               const id = String(item._id);
               return (
               <div class="card bg-base-100 shadow-xl border border-base-300 hover:shadow-2xl transition-shadow">
-                <div class="card-body">
-                    <div class="flex items-center gap-3">
+                <div class="card-body p-5">
+                    <div class="flex items-start gap-3">
                       <div class="avatar flex-shrink-0">
                         <div class="mask mask-squircle w-12 h-12 bg-base-200">
                           <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
@@ -228,16 +227,32 @@ export function Inventory() {
                         </div>
                       </div>
                       <div class="flex-1 min-w-0">
-                        <h2 class="card-title text-lg leading-tight truncate">{item.name}</h2>
+                        <h2 class="font-bold text-sm leading-tight line-clamp-2 h-9" title={item.name}>{item.name}</h2>
                         <Show when={item.categories?.length}>
-                          <p class="text-[10px] opacity-40 truncate">
-                            {item.categories?.[item.categories.length - 1]?.name}
-                          </p>
+                          <div class="flex flex-wrap gap-1 mt-1">
+                            <For each={item.categories?.slice(-2)}>
+                              {(cat) => (
+                                <span class="badge badge-ghost badge-xs opacity-70 text-[9px] uppercase font-semibold">{cat.name}</span>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                      </div>
+                      <div class="text-right flex-shrink-0">
+                        <Show when={item.currentPrice} fallback={
+                          <div class="text-sm font-bold opacity-20">€--</div>
+                        }>
+                           <div class="text-sm font-bold">€{Number(item.currentPrice).toFixed(2)}</div>
+                           <Show when={Math.abs(Number(item.currentPrice) - item.avgPrice) >= 0.01}>
+                             <div class={`text-[10px] font-bold ${Number(item.currentPrice) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
+                               {Number(item.currentPrice) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs(Number(item.currentPrice) - item.avgPrice).toFixed(2)}€
+                             </div>
+                           </Show>
                         </Show>
                       </div>
                     </div>
 
-                  <div class="space-y-2 mt-2">
+                  <div class="space-y-2 mt-4">
                     <progress
                       class={`progress w-full ${
                         item.daysSinceLast >= item.avgInterval ? 'progress-error' :
@@ -338,9 +353,6 @@ export function Inventory() {
                 <div id="cart-items-drawer" class="max-h-80 overflow-y-auto divide-y divide-base-300 bg-base-100 hidden">
                   <For each={cart()?.items}>
                     {(cartItem) => {
-                      const invItem = items().find(i => String(i._id) === String(cartItem.productId));
-                      const diff = invItem ? cartItem.price - invItem.avgPrice : 0;
-
                       return (
                         <div class="flex items-center gap-3 p-3">
                           <div class="avatar flex-shrink-0">
@@ -352,9 +364,9 @@ export function Inventory() {
                             <p class="text-xs font-medium truncate">{cartItem.productName}</p>
                             <p class="text-[10px] opacity-60">
                               €{cartItem.price.toFixed(2)}
-                              <Show when={invItem && Math.abs(diff) > 0.01}>
-                                <span class={`ml-2 ${diff > 0 ? 'text-error' : 'text-success'}`}>
-                                  {diff > 0 ? '+' : ''}{diff.toFixed(2)}€
+                              <Show when={cartItem.avgPrice && Math.abs(cartItem.price - cartItem.avgPrice) > 0.01}>
+                                <span class={`ml-2 ${(cartItem.price - cartItem.avgPrice!) > 0 ? 'text-error' : 'text-success'}`}>
+                                  {(cartItem.price - cartItem.avgPrice!) > 0 ? '+' : ''}{(cartItem.price - cartItem.avgPrice!).toFixed(2)}€
                                 </span>
                               </Show>
                             </p>

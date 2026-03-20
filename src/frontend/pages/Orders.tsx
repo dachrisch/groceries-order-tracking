@@ -2,8 +2,16 @@ import { createSignal, onMount, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Calendar, ShoppingBag, ChevronRight } from 'lucide-solid';
 
+interface OrderSummary {
+  id: number;
+  priceComposition: { total: { amount: number } };
+  orderTimeDate: string;
+  itemsCount: number;
+  state: string;
+}
+
 export function Orders() {
-  const [orders, setOrders] = createSignal<unknown[]>([]);
+  const [orders, setOrders] = createSignal<OrderSummary[]>([]);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {

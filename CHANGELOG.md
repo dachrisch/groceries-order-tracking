@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.2.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.1.0...v1.2.0) (2026-03-20)
+
+
+### Features
+
+* add product categories, current prices, and rebuy-time sorting ([e8ad02b](https://github.com/dachrisch/groceries-order-tracking/commit/e8ad02b52e51b5dddebffc7a35c2cbd7d5520dc0))
+* show price +/- in cart drawer ([d0746da](https://github.com/dachrisch/groceries-order-tracking/commit/d0746dada2e54aa1069772a22f0d0ec4fee43cb0))
+
+
+### Bug Fixes
+
+* correctly extract amount from Knuspr price object ([603eaad](https://github.com/dachrisch/groceries-order-tracking/commit/603eaaddbf53c29c3596f130a9d62cd83b32c096))
+* ensure currentPrice is always a number to avoid toFixed() errors ([54fd342](https://github.com/dachrisch/groceries-order-tracking/commit/54fd3426852a8c2ada639a6f8c73c08bff72ed03))
+* resolve linting errors and Solid reactivity warnings ([fb4cd6e](https://github.com/dachrisch/groceries-order-tracking/commit/fb4cd6e82cabc20ee3757109dd52f227cf18f801))
+* resolve remaining linting errors in tests and redundant operators in inventory page ([b49bb86](https://github.com/dachrisch/groceries-order-tracking/commit/b49bb86be4c7d086aa9349e5caaea97e4635afe5))
+
 ## 1.1.0 (2026-03-19)
 
 
