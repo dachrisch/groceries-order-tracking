@@ -25,6 +25,7 @@ RUN npm install --omit=dev --legacy-peer-deps
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV APP_VERSION=$VITE_BUILD_VERSION
 EXPOSE ${PORT}
 
 # Health check using dedicated Node.js script
