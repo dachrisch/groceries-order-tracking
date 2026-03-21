@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.4.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.3.0...v1.4.0) (2026-03-21)
+
+
+### Features
+
+* display app version from git tag in sidebar footer ([752fcb4](https://github.com/dachrisch/groceries-order-tracking/commit/752fcb42c11902305d05db8c275e2c6ae5faf0ec))
+
 ## 1.3.0 (2026-03-21)
 
 
