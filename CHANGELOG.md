@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.4.1-rc.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.4.0...v1.4.1-rc.0) (2026-03-21)
+
 ## [1.4.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.3.0...v1.4.0) (2026-03-21)
 
 
