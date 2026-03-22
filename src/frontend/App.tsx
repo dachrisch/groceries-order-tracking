@@ -6,6 +6,7 @@ export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<{ name: string; email: string } | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
+  const [version, setVersion] = createSignal('');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -31,6 +32,20 @@ export function App(props: { children?: JSX.Element }) {
   };
 
   onMount(fetchUser);
+
+  const fetchVersion = async () => {
+    try {
+      const res = await fetch('/api/version');
+      if (res.ok) {
+        const data = await res.json();
+        setVersion(data.version);
+      }
+    } catch {
+      // Silently fail
+    }
+  };
+
+  onMount(fetchVersion);
 
   const handleLogout = async () => {
     await fetch('/api/logout', { method: 'POST' });
@@ -167,6 +182,9 @@ export function App(props: { children?: JSX.Element }) {
                       <span class="font-semibold">Logout</span>
                     </Show>
                   </button>
+                  <Show when={!sidebarCollapsed() && version()}>
+                    <div class="text-xs opacity-30 text-center">{version()}</div>
+                  </Show>
                 </div>
               </div>
             </div>

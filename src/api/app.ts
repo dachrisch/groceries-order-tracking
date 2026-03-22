@@ -19,6 +19,10 @@ app.get('/health', (_req, res) => {
   res.status(200).send('OK');
 });
 
+app.get('/api/version', (_req, res) => {
+  res.json({ version: process.env.APP_VERSION || 'dev' });
+});
+
 const auth = (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });

@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.5.0-rc.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.0-rc.0...v1.5.0-rc.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* remove duplicate v prefix in version display ([f068aee](https://github.com/dachrisch/groceries-order-tracking/commit/f068aee83fea54e6e600a72f958be783af82aaea))
+
+## [1.5.0-rc.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.1.0...v1.5.0-rc.0) (2026-03-22)
+
+
+### Features
+
+* display app version from git tag in sidebar footer ([d20ea9c](https://github.com/dachrisch/groceries-order-tracking/commit/d20ea9cb267cd5610f49c40e6c76af511fe8fb63))
+* product categories, current prices, and rebuy-time sorting ([#25](https://github.com/dachrisch/groceries-order-tracking/issues/25)) ([d71c87e](https://github.com/dachrisch/groceries-order-tracking/commit/d71c87ed71ad0d0334121094aae057d099789404))
+
+
+### Bug Fixes
+
+* **docker:** declare ARG VITE_BUILD_VERSION in production stage ([db89414](https://github.com/dachrisch/groceries-order-tracking/commit/db8941422390ca696e000a6d66e2a8f1035725b5))
+
+### [1.4.1-rc.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.4.0...v1.4.1-rc.0) (2026-03-21)
+
+## [1.4.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.3.0...v1.4.0) (2026-03-21)
+
+
+### Features
+
+* display app version from git tag in sidebar footer ([752fcb4](https://github.com/dachrisch/groceries-order-tracking/commit/752fcb42c11902305d05db8c275e2c6ae5faf0ec))
+
 ## 1.3.0 (2026-03-21)
 
 

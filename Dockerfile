@@ -11,6 +11,7 @@ RUN npm run build
 
 # Production stage
 FROM node:24-alpine
+ARG VITE_BUILD_VERSION=dev
 
 WORKDIR /app
 
@@ -25,6 +26,7 @@ RUN npm install --omit=dev --legacy-peer-deps
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV APP_VERSION=$VITE_BUILD_VERSION
 EXPOSE ${PORT}
 
 # Health check using dedicated Node.js script
