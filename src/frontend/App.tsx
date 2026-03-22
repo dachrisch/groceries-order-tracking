@@ -183,7 +183,7 @@ export function App(props: { children?: JSX.Element }) {
                     </Show>
                   </button>
                   <Show when={!sidebarCollapsed() && version()}>
-                    <div class="text-xs opacity-30 text-center">v{version()}</div>
+                    <div class="text-xs opacity-30 text-center">{version()}</div>
                   </Show>
                 </div>
               </div>
