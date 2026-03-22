@@ -11,6 +11,7 @@ RUN npm run build
 
 # Production stage
 FROM node:24-alpine
+ARG VITE_BUILD_VERSION=dev
 
 WORKDIR /app
 
