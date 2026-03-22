@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.5.0-rc.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.0-rc.0...v1.5.0-rc.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* remove duplicate v prefix in version display ([f068aee](https://github.com/dachrisch/groceries-order-tracking/commit/f068aee83fea54e6e600a72f958be783af82aaea))
+
 ## [1.5.0-rc.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.1.0...v1.5.0-rc.0) (2026-03-22)
 
 
