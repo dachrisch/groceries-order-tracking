@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [1.5.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.0...v1.5.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* **frontend:** remove unused imports in Products page ([2ecbbd7](https://github.com/dachrisch/groceries-order-tracking/commit/2ecbbd78200a589d141256953d6dd64783486f00))
+
 ## [1.5.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.1.0...v1.5.0) (2026-03-23)
 
 
