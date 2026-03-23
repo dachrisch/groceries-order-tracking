@@ -1,7 +1,7 @@
 import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
 import { Line } from 'solid-chartjs';
 import { useParams, A, useSearchParams } from '@solidjs/router';
-import { ArrowLeft, X, List, Info, TrendingUp, Package } from 'lucide-solid';
+import { ArrowLeft, X, List, TrendingUp } from 'lucide-solid';
 
 interface TrendItem {
   _id: { id: number; name: string };
