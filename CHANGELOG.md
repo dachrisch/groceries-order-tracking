@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.5.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.1.0...v1.5.0) (2026-03-23)
+
+
+### Features
+
+* display app version from git tag in sidebar footer ([#31](https://github.com/dachrisch/groceries-order-tracking/issues/31)) ([1e3c126](https://github.com/dachrisch/groceries-order-tracking/commit/1e3c12643d18549b9430d7cbb368c51736b0e733))
+* **frontend:** refactor Products page for mobile-first Master-Detail UI ([76f35c0](https://github.com/dachrisch/groceries-order-tracking/commit/76f35c0937f83dea576c59385773d30a3a0e3fc9))
+* product categories, current prices, and rebuy-time sorting ([#25](https://github.com/dachrisch/groceries-order-tracking/issues/25)) ([d71c87e](https://github.com/dachrisch/groceries-order-tracking/commit/d71c87ed71ad0d0334121094aae057d099789404))
+
 ## [1.5.0-rc.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.0-rc.0...v1.5.0-rc.1) (2026-03-22)
 
 
