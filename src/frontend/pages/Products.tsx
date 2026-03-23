@@ -1,7 +1,7 @@
 import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
 import { Line } from 'solid-chartjs';
 import { useParams, A, useSearchParams } from '@solidjs/router';
-import { ArrowLeft, X, List } from 'lucide-solid';
+import { ArrowLeft, X, List, Info, TrendingUp, Package } from 'lucide-solid';
 
 interface TrendItem {
   _id: { id: number; name: string };
@@ -31,7 +31,7 @@ interface OrderDetail {
 
 export function Products() {
   const params = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [trends, setTrends] = createSignal<TrendItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [searchTerm, setSearchSignal] = createSignal('');
@@ -40,6 +40,7 @@ export function Products() {
 
   const orderId = () => params.orderId;
   const productId = () => params.productId || searchParams.product;
+  const highlightedId = () => searchParams.highlight;
 
   onMount(async () => {
     try {
@@ -147,85 +148,80 @@ export function Products() {
   };
 
   return (
-    <div class="space-y-8">
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 class="text-3xl font-bold">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
-        
-        <Show when={orderId()}>
-          <div class="flex items-center gap-4">
-            <A href="/orders" class="btn btn-ghost btn-sm gap-2">
-              <ArrowLeft size={16} /> Back to Orders
-            </A>
-            <div class="badge badge-primary badge-lg gap-2 py-4">
-              Order #{orderId()}
-              <A href={productId() ? `/products/${productId()}` : "/products"} class="hover:text-error transition-colors ml-2">
-                <X size={14} />
+    <div class="space-y-6">
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+          <h1 class="text-2xl md:text-3xl font-bold">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
+          <Show when={orderId()}>
+            <div class="flex items-center gap-2 flex-wrap">
+              <A href="/orders" class="btn btn-ghost btn-sm px-2 gap-2">
+                <ArrowLeft size={16} /> <span class="hidden sm:inline">Back</span>
+              </A>
+              <div class="badge badge-primary badge-lg gap-2 py-4 whitespace-nowrap">
+                Order #{orderId()}
+                <A href={productId() ? `/products/${productId()}` : "/products"} class="hover:text-error transition-colors ml-1">
+                  <X size={14} />
+                </A>
+              </div>
+              <A href={productId() ? `/products/${productId()}` : "/products"} class="btn btn-ghost btn-sm px-2 gap-2">
+                <List size={16} /> <span class="hidden sm:inline">All</span>
               </A>
             </div>
-            <A href={productId() ? `/products/${productId()}` : "/products"} class="btn btn-ghost btn-sm gap-2">
-              <List size={16} /> Show All Products
-            </A>
-          </div>
-        </Show>
-      </div>
+          </Show>
+        </div>
 
-      <Show when={orderDetail()}>
-        {(detail) => (
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="stats shadow bg-base-100 border border-base-300">
-              <div class="stat">
-                <div class="stat-title">Total Amount</div>
-                <div class="stat-value text-primary">{detail().priceComposition.total.amount.toFixed(2)}€</div>
+        <Show when={orderDetail()}>
+          {(detail) => (
+            <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 border border-base-300 w-full overflow-hidden">
+              <div class="stat px-4 py-3">
+                <div class="stat-title text-xs">Total Amount</div>
+                <div class="stat-value text-primary text-xl">{detail().priceComposition.total.amount.toFixed(2)}€</div>
                 <div class="stat-desc">{detail().itemsCount} items total</div>
               </div>
-            </div>
-            
-            <div class="stats shadow bg-base-100 border border-base-300">
-              <div class="stat">
-                <div class="stat-title">Order Date</div>
-                <div class="stat-value text-sm whitespace-normal">
+              
+              <div class="stat px-4 py-3">
+                <div class="stat-title text-xs">Order Date</div>
+                <div class="stat-value text-sm font-semibold truncate max-w-[200px]">
                   {new Date(detail().orderTimeDate).toLocaleDateString(undefined, { 
-                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+                    month: 'short', day: 'numeric', year: 'numeric'
                   })}
                 </div>
-                <div class="stat-desc">{new Date(detail().orderTimeDate).toLocaleTimeString()}</div>
+                <div class="stat-desc">{new Date(detail().orderTimeDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </div>
-            </div>
 
-            <div class="stats shadow bg-base-100 border border-base-300">
-              <div class="stat">
-                <div class="stat-title">Delivery Address</div>
-                <div class="stat-desc whitespace-normal text-base-content font-medium mt-1">
+              <div class="stat px-4 py-3">
+                <div class="stat-title text-xs">Delivery Address</div>
+                <div class="stat-desc text-xs text-base-content font-medium mt-1 whitespace-normal line-clamp-2" title={detail().address}>
                   {detail().address}
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </Show>
+          )}
+        </Show>
+      </div>
 
-      <div class="form-control">
-        <input 
-          type="text" 
-          placeholder="Search products..." 
-          class="input input-bordered w-full max-w-md" 
-          onInput={(e) => setSearchSignal(e.currentTarget.value)}
-        />
+      <div class="flex flex-col md:flex-row gap-4 items-center">
+        <div class="form-control flex-grow w-full md:max-w-md">
+          <input 
+            type="text" 
+            placeholder="Search products..." 
+            class="input input-bordered w-full" 
+            onInput={(e) => setSearchSignal(e.currentTarget.value)}
+          />
+        </div>
       </div>
 
       <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div class="card bg-base-100 shadow-xl overflow-hidden">
+          {/* Product List Card - Hidden on mobile if a product is selected */}
+          <div class={`card bg-base-100 shadow-xl overflow-hidden border border-base-300 ${productId() ? 'hidden xl:flex' : 'flex'}`}>
             <div class="max-h-[600px] overflow-y-auto">
-              <table class="table table-pin-rows">
+              <table class="table table-pin-rows table-xs sm:table-sm">
                 <thead>
                   <tr>
                     <th>Product</th>
-                    <Show when={orderId()} fallback={<th>Purchases</th>}>
-                      <th>Amount</th>
-                    </Show>
-                    <th>{orderId() ? 'Order Price' : 'Latest Price'}</th>
-                    <th>Action</th>
+                    <th class="text-center">{orderId() ? 'Qty' : '#'}</th>
+                    <th>Price</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,7 +229,6 @@ export function Products() {
                       {(item) => {
                         const latestPrice = [...item.prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
                         
-                        // Find specific price in this order if orderId is set
                         let orderPrice = latestPrice.unitPrice;
                         let orderAmount: string | number = item.count;
                         
@@ -242,45 +237,34 @@ export function Products() {
                           const orderItem = detail.items.find((i: { id: number }) => i.id === item._id.id);
                           if (orderItem) {
                             orderPrice = orderItem.priceComposition.unit.amount;
-                            orderAmount = `${orderItem.amount}${orderItem.textualAmount ? ` (${orderItem.textualAmount})` : ''}`;
+                            orderAmount = orderItem.amount; 
                           }
                         }
 
-
                       return (
-                        <tr class={selectedItem()?._id.id === item._id.id ? 'bg-base-200' : ''}>
-                          <td>
-                            <div class="flex items-center gap-3">
-                              <div class="avatar">
-                                <div class="mask mask-squircle w-12 h-12 bg-base-200">
-                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs text-opacity-30">No Image</div>}>
+                        <tr 
+                          class={`cursor-pointer transition-colors ${selectedItem()?._id.id === item._id.id || highlightedId() === String(item._id.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-base-200'}`}
+                          onClick={() => {
+                            setSearchParams({ product: item._id.id, highlight: undefined });
+                          }}
+                        >
+                          <td class="max-w-[160px] sm:max-w-xs">
+                            <div class="flex items-center gap-2 sm:gap-3">
+                              <div class="avatar shrink-0">
+                                <div class="mask mask-squircle w-10 h-10 bg-base-200">
+                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-30">N/A</div>}>
                                     <img src={item.image} alt={item._id.name} loading="lazy" />
                                   </Show>
                                 </div>
                               </div>
-                              <div>
-                                <div class="font-bold max-w-[150px] md:max-w-[200px] truncate" title={item._id.name}>{item._id.name}</div>
-                                <div class="flex items-center gap-2">
-                                  <span class="text-xs opacity-50">ID: {item._id.id}</span>
-                                  <Show when={item.categories && item.categories.length > 0}>
-                                    <span class="badge badge-ghost badge-xs opacity-40 text-[9px] uppercase font-semibold">
-                                      {item.categories![item.categories!.length - 1].name}
-                                    </span>
-                                  </Show>
-                                </div>
+                              <div class="min-w-0">
+                                <div class="font-bold truncate text-xs sm:text-sm" title={item._id.name}>{item._id.name}</div>
+                                <div class="text-[10px] opacity-50 truncate">ID: {item._id.id}</div>
                               </div>
                             </div>
                           </td>
-                          <td>{orderAmount}</td>
-                          <td>{orderPrice.toFixed(2)}€</td>
-                          <td>
-                            <A 
-                              href={orderId() ? `/order/${orderId()}?product=${item._id.id}` : `/products/${item._id.id}`}
-                              class="btn btn-ghost btn-xs text-primary"
-                            >
-                              View Trend
-                            </A>
-                          </td>
+                          <td class="text-center font-mono text-xs">{orderAmount}</td>
+                          <td class="font-medium whitespace-nowrap">{orderPrice.toFixed(2)}€</td>
                         </tr>
                       );
                     }}
@@ -290,45 +274,62 @@ export function Products() {
             </div>
           </div>
 
-          <div class="space-y-6">
+          {/* Trend Detail Card - Visible on mobile only if a product is selected */}
+          <div class={`space-y-6 ${productId() ? 'block' : 'hidden xl:block'}`}>
             <Show when={selectedItem()} fallback={
-              <div class="card bg-base-100 shadow-xl h-full flex items-center justify-center p-8 opacity-50 border-2 border-dashed">
-                <p>Select a product to view price history</p>
+              <div class="card bg-base-100 shadow-xl h-full min-h-[300px] flex items-center justify-center p-8 opacity-50 border-2 border-dashed border-base-300">
+                <div class="text-center">
+                  <TrendingUp size={48} class="mx-auto mb-4 opacity-20" />
+                  <p>Select a product to view price history</p>
+                </div>
               </div>
             }>
               {(item) => (
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body">
-                    <div class="flex flex-col md:flex-row gap-6 items-start">
+                <div class="card bg-base-100 shadow-xl border border-base-300">
+                  <div class="card-body p-4 sm:p-6">
+                    <div class="flex flex-row gap-4 items-center mb-2">
                       <Show when={item().image}>
-                        <div class="w-24 md:w-32 aspect-square flex-shrink-0 bg-base-200 rounded-xl overflow-hidden shadow-inner">
+                        <div class="w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 bg-base-200 rounded-lg overflow-hidden shadow-inner">
                           <img src={item().image} alt={item()._id.name} class="w-full h-full object-contain" />
                         </div>
                       </Show>
-                      <div class="flex-grow">
-                        <h2 class="card-title text-primary text-2xl mb-1">{item()._id.name}</h2>
-                        <p class="text-sm opacity-70">Price history over time • ID: {item()._id.id}</p>
+                      <div class="flex-grow min-w-0">
+                        <h2 class="card-title text-primary text-lg sm:text-xl line-clamp-2 leading-tight mb-1">{item()._id.name}</h2>
+                        <p class="text-[10px] sm:text-xs opacity-70">Price History • ID: {item()._id.id}</p>
                       </div>
+                      <button 
+                        class="xl:hidden btn btn-ghost btn-sm btn-square" 
+                        onClick={() => {
+                          if (orderId()) {
+                            navigate(`/order/${orderId()}`);
+                          } else {
+                            navigate('/products');
+                          }
+                        }}
+                        aria-label="Back to list"
+                      >
+                        <X size={20} />
+                      </button>
                     </div>
                     
-                    <div class="h-64 mt-4">
+                    <div class="h-48 sm:h-64 mt-2">
                       <Line data={getChartData(item())} options={chartOptions} />
                     </div>
 
-                    <div class="divider">Purchase History</div>
+                    <div class="divider text-xs my-2">Purchase History</div>
                     
-                    <div class="space-y-2 max-h-48 overflow-y-auto pr-2">
+                    <div class="space-y-2 max-h-48 xl:max-h-64 overflow-y-auto pr-1">
                       <For each={[...item().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
                         {(p) => (
                           <A 
-                            href={`/order/${p.orderId}?product=${item()._id.id}`}
+                            href={`/order/${p.orderId}?highlight=${item()._id.id}`}
                             class={`flex justify-between items-center w-full p-2 rounded transition-colors text-left ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 ring-1 ring-primary/30' : 'bg-base-200 hover:bg-base-300'}`}
                           >
                             <div class="flex flex-col">
-                              <span class="text-xs opacity-50 font-mono">Order #{p.orderId}</span>
-                              <span class="text-sm font-medium">{new Date(p.date).toLocaleDateString()}</span>
+                              <span class="text-[10px] opacity-50 font-mono">Order #{p.orderId}</span>
+                              <span class="text-xs font-medium">{new Date(p.date).toLocaleDateString()}</span>
                             </div>
-                            <span class="font-bold text-primary">{p.unitPrice.toFixed(2)}€</span>
+                            <span class="font-bold text-primary text-sm">{p.unitPrice.toFixed(2)}€</span>
                           </A>
                         )}
                       </For>
