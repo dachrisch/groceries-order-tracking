@@ -97,7 +97,10 @@ export function Settings() {
 
   return (
     <div class="max-w-2xl mx-auto space-y-8">
-      <h1 class="text-3xl font-bold">Settings</h1>
+      <div class="animate-fade-in">
+        <h1 class="page-title">Settings</h1>
+        <p class="text-base-content/60 mt-1">Manage your account and integrations</p>
+      </div>
 
       <Show when={message()}>
         <div role="alert" class={`alert ${message()!.type === 'success' ? 'alert-success' : 'alert-error'}`}>

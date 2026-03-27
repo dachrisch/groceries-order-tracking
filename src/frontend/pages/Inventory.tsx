@@ -155,12 +155,14 @@ export function Inventory() {
 
 
   return (
-    <div class="space-y-6 pb-48">
-
+    <div class="space-y-6 pb-48 max-w-6xl mx-auto">
       <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold">Inventory</h1>
+        <div class="animate-fade-in">
+          <h1 class="page-title">Inventory</h1>
+          <p class="text-base-content/60 mt-1">Track your grocery stock levels</p>
+        </div>
         <button
-          class="btn btn-ghost btn-sm gap-2"
+          class="btn btn-ghost btn-sm gap-2 rounded-xl"
           onClick={() => Promise.all([fetchInventory(), fetchCart()])}
           disabled={loading() || cartLoading()}
         >
@@ -169,21 +171,21 @@ export function Inventory() {
         </button>
       </div>
 
-      <div class="tabs tabs-boxed">
+      <div class="tabs tabs-boxed bg-base-100 p-1 rounded-xl w-fit">
         <button
-          class={`tab ${tab() === 'running-out' ? 'tab-active' : ''}`}
+          class={`tab rounded-lg ${tab() === 'running-out' ? 'tab-active bg-primary text-primary-content' : ''}`}
           onClick={() => setTab('running-out')}
         >
           Running Out
         </button>
         <button
-          class={`tab ${tab() === 'reorder' ? 'tab-active' : ''}`}
+          class={`tab rounded-lg ${tab() === 'reorder' ? 'tab-active bg-primary text-primary-content' : ''}`}
           onClick={() => setTab('reorder')}
         >
           Needs Reorder
         </button>
         <button
-          class={`tab ${tab() === 'in-shelf' ? 'tab-active' : ''}`}
+          class={`tab rounded-lg ${tab() === 'in-shelf' ? 'tab-active bg-primary text-primary-content' : ''}`}
           onClick={() => setTab('in-shelf')}
         >
           In Shelf
@@ -216,7 +218,7 @@ export function Inventory() {
             {(item) => {
               const id = String(item._id);
               return (
-              <div class="card bg-base-100 shadow-xl border border-base-300 hover:shadow-2xl transition-shadow">
+              <div class="card bg-base-100 shadow-md border border-base-200/50 hover:shadow-xl transition-all duration-300 rounded-2xl hover-lift">
                 <div class="card-body p-5">
                     <div class="flex items-start gap-3">
                       <div class="avatar flex-shrink-0">

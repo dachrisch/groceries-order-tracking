@@ -117,10 +117,15 @@ export function Products() {
         {
           label: 'Unit Price (EUR)',
           data: sortedPrices.map(p => p.unitPrice),
-          borderColor: 'rgb(54, 162, 235)',
-          tension: 0.1,
+          borderColor: '#3a7d6e',
+          backgroundColor: 'rgba(58, 125, 110, 0.15)',
+          tension: 0.3,
+          fill: true,
           pointRadius: 5,
           pointHoverRadius: 8,
+          pointBackgroundColor: '#3a7d6e',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
         }
       ]
     };
@@ -132,6 +137,11 @@ export function Products() {
     plugins: {
       legend: { display: false },
       tooltip: {
+        backgroundColor: 'rgba(92, 83, 70, 0.9)',
+        titleFont: { family: "'DM Sans', sans-serif" },
+        bodyFont: { family: "'DM Sans', sans-serif" },
+        padding: 12,
+        cornerRadius: 8,
         callbacks: {
           label: (context: { parsed: { y: number } }) => `${context.parsed.y.toFixed(2)}€`
         }
@@ -140,30 +150,41 @@ export function Products() {
     scales: {
       y: {
         beginAtZero: false,
+        grid: { color: 'rgba(92, 83, 70, 0.08)' },
         ticks: {
-          callback: (value: number) => `${value.toFixed(2)}€`
+          callback: (value: number) => `${value.toFixed(2)}€`,
+          font: { family: "'DM Sans', sans-serif" }
+        }
+      },
+      x: {
+        grid: { display: false },
+        ticks: {
+          font: { family: "'DM Sans', sans-serif" }
         }
       }
     }
   };
 
   return (
-    <div class="space-y-6">
+    <div class="space-y-6 max-w-6xl mx-auto">
       <div class="flex flex-col gap-4">
         <div class="flex items-center justify-between gap-4 flex-wrap">
-          <h1 class="text-2xl md:text-3xl font-bold">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
+          <div class="animate-fade-in">
+            <h1 class="page-title">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
+            <p class="text-base-content/60 mt-1">{orderId() ? 'Items in this order' : 'Track price trends across your orders'}</p>
+          </div>
           <Show when={orderId()}>
             <div class="flex items-center gap-2 flex-wrap">
-              <A href="/orders" class="btn btn-ghost btn-sm px-2 gap-2">
+              <A href="/orders" class="btn btn-ghost btn-sm px-3 gap-2 rounded-xl">
                 <ArrowLeft size={16} /> <span class="hidden sm:inline">Back</span>
               </A>
-              <div class="badge badge-primary badge-lg gap-2 py-4 whitespace-nowrap">
+              <div class="badge badge-primary badge-lg gap-2 py-3 px-4 whitespace-nowrap rounded-xl">
                 Order #{orderId()}
                 <A href={productId() ? `/products/${productId()}` : "/products"} class="hover:text-error transition-colors ml-1">
                   <X size={14} />
                 </A>
               </div>
-              <A href={productId() ? `/products/${productId()}` : "/products"} class="btn btn-ghost btn-sm px-2 gap-2">
+              <A href={productId() ? `/products/${productId()}` : "/products"} class="btn btn-ghost btn-sm px-3 gap-2 rounded-xl">
                 <List size={16} /> <span class="hidden sm:inline">All</span>
               </A>
             </div>
@@ -172,7 +193,7 @@ export function Products() {
 
         <Show when={orderDetail()}>
           {(detail) => (
-            <div class="stats stats-vertical sm:stats-horizontal shadow bg-base-100 border border-base-300 w-full overflow-hidden">
+            <div class="stats stats-card stats-vertical sm:stats-horizontal rounded-2xl w-full overflow-hidden">
               <div class="stat px-4 py-3">
                 <div class="stat-title text-xs">Total Amount</div>
                 <div class="stat-value text-primary text-xl">{detail().priceComposition.total.amount.toFixed(2)}€</div>

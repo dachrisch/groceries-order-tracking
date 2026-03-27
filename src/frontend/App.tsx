@@ -99,59 +99,70 @@ export function App(props: { children?: JSX.Element }) {
             <div class="drawer-side z-30">
               <label for="mobile-drawer" aria-label="close sidebar" class="drawer-overlay" />
               <div
-                class={`bg-base-100 text-base-content flex flex-col h-full transition-all duration-300 ease-in-out shadow-xl
+                class={`bg-base-100 text-base-content flex flex-col h-full transition-all duration-300 ease-in-out shadow-xl border-r border-base-300/50
                   ${sidebarCollapsed() ? 'w-20' : 'w-72'}`}
               >
                 {/* Sidebar header */}
-                <div class="flex items-center justify-between px-6 py-4 border-b border-base-300 h-20 shrink-0">
+                <div class="flex items-center justify-between px-4 py-5 border-b border-base-300/50 h-20 shrink-0">
                   <Show when={!sidebarCollapsed()}>
-                    <span class="text-xl font-bold tracking-tight whitespace-nowrap overflow-hidden">Groceries Tracking</span>
+                    <div class="flex items-center gap-3">
+                      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-content shadow-lg shadow-primary/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <span class="text-lg font-bold tracking-tight whitespace-nowrap">Groceries</span>
+                        <span class="text-xs opacity-50 block -mt-0.5">Tracking</span>
+                      </div>
+                    </div>
                   </Show>
                   <button
                     onClick={() => setSidebarCollapsed(!sidebarCollapsed())}
                     class="btn btn-ghost btn-sm btn-square hidden lg:flex"
+                    title={sidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'}
                   >
-                    <Show when={sidebarCollapsed()} fallback={<ChevronLeft size={20} />}>
-                      <ChevronRight size={20} />
+                    <Show when={sidebarCollapsed()} fallback={<ChevronLeft size={18} />}>
+                      <ChevronRight size={18} />
                     </Show>
                   </button>
                 </div>
 
                 {/* Nav items */}
                 <div class="flex-grow overflow-y-auto py-4">
-                  <ul class="menu p-0 px-2 space-y-1">
+                  <ul class="menu p-0 px-3 space-y-1">
                     <li>
                       <A href="/" activeClass="active" end onClick={closeMobileDrawer}
-                        class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
-                        <LayoutDashboard size={20} />
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/50`}>
+                        <LayoutDashboard size={20} class="text-primary/70" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Dashboard</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/orders" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
-                        <ShoppingBag size={20} />
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/50`}>
+                        <ShoppingBag size={20} class="text-secondary/70" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Orders</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/products" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
-                        <ShoppingBasket size={20} />
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/50`}>
+                        <ShoppingBasket size={20} class="text-accent/70" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Products</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/inventory" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
-                        <ClipboardList size={20} />
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/50`}>
+                        <ClipboardList size={20} class="text-primary-light/70" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Inventory</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/settings" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-4 py-3 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
-                        <SettingsIcon size={20} />
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/50`}>
+                        <SettingsIcon size={20} class="text-neutral/70" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Settings</span></Show>
                       </A>
                     </li>
@@ -159,27 +170,27 @@ export function App(props: { children?: JSX.Element }) {
                 </div>
 
                 {/* User info + logout */}
-                <div class="mt-auto border-t border-base-300 bg-base-100/50 p-4 space-y-3">
-                  <div class={`flex items-center gap-3 p-2 rounded-xl bg-base-200/50 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
+                <div class="mt-auto border-t border-base-300/50 bg-base-100/30 p-4 space-y-3">
+                  <div class={`flex items-center gap-3 p-2.5 rounded-xl bg-base-200/40 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
                     <div class="avatar placeholder flex-shrink-0">
-                      <div class="bg-primary text-primary-content rounded-full w-10 shadow-sm ring-2 ring-primary/10 flex items-center justify-center">
-                        <span class="text-xl leading-none">🥨</span>
+                      <div class="bg-gradient-to-br from-primary to-primary/80 text-primary-content rounded-full w-9 shadow-md ring-2 ring-primary/10 flex items-center justify-center">
+                        <span class="text-sm leading-none">{user()?.name?.charAt(0).toUpperCase() || 'U'}</span>
                       </div>
                     </div>
                     <Show when={!sidebarCollapsed()}>
                       <div class="flex-grow min-w-0">
-                        <div class="font-bold text-sm truncate">{user()?.name}</div>
-                        <div class="text-[10px] opacity-60 truncate">{user()?.email}</div>
+                        <div class="font-semibold text-sm truncate">{user()?.name}</div>
+                        <div class="text-xs opacity-50 truncate">{user()?.email}</div>
                       </div>
                     </Show>
                   </div>
                   <button
                     onClick={handleLogout}
-                    class={`btn btn-ghost btn-sm text-error w-full flex items-center gap-4 hover:bg-error/10 ${sidebarCollapsed() ? 'justify-center' : ''}`}
+                    class={`btn btn-ghost btn-sm text-error w-full flex items-center gap-3 hover:bg-error/10 ${sidebarCollapsed() ? 'justify-center' : ''}`}
                   >
                     <LogOut size={18} />
                     <Show when={!sidebarCollapsed()}>
-                      <span class="font-semibold">Logout</span>
+                      <span class="font-medium">Logout</span>
                     </Show>
                   </button>
                   <Show when={!sidebarCollapsed() && version()}>

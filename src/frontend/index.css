@@ -1,2 +1,220 @@
+/* Google Fonts - Outfit for headings, DM Sans for body */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Outfit:wght@100..900&display=swap');
+
 @import "tailwindcss";
 @plugin "daisyui";
+
+/* ============================================
+   ORGANIC/MODERN MARKET DESIGN SYSTEM
+   ============================================ */
+
+:root {
+  /* Warm Mint Primary - Fresh, organic feel */
+  --color-primary: #3a7d6e;
+  --color-primary-dark: #2d6357;
+  --color-primary-light: #4fa393;
+  --color-primary-content: #ffffff;
+  
+  /* Soft Cream Backgrounds */
+  --color-base-100: #fdfbf7;
+  --color-base-200: #f7f4ed;
+  --color-base-300: #ece8df;
+  
+  /* Earthy Accents */
+  --color-secondary: #c47d4e;
+  --color-secondary-dark: #a6663e;
+  --color-secondary-light: #d99b73;
+  --color-secondary-content: #ffffff;
+  
+  /* Additional warm tones */
+  --color-accent: #e8b84a;
+  --color-accent-dark: #d4a33a;
+  --color-accent-light: #f0c96a;
+  
+  /* Neutral warm */
+  --color-neutral: #5c5346;
+  --color-neutral-content: #fdfbf7;
+  
+  /* Typography */
+  --font-heading: 'Outfit', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  
+  /* Custom shadows */
+  --shadow-soft: 0 4px 20px rgba(92, 83, 70, 0.08);
+  --shadow-card: 0 2px 12px rgba(92, 83, 70, 0.06);
+  --shadow-elevated: 0 8px 30px rgba(92, 83, 70, 0.12);
+}
+
+/* Base styles */
+html {
+  font-family: var(--font-body);
+  background-color: var(--color-base-200);
+}
+
+body {
+  background-color: var(--color-base-200);
+  min-height: 100vh;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6,
+.text-4xl, .text-3xl, .text-2xl, .text-xl, .text-lg {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Custom card styling */
+.card {
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid rgba(92, 83, 70, 0.06);
+}
+
+.card-elevated {
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Glassmorphism for auth pages */
+.glass-card {
+  background: rgba(253, 251, 247, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Custom button styling */
+.btn {
+  font-family: var(--font-body);
+  font-weight: 500;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Form inputs */
+.input, .select, .textarea {
+  border-radius: 10px;
+  border-color: var(--color-base-300);
+  transition: all 0.2s ease;
+}
+
+.input:focus, .select:focus, .textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(58, 125, 110, 0.15);
+}
+
+/* Stats card custom styling */
+.stats-card {
+  background: linear-gradient(135deg, var(--color-base-100) 0%, var(--color-base-200) 100%);
+  border: 1px solid rgba(92, 83, 70, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.stats-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+}
+
+/* Page title styling */
+.page-title {
+  font-family: var(--font-heading);
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--color-neutral);
+  letter-spacing: -0.03em;
+}
+
+/* Subtle background pattern */
+.bg-pattern {
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(58, 125, 110, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(196, 125, 78, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(232, 184, 74, 0.03) 0%, transparent 40%);
+}
+
+/* Animation keyframes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out forwards;
+}
+
+/* Staggered animation delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+
+/* Hover effects */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d1cdc0;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

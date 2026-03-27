@@ -63,15 +63,19 @@ export function Dashboard() {
         {
           label: 'Total Spend (EUR)',
           data: sortedData.map(d => d.totalAmount),
-          borderColor: 'rgb(75, 192, 192)',
-          tension: 0.1,
+          borderColor: '#3a7d6e',
+          backgroundColor: 'rgba(58, 125, 110, 0.1)',
+          tension: 0.3,
+          fill: true,
           yAxisID: 'y',
         },
         {
           label: 'Item Count',
           data: sortedData.map(d => d.itemCount),
-          borderColor: 'rgb(255, 99, 132)',
-          tension: 0.1,
+          borderColor: '#c47d4e',
+          backgroundColor: 'rgba(196, 125, 78, 0.1)',
+          tension: 0.3,
+          fill: true,
           yAxisID: 'y1',
         }
       ]
@@ -84,28 +88,42 @@ export function Dashboard() {
       mode: 'index' as const,
       intersect: false,
     },
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          usePointStyle: true,
+          padding: 20,
+          font: { family: "'DM Sans', sans-serif" }
+        }
+      }
+    },
     scales: {
       y: {
         type: 'linear' as const,
         display: true,
         position: 'left' as const,
-        title: { display: true, text: 'Spend (EUR)' }
+        title: { display: true, text: 'Spend (EUR)', font: { family: "'DM Sans', sans-serif" } },
+        grid: { color: 'rgba(92, 83, 70, 0.08)' }
       },
       y1: {
         type: 'linear' as const,
         display: true,
         position: 'right' as const,
         grid: { drawOnChartArea: false },
-        title: { display: true, text: 'Item Count' }
+        title: { display: true, text: 'Item Count', font: { family: "'DM Sans', sans-serif" } }
       },
+      x: {
+        grid: { display: false }
+      }
     }
   };
 
   return (
     <div class="max-w-5xl mx-auto space-y-10 pb-12">
       <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 class="text-4xl font-extrabold tracking-tight">Dashboard</h1>
+        <div class="animate-fade-in">
+          <h1 class="page-title">Dashboard</h1>
           <p class="text-base-content/60 mt-1">Spending insights and order statistics</p>
         </div>
       </div>
@@ -124,39 +142,39 @@ export function Dashboard() {
             <Show when={stats()}>
               {(s) => (
                 <>
-                  <div class="stats shadow bg-primary text-primary-content">
+                  <div class="stats stats-card rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-primary-content opacity-70">Total Spend</div>
-                      <div class="stat-value text-2xl md:text-3xl">{s().totalSpend.toFixed(2)}€</div>
-                      <div class="stat-desc text-primary-content opacity-70">{data().length} months tracked</div>
+                      <div class="stat-title text-neutral/60 font-medium">Total Spend</div>
+                      <div class="stat-value text-primary text-2xl md:text-3xl font-bold">{s().totalSpend.toFixed(2)}€</div>
+                      <div class="stat-desc text-neutral/50">{data().length} months tracked</div>
                     </div>
                   </div>
                   
-                  <div class="stats shadow bg-secondary text-secondary-content">
+                  <div class="stats stats-card rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-secondary-content opacity-70">Total Items</div>
-                      <div class="stat-value text-2xl md:text-3xl">{s().totalItems}</div>
-                      <div class="stat-desc text-secondary-content opacity-70">{s().distinctItems} distinct products</div>
+                      <div class="stat-title text-neutral/60 font-medium">Total Items</div>
+                      <div class="stat-value text-secondary text-2xl md:text-3xl font-bold">{s().totalItems}</div>
+                      <div class="stat-desc text-neutral/50">{s().distinctItems} distinct products</div>
                     </div>
                   </div>
 
-                  <div class="stats shadow">
+                  <div class="stats stats-card rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title">Avg Order Value</div>
-                      <div class="stat-value text-2xl md:text-3xl">
+                      <div class="stat-title text-neutral/60 font-medium">Avg Order Value</div>
+                      <div class="stat-value text-accent text-2xl md:text-3xl font-bold">
                         {s().totalOrders ? (s().totalSpend / s().totalOrders).toFixed(2) : '0.00'}€
                       </div>
-                      <div class="stat-desc">{s().totalOrders} total orders</div>
+                      <div class="stat-desc text-neutral/50">{s().totalOrders} total orders</div>
                     </div>
                   </div>
 
-                  <div class="stats shadow">
+                  <div class="stats stats-card rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title">Orders per Month</div>
-                      <div class="stat-value text-2xl md:text-3xl">
+                      <div class="stat-title text-neutral/60 font-medium">Orders per Month</div>
+                      <div class="stat-value text-neutral text-2xl md:text-3xl font-bold">
                         {data().length ? (s().totalOrders / data().length).toFixed(1) : '0.0'}
                       </div>
-                      <div class="stat-desc">Monthly average</div>
+                      <div class="stat-desc text-neutral/50">Monthly average</div>
                     </div>
                   </div>
                 </>
