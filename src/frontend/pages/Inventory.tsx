@@ -1,5 +1,6 @@
 // src/frontend/pages/Inventory.tsx
 import { createSignal, onMount, For, Show } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
 
 interface InventoryItem {
@@ -36,6 +37,7 @@ interface Cart {
 const REORDER_THRESHOLD = 0.7;
 
 export function Inventory() {
+  const navigate = useNavigate();
   const [items, setItems] = createSignal<InventoryItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [cartLoading, setCartLoading] = createSignal(false);
@@ -91,14 +93,10 @@ export function Inventory() {
     }
   };
 
-  // All interactions with addedItems and pendingQtys use String(item._id) because
-  // those Sets/Maps are keyed by string, while InventoryItem._id is numeric from MongoDB.
-
   const openStepper = (item: InventoryItem) => {
     const id = String(item._id);
-    if (addedItems().has(id)) return; // already in cart
+    if (addedItems().has(id)) return;
     setReorderingItem(id);
-    // Intentional: keep qty if stepper was previously opened for this item
     if (!pendingQtys().has(id)) {
       setPendingQtys(prev => new Map(prev).set(id, item.avgQuantity));
     }
@@ -127,14 +125,12 @@ export function Inventory() {
         setAddedItems(prev => new Set([...prev, productId]));
         if (data.cart) setCart(data.cart);
         showToast('Added to Knuspr cart!');
-        setReorderingItem(null);  // collapse stepper only on success
+        setReorderingItem(null);
       } else {
         showToast('Failed to add item to cart.', 'error');
-        // stepper stays open so user can retry with same qty
       }
     } catch {
       showToast('Connection error. Could not add to cart.', 'error');
-      // stepper stays open so user can retry
     } finally {
       setAddingToCart(false);
     }
@@ -155,10 +151,11 @@ export function Inventory() {
 
 
   return (
-    <div class="space-y-6 pb-48 max-w-6xl mx-auto">
+    <div class="space-y-8 pb-48">
+
       <div class="flex justify-between items-center">
         <div class="animate-fade-in">
-          <h1 class="page-title">Inventory</h1>
+          <h1 class="text-4xl font-extrabold tracking-tight">Inventory</h1>
           <p class="text-base-content/60 mt-1">Track your grocery stock levels</p>
         </div>
         <button
@@ -166,26 +163,26 @@ export function Inventory() {
           onClick={() => Promise.all([fetchInventory(), fetchCart()])}
           disabled={loading() || cartLoading()}
         >
-          <RefreshCw size={16} class={loading() || cartLoading() ? 'animate-spin' : ''} />
-          Refresh
+          <RefreshCw size={18} class={loading() || cartLoading() ? 'animate-spin' : ''} />
+          <span class="font-bold">Refresh</span>
         </button>
       </div>
 
-      <div class="tabs tabs-boxed bg-base-100 p-1 rounded-xl w-fit">
+      <div class="tabs tabs-box bg-base-100 p-1 rounded-2xl border border-base-300 shadow-sm w-fit">
         <button
-          class={`tab rounded-lg ${tab() === 'running-out' ? 'tab-active bg-primary text-primary-content' : ''}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'running-out' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
           onClick={() => setTab('running-out')}
         >
           Running Out
         </button>
         <button
-          class={`tab rounded-lg ${tab() === 'reorder' ? 'tab-active bg-primary text-primary-content' : ''}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'reorder' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
           onClick={() => setTab('reorder')}
         >
           Needs Reorder
         </button>
         <button
-          class={`tab rounded-lg ${tab() === 'in-shelf' ? 'tab-active bg-primary text-primary-content' : ''}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'in-shelf' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
           onClick={() => setTab('in-shelf')}
         >
           In Shelf
@@ -193,123 +190,151 @@ export function Inventory() {
       </div>
 
       <Show when={error()}>
-        <div class="alert alert-error">
-          <AlertCircle size={20} />
-          <span>{error()}</span>
-          <button class="btn btn-sm btn-ghost" onClick={fetchInventory}>Retry</button>
+        <div class="alert alert-error shadow-lg">
+          <AlertCircle size={24} />
+          <span class="font-bold">{error()}</span>
+          <button class="btn btn-sm bg-white/20 border-none hover:bg-white/30" onClick={fetchInventory}>Retry</button>
         </div>
       </Show>
 
       <Show when={loading() && items().length === 0}>
-        <div class="flex justify-center p-12">
-          <span class="loading loading-spinner loading-lg text-primary" />
+        <div class="flex justify-center p-24">
+          <span class="loading loading-spinner loading-lg text-primary scale-150" />
         </div>
       </Show>
 
       <Show when={!loading() || items().length > 0}>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
           <For each={filteredItems()} fallback={
-            <div class="col-span-full flex flex-col items-center justify-center p-12 bg-base-100 rounded-xl shadow-sm border border-base-300">
-              <div class="text-6xl mb-4">🛒</div>
-              <h3 class="text-xl font-bold">No items found</h3>
-              <p class="text-base-content/60">All your groceries in this category are well stocked.</p>
+            <div class="col-span-full flex flex-col items-center justify-center p-20 bg-base-100 rounded-3xl shadow-sm border border-base-300">
+              <div class="text-8xl mb-8 opacity-20">🛒</div>
+              <h3 class="text-3xl font-black">All stocked up!</h3>
+              <p class="text-base-content/50 text-xl mt-2 font-medium">Nothing needs your attention in this category.</p>
             </div>
           }>
             {(item) => {
               const id = String(item._id);
               return (
-              <div class="card bg-base-100 shadow-md border border-base-200/50 hover:shadow-xl transition-all duration-300 rounded-2xl hover-lift">
-                <div class="card-body p-5">
-                    <div class="flex items-start gap-3">
+              <div 
+                class="card bg-base-100 shadow-lg border border-base-300 hover:shadow-2xl transition-all group cursor-pointer hover-lift"
+                onClick={(e) => {
+                  // Only navigate if we didn't click an action element
+                  if (!(e.target as HTMLElement).closest('.card-actions')) {
+                    navigate(`/products/${item._id}`);
+                  }
+                }}
+              >
+                <div class="card-body p-8 flex flex-col h-full">
+                    {/* Header: Image + Title Side-by-Side */}
+                    <div class="flex items-start gap-5 mb-4">
                       <div class="avatar flex-shrink-0">
-                        <div class="mask mask-squircle w-12 h-12 bg-base-200">
-                          <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xs opacity-30">?</div>}>
+                        <div class="mask mask-squircle w-20 h-20 bg-base-200 shadow-md group-hover:scale-110 transition-transform duration-300">
+                          <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-xl opacity-20 font-black">?</div>}>
                             <img src={item.image?.replace('https://www.knuspr.de', 'https://cdn.knuspr.de')} alt={item.name} loading="lazy" />
                           </Show>
                         </div>
                       </div>
-                      <div class="flex-1 min-w-0">
-                        <h2 class="font-bold text-sm leading-tight line-clamp-2 h-9" title={item.name}>{item.name}</h2>
-                        <Show when={item.categories?.length}>
-                          <div class="flex flex-wrap gap-1 mt-1">
-                            <For each={item.categories?.slice(-2)}>
-                              {(cat) => (
-                                <span class="badge badge-ghost badge-xs opacity-70 text-[9px] uppercase font-semibold">{cat.name}</span>
-                              )}
-                            </For>
-                          </div>
-                        </Show>
-                      </div>
-                      <div class="text-right flex-shrink-0">
-                        <Show when={item.currentPrice} fallback={
-                          <div class="text-sm font-bold opacity-20">€--</div>
-                        }>
-                           <div class="text-sm font-bold">€{Number(item.currentPrice).toFixed(2)}</div>
-                           <Show when={Math.abs(Number(item.currentPrice) - item.avgPrice) >= 0.01}>
-                             <div class={`text-[10px] font-bold ${Number(item.currentPrice) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
-                               {Number(item.currentPrice) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs(Number(item.currentPrice) - item.avgPrice).toFixed(2)}€
-                             </div>
-                           </Show>
-                        </Show>
+                      <div class="min-w-0 flex-1">
+                        <h2 class="font-black text-lg leading-tight line-clamp-3 h-20 group-hover:text-primary transition-colors" title={item.name}>
+                          {item.name}
+                        </h2>
                       </div>
                     </div>
 
-                  <div class="space-y-2 mt-4">
-                    <progress
-                      class={`progress w-full ${
-                        item.daysSinceLast >= item.avgInterval ? 'progress-error' :
-                        item.daysSinceLast >= item.avgInterval * REORDER_THRESHOLD ? 'progress-warning' :
-                        'progress-success'
-                      }`}
-                      value={item.daysSinceLast}
-                      max={item.avgInterval}
-                    />
-                    <p class="text-xs opacity-60">
-                      Last ordered {Math.round(item.daysSinceLast)} days ago (avg. every {Math.round(item.avgInterval)} days)
-                    </p>
-                  </div>
-                  <div class="card-actions justify-end mt-4">
-                    <Show
-                      when={reorderingItem() === id}
-                      fallback={
-                        <button
-                          class={`btn btn-sm gap-2 ${addedItems().has(id) ? 'btn-success' : 'btn-primary'}`}
-                          onClick={() => openStepper(item)}
-                          disabled={addedItems().has(id)}
-                        >
-                          <Show when={addedItems().has(id)} fallback={<ShoppingCart size={16} />}>
-                            <Check size={16} />
-                          </Show>
-                          {addedItems().has(id) ? 'Added' : 'Reorder'}
-                        </button>
-                      }
-                    >
-                      <div class="flex items-center gap-1">
-                        <button
-                          class="btn btn-sm btn-ghost btn-square"
-                          onClick={() => adjustQty(id, -1)}
-                          disabled={addingToCart()}
-                        >−</button>
-                        <span class="w-8 text-center font-mono text-sm">
-                          {pendingQtys().get(id) ?? item.avgQuantity}
-                        </span>
-                        <button
-                          class="btn btn-sm btn-ghost btn-square"
-                          onClick={() => adjustQty(id, 1)}
-                          disabled={addingToCart()}
-                        >+</button>
-                        <button
-                          class="btn btn-sm btn-primary gap-1"
-                          onClick={() => addToCart(id)}
-                          disabled={addingToCart()}
-                        >
-                          <Show when={addingToCart()}>
-                            <span class="loading loading-spinner loading-xs" />
-                          </Show>
-                          Add
-                        </button>
+                  {/* Middle: Usage visualization */}
+                  <div class="space-y-4 flex-grow mt-2">
+                    <Show when={item.categories?.length}>
+                      <div class="flex flex-wrap gap-1.5 mt-2">
+                        <For each={item.categories?.slice(-1)}>
+                          {(cat) => (
+                            <span class="badge badge-neutral badge-xs opacity-50 text-[9px] uppercase font-black tracking-widest py-2 px-2">{cat.name}</span>
+                          )}
+                        </For>
                       </div>
                     </Show>
+                    <div class="relative">
+                       <progress
+                        class={`progress w-full h-4 rounded-full shadow-inner ${
+                          item.daysSinceLast >= item.avgInterval ? 'progress-error' :
+                          item.daysSinceLast >= item.avgInterval * REORDER_THRESHOLD ? 'progress-warning' :
+                          'progress-success'
+                        }`}
+                        value={item.daysSinceLast}
+                        max={item.avgInterval}
+                      />
+                    </div>
+                    <div class="flex justify-between items-end">
+                      <div class="flex flex-col">
+                        <span class="text-[10px] font-black uppercase opacity-30 tracking-tighter mb-0.5">Last Refill</span>
+                        <span class="text-sm font-bold opacity-80">{Math.round(item.daysSinceLast)}d ago</span>
+                      </div>
+                      <div class="flex flex-col text-right">
+                        <span class="text-[10px] font-black uppercase opacity-30 tracking-tighter mb-0.5">Cycle</span>
+                        <span class="text-xs font-medium opacity-50">~{Math.round(item.avgInterval)}d</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer: Action + Price Next to Each Other */}
+                  <div class="card-actions items-center gap-3 mt-8 pt-6 border-t border-base-200" onClick={(e) => e.stopPropagation()}>
+                    <div class="flex-grow">
+                      <Show
+                        when={reorderingItem() === id}
+                        fallback={
+                          <button
+                            class={`btn btn-md gap-2 w-full shadow-sm ${addedItems().has(id) ? 'btn-success text-white' : 'btn-primary'}`}
+                            onClick={(e) => { e.stopPropagation(); openStepper(item); }}
+                            disabled={addedItems().has(id)}
+                          >
+                            <Show when={addedItems().has(id)} fallback={<ShoppingCart size={18} />}>
+                              <Check size={18} />
+                            </Show>
+                            <span class="font-bold">{addedItems().has(id) ? 'In Cart' : 'Reorder'}</span>
+                          </button>
+                        }
+                      >
+                        <div class="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                          <div class="join flex-grow shadow-sm">
+                            <button
+                              class="btn btn-sm btn-ghost join-item border border-base-300 px-3"
+                              onClick={() => adjustQty(id, -1)}
+                              disabled={addingToCart()}
+                            >−</button>
+                            <div class="btn btn-sm btn-ghost no-animation join-item border-y border-base-300 font-mono text-base min-w-[2.5rem]">
+                              {pendingQtys().get(id) ?? item.avgQuantity}
+                            </div>
+                            <button
+                              class="btn btn-sm btn-ghost join-item border border-base-300 px-3"
+                              onClick={() => adjustQty(id, 1)}
+                              disabled={addingToCart()}
+                            >+</button>
+                          </div>
+                          <button
+                            class="btn btn-sm btn-primary gap-1 shadow-sm px-4"
+                            onClick={() => addToCart(id)}
+                            disabled={addingToCart()}
+                          >
+                            <Show when={addingToCart()}>
+                              <span class="loading loading-spinner loading-xs" />
+                            </Show>
+                            <span class="font-bold">Add</span>
+                          </button>
+                        </div>
+                      </Show>
+                    </div>
+
+                    <div class="text-right flex-shrink-0 min-w-[70px]">
+                      <Show when={item.currentPrice} fallback={
+                        <div class="text-lg font-black opacity-10">€--</div>
+                      }>
+                         <div class="text-xl font-black text-primary leading-none">€{Number(item.currentPrice).toFixed(2)}</div>
+                         <Show when={Math.abs(Number(item.currentPrice) - item.avgPrice) >= 0.01}>
+                           <div class={`text-[10px] font-black flex items-center justify-end gap-0.5 mt-1 ${Number(item.currentPrice) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
+                             {Number(item.currentPrice) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs(Number(item.currentPrice) - item.avgPrice).toFixed(2)}€
+                           </div>
+                         </Show>
+                      </Show>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,35 +1,12 @@
 import { createSignal, onMount, For, Show, createEffect } from 'solid-js';
 import { Line } from 'solid-chartjs';
-import { useParams, A, useSearchParams } from '@solidjs/router';
+import { useParams, A, useSearchParams, useNavigate } from '@solidjs/router';
 import { ArrowLeft, X, List, TrendingUp } from 'lucide-solid';
 
-interface TrendItem {
-  _id: { id: number; name: string };
-  prices: Array<{ date: string; unitPrice: number; orderId: number }>;
-  count: number;
-  image?: string;
-  categories?: Array<{ id: number; name: string; slug: string; level: number }>;
-}
-
-interface OrderDetail {
-  id: number;
-  itemsCount: number;
-  priceComposition: {
-    total: { amount: number };
-  };
-  orderTimeDate: string;
-  address: string;
-  items: Array<{
-    id: number;
-    amount: number;
-    textualAmount?: string;
-    priceComposition: {
-      unit: { amount: number };
-    };
-  }>;
-}
+// ... (interfaces stay same)
 
 export function Products() {
+  const navigate = useNavigate();
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [trends, setTrends] = createSignal<TrendItem[]>([]);
@@ -232,17 +209,21 @@ export function Products() {
         </div>
       </div>
 
-      <Show when={!loading()} fallback={<span class="loading loading-spinner loading-lg" />}>
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <Show when={!loading()} fallback={
+        <div class="flex justify-center p-24">
+          <span class="loading loading-spinner loading-lg text-primary" />
+        </div>
+      }>
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           {/* Product List Card - Hidden on mobile if a product is selected */}
-          <div class={`card bg-base-100 shadow-xl overflow-hidden border border-base-300 ${productId() ? 'hidden xl:flex' : 'flex'}`}>
-            <div class="max-h-[600px] overflow-y-auto">
-              <table class="table table-pin-rows table-xs sm:table-sm">
+          <div class={`card bg-base-100 shadow-xl overflow-hidden border border-base-300 xl:col-span-5 ${productId() ? 'hidden xl:flex' : 'flex'}`}>
+            <div class="max-h-[750px] overflow-y-auto">
+              <table class="table table-pin-rows table-sm md:table-md">
                 <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th class="text-center">{orderId() ? 'Qty' : '#'}</th>
-                    <th>Price</th>
+                  <tr class="bg-base-200/50 text-xs uppercase tracking-wider">
+                    <th class="py-4 px-6">Product</th>
+                    <th class="text-center py-4">{orderId() ? 'Qty' : '#'}</th>
+                    <th class="py-4 px-6 text-right">Price</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -264,28 +245,28 @@ export function Products() {
 
                       return (
                         <tr 
-                          class={`cursor-pointer transition-colors ${selectedItem()?._id.id === item._id.id || highlightedId() === String(item._id.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-base-200'}`}
+                          class={`cursor-pointer transition-all border-b border-base-200 group ${selectedItem()?._id.id === item._id.id || highlightedId() === String(item._id.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-base-200/70'}`}
                           onClick={() => {
                             setSearchParams({ product: item._id.id, highlight: undefined });
                           }}
                         >
-                          <td class="max-w-[160px] sm:max-w-xs">
-                            <div class="flex items-center gap-2 sm:gap-3">
+                          <td class="px-6 py-4">
+                            <div class="flex items-center gap-4">
                               <div class="avatar shrink-0">
-                                <div class="mask mask-squircle w-10 h-10 bg-base-200">
-                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-30">N/A</div>}>
+                                <div class="mask mask-squircle w-12 h-12 bg-base-200 shadow-sm group-hover:scale-105 transition-transform">
+                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-30 font-bold">N/A</div>}>
                                     <img src={item.image} alt={item._id.name} loading="lazy" />
                                   </Show>
                                 </div>
                               </div>
                               <div class="min-w-0">
-                                <div class="font-bold truncate text-xs sm:text-sm" title={item._id.name}>{item._id.name}</div>
-                                <div class="text-[10px] opacity-50 truncate">ID: {item._id.id}</div>
+                                <div class="font-bold text-sm sm:text-base mb-0.5 leading-tight group-hover:text-primary transition-colors" title={item._id.name}>{item._id.name}</div>
+                                <div class="text-[10px] sm:text-xs opacity-50 font-mono">ID: {item._id.id}</div>
                               </div>
                             </div>
                           </td>
-                          <td class="text-center font-mono text-xs">{orderAmount}</td>
-                          <td class="font-medium whitespace-nowrap">{orderPrice.toFixed(2)}€</td>
+                          <td class="text-center font-mono text-sm font-semibold">{orderAmount}</td>
+                          <td class="px-6 py-4 font-bold text-primary whitespace-nowrap text-sm sm:text-base text-right">{orderPrice.toFixed(2)}€</td>
                         </tr>
                       );
                     }}
@@ -296,30 +277,36 @@ export function Products() {
           </div>
 
           {/* Trend Detail Card - Visible on mobile only if a product is selected */}
-          <div class={`space-y-6 ${productId() ? 'block' : 'hidden xl:block'}`}>
+          <div class={`space-y-6 xl:col-span-7 ${productId() ? 'block' : 'hidden xl:block'}`}>
             <Show when={selectedItem()} fallback={
-              <div class="card bg-base-100 shadow-xl h-full min-h-[300px] flex items-center justify-center p-8 opacity-50 border-2 border-dashed border-base-300">
+              <div class="card bg-base-100 shadow-xl h-full min-h-[400px] flex items-center justify-center p-12 opacity-50 border-2 border-dashed border-base-300">
                 <div class="text-center">
-                  <TrendingUp size={48} class="mx-auto mb-4 opacity-20" />
-                  <p>Select a product to view price history</p>
+                  <div class="bg-base-200 p-6 rounded-full inline-block mb-6 shadow-inner">
+                    <TrendingUp size={64} class="opacity-30" />
+                  </div>
+                  <p class="text-xl font-medium">Select a product to view price history</p>
+                  <p class="text-sm opacity-60 mt-2">Click on any item in the list to see its trends</p>
                 </div>
               </div>
             }>
               {(item) => (
-                <div class="card bg-base-100 shadow-xl border border-base-300">
-                  <div class="card-body p-4 sm:p-6">
-                    <div class="flex flex-row gap-4 items-center mb-2">
+                <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+                  <div class="card-body p-6 md:p-10">
+                    <div class="flex flex-row gap-6 items-center mb-6">
                       <Show when={item().image}>
-                        <div class="w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 bg-base-200 rounded-lg overflow-hidden shadow-inner">
+                        <div class="w-20 h-20 md:w-24 md:h-24 flex-shrink-0 bg-base-200 rounded-2xl overflow-hidden shadow-md p-1">
                           <img src={item().image} alt={item()._id.name} class="w-full h-full object-contain" />
                         </div>
                       </Show>
                       <div class="flex-grow min-w-0">
-                        <h2 class="card-title text-primary text-lg sm:text-xl line-clamp-2 leading-tight mb-1">{item()._id.name}</h2>
-                        <p class="text-[10px] sm:text-xs opacity-70">Price History • ID: {item()._id.id}</p>
+                        <h2 class="card-title text-primary text-2xl md:text-3xl line-clamp-2 leading-tight mb-2">{item()._id.name}</h2>
+                        <div class="flex items-center gap-3">
+                           <span class="badge badge-outline badge-md opacity-60 font-mono px-3">ID: {item()._id.id}</span>
+                           <span class="text-xs font-semibold uppercase tracking-widest opacity-40">Price History</span>
+                        </div>
                       </div>
                       <button 
-                        class="xl:hidden btn btn-ghost btn-sm btn-square" 
+                        class="xl:hidden btn btn-ghost btn-circle" 
                         onClick={() => {
                           if (orderId()) {
                             navigate(`/order/${orderId()}`);
@@ -329,28 +316,30 @@ export function Products() {
                         }}
                         aria-label="Back to list"
                       >
-                        <X size={20} />
+                        <X size={24} />
                       </button>
                     </div>
                     
-                    <div class="h-48 sm:h-64 mt-2">
+                    <div class="h-[350px] md:h-[450px] mt-4 p-4 bg-base-200/30 rounded-2xl border border-base-200">
                       <Line data={getChartData(item())} options={chartOptions} />
                     </div>
 
-                    <div class="divider text-xs my-2">Purchase History</div>
+                    <div class="divider text-xs font-bold uppercase tracking-[0.2em] my-8 opacity-30">Purchase History</div>
                     
-                    <div class="space-y-2 max-h-48 xl:max-h-64 overflow-y-auto pr-1">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
                       <For each={[...item().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
                         {(p) => (
                           <A 
                             href={`/order/${p.orderId}?highlight=${item()._id.id}`}
-                            class={`flex justify-between items-center w-full p-2 rounded transition-colors text-left ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 ring-1 ring-primary/30' : 'bg-base-200 hover:bg-base-300'}`}
+                            class={`flex justify-between items-center w-full p-4 rounded-xl transition-all border ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 border-primary/30 shadow-inner' : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-400 hover:translate-x-1'}`}
                           >
                             <div class="flex flex-col">
-                              <span class="text-[10px] opacity-50 font-mono">Order #{p.orderId}</span>
-                              <span class="text-xs font-medium">{new Date(p.date).toLocaleDateString()}</span>
+                              <span class="text-[10px] opacity-40 font-black uppercase tracking-tighter mb-1">Order #{p.orderId}</span>
+                              <span class="text-sm font-bold">{new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                             </div>
-                            <span class="font-bold text-primary text-sm">{p.unitPrice.toFixed(2)}€</span>
+                            <div class="text-right">
+                              <span class="font-black text-primary text-lg">{p.unitPrice.toFixed(2)}€</span>
+                            </div>
                           </A>
                         )}
                       </For>

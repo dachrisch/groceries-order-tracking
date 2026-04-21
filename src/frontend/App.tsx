@@ -88,8 +88,8 @@ export function App(props: { children?: JSX.Element }) {
               <div class="h-20 shrink-0 hidden lg:block" />
 
               {/* Scrollable page content */}
-              <main class="flex-1 overflow-y-auto p-4 lg:p-10">
-                <div class="max-w-6xl mx-auto">
+              <main class="flex-1 overflow-y-auto p-4 lg:p-8 xl:p-12">
+                <div class="max-w-7xl mx-auto w-full">
                   {props.children}
                 </div>
               </main>

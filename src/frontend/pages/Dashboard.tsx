@@ -120,61 +120,61 @@ export function Dashboard() {
   };
 
   return (
-    <div class="max-w-5xl mx-auto space-y-10 pb-12">
-      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div class="space-y-12 pb-12">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div class="animate-fade-in">
-          <h1 class="page-title">Dashboard</h1>
-          <p class="text-base-content/60 mt-1">Spending insights and order statistics</p>
+          <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">Dashboard</h1>
+          <p class="text-base-content/60 mt-2 text-lg">Spending insights and order statistics</p>
         </div>
       </div>
       
       <Show when={!loading()} fallback={
-        <div class="flex justify-center items-center py-20">
+        <div class="flex justify-center items-center py-24">
           <span class="loading loading-spinner loading-lg text-primary" />
         </div>
       }>
         <Show when={data().length > 0} fallback={
-          <div class="alert alert-info shadow-sm border-info/20">
+          <div class="alert alert-info shadow-sm border-info/20 p-6 text-lg">
             <span>No order data found. Go to <A href="/settings" class="link font-bold">Settings</A> to connect your Knuspr account and sync your orders.</span>
           </div>
         }>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             <Show when={stats()}>
               {(s) => (
                 <>
-                  <div class="stats stats-card rounded-2xl hover-lift">
+                  <div class="stats shadow bg-primary text-primary-content p-2 rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-neutral/60 font-medium">Total Spend</div>
-                      <div class="stat-value text-primary text-2xl md:text-3xl font-bold">{s().totalSpend.toFixed(2)}€</div>
-                      <div class="stat-desc text-neutral/50">{data().length} months tracked</div>
+                      <div class="stat-title text-primary-content opacity-80 text-sm font-medium uppercase tracking-wider">Total Spend</div>
+                      <div class="stat-value text-3xl md:text-4xl">{s().totalSpend.toFixed(2)}€</div>
+                      <div class="stat-desc text-primary-content opacity-70 mt-1">{data().length} months tracked</div>
                     </div>
                   </div>
                   
-                  <div class="stats stats-card rounded-2xl hover-lift">
+                  <div class="stats shadow bg-secondary text-secondary-content p-2 rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-neutral/60 font-medium">Total Items</div>
-                      <div class="stat-value text-secondary text-2xl md:text-3xl font-bold">{s().totalItems}</div>
-                      <div class="stat-desc text-neutral/50">{s().distinctItems} distinct products</div>
+                      <div class="stat-title text-secondary-content opacity-80 text-sm font-medium uppercase tracking-wider">Total Items</div>
+                      <div class="stat-value text-3xl md:text-4xl">{s().totalItems}</div>
+                      <div class="stat-desc text-secondary-content opacity-70 mt-1">{s().distinctItems} distinct products</div>
                     </div>
                   </div>
 
-                  <div class="stats stats-card rounded-2xl hover-lift">
+                  <div class="stats shadow p-2 rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-neutral/60 font-medium">Avg Order Value</div>
-                      <div class="stat-value text-accent text-2xl md:text-3xl font-bold">
+                      <div class="stat-title text-sm font-medium uppercase tracking-wider">Avg Order Value</div>
+                      <div class="stat-value text-3xl md:text-4xl">
                         {s().totalOrders ? (s().totalSpend / s().totalOrders).toFixed(2) : '0.00'}€
                       </div>
-                      <div class="stat-desc text-neutral/50">{s().totalOrders} total orders</div>
+                      <div class="stat-desc mt-1">{s().totalOrders} total orders</div>
                     </div>
                   </div>
 
-                  <div class="stats stats-card rounded-2xl hover-lift">
+                  <div class="stats shadow p-2 rounded-2xl hover-lift">
                     <div class="stat">
-                      <div class="stat-title text-neutral/60 font-medium">Orders per Month</div>
-                      <div class="stat-value text-neutral text-2xl md:text-3xl font-bold">
+                      <div class="stat-title text-sm font-medium uppercase tracking-wider">Orders per Month</div>
+                      <div class="stat-value text-3xl md:text-4xl">
                         {data().length ? (s().totalOrders / data().length).toFixed(1) : '0.0'}
                       </div>
-                      <div class="stat-desc text-neutral/50">Monthly average</div>
+                      <div class="stat-desc mt-1">Monthly average</div>
                     </div>
                   </div>
                 </>
@@ -182,10 +182,10 @@ export function Dashboard() {
             </Show>
           </div>
 
-          <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-              <h2 class="card-title">Spend & Item Count Over Time</h2>
-              <div class="h-96">
+          <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden rounded-2xl">
+            <div class="card-body p-8">
+              <h2 class="card-title text-2xl mb-4">Spend & Item Count Over Time</h2>
+              <div class="h-[400px] md:h-[500px]">
                 <Line data={chartData()} options={chartOptions} />
               </div>
             </div>

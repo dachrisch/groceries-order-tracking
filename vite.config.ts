@@ -7,6 +7,11 @@ export default defineConfig({
     solidPlugin(),
     tailwindcss(),
   ],
+  resolve: {
+    alias: {
+      daisyui: 'daisyui/index.js',
+    },
+  },
   optimizeDeps: {
     include: ['lucide-solid'],
   },
