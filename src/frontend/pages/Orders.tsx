@@ -50,7 +50,7 @@ export function Orders() {
                       <ShoppingBag size={28} />
                     </div>
                     <div class="text-right">
-                      <div class="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Order ID</div>
+                      <div class="text-[10px] font-black opacity-85 uppercase tracking-widest mb-1">Order ID</div>
                       <div class="text-xs font-mono font-bold opacity-85">#{order.id}</div>
                     </div>
                   </div>

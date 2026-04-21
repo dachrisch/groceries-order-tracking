@@ -254,7 +254,7 @@ export function Products() {
                             <div class="flex items-center gap-4">
                               <div class="avatar shrink-0">
                                 <div class="mask mask-squircle w-12 h-12 bg-base-200 shadow-sm group-hover:scale-105 transition-transform">
-                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-60 font-bold">N/A</div>}>
+                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-85 font-bold">N/A</div>}>
                                     <img src={item.image} alt={item._id.name} loading="lazy" />
                                   </Show>
                                 </div>
@@ -282,7 +282,7 @@ export function Products() {
               <div class="card bg-base-100 shadow-xl h-full min-h-[400px] flex items-center justify-center p-12 opacity-75 border-2 border-dashed border-base-300">
                 <div class="text-center">
                   <div class="bg-base-200 p-6 rounded-full inline-block mb-6 shadow-inner">
-                    <TrendingUp size={64} class="opacity-60" />
+                    <TrendingUp size={64} class="opacity-85" />
                   </div>
                   <p class="text-xl font-medium">Select a product to view price history</p>
                   <p class="text-sm opacity-85 mt-2">Click on any item in the list to see its trends</p>
@@ -320,18 +320,18 @@ export function Products() {
                       </button>
                     </div>
                     
-                    <div class="h-[350px] md:h-[450px] mt-4 p-4 bg-base-200/60 rounded-2xl border border-base-200">
+                    <div class="h-[350px] md:h-[450px] mt-4 p-4 bg-base-200/85 rounded-2xl border border-base-200">
                       <Line data={getChartData(item())} options={chartOptions} />
                     </div>
 
-                    <div class="divider text-xs font-bold uppercase tracking-[0.2em] my-8 opacity-60">Purchase History</div>
+                    <div class="divider text-xs font-bold uppercase tracking-[0.2em] my-8 opacity-85">Purchase History</div>
                     
                     <div class="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
                       <For each={[...item().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
                         {(p) => (
                           <A 
                             href={`/order/${p.orderId}?highlight=${item()._id.id}`}
-                            class={`flex justify-between items-center w-full p-4 rounded-xl transition-all border ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 border-primary/60 shadow-inner' : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-400 hover:translate-x-1'}`}
+                            class={`flex justify-between items-center w-full p-4 rounded-xl transition-all border ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 border-primary/85 shadow-inner' : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-400 hover:translate-x-1'}`}
                           >
                             <div class="flex flex-col">
                               <span class="text-[10px] opacity-40 font-black uppercase tracking-tighter mb-1">Order #{p.orderId}</span>
