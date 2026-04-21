@@ -134,35 +134,35 @@ export function App(props: { children?: JSX.Element }) {
                     <li>
                       <A href="/" activeClass="active" end onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <LayoutDashboard size={20} class="text-primary/70" />
+                        <LayoutDashboard size={20} class="text-primary/90" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Dashboard</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/orders" activeClass="active" onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ShoppingBag size={20} class="text-secondary/70" />
+                        <ShoppingBag size={20} class="text-secondary/90" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Orders</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/products" activeClass="active" onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ShoppingBasket size={20} class="text-accent/70" />
+                        <ShoppingBasket size={20} class="text-accent/90" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Products</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/inventory" activeClass="active" onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ClipboardList size={20} class="text-primary-light/70" />
+                        <ClipboardList size={20} class="text-primary-light/90" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Inventory</span></Show>
                       </A>
                     </li>
                     <li>
                       <A href="/settings" activeClass="active" onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <SettingsIcon size={20} class="text-neutral/70" />
+                        <SettingsIcon size={20} class="text-neutral/90" />
                         <Show when={!sidebarCollapsed()}><span class="font-medium">Settings</span></Show>
                       </A>
                     </li>
