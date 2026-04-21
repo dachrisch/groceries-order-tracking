@@ -34,6 +34,9 @@
   /* Neutral warm */
   --color-neutral: #5c5346;
   --color-neutral-content: #fdfbf7;
+
+  /* High contrast base content */
+  --color-base-content: #2d2a24;
   
   /* Typography */
   --font-heading: 'Outfit', system-ui, sans-serif;
@@ -49,10 +52,12 @@
 html {
   font-family: var(--font-body);
   background-color: var(--color-base-200);
+  color: var(--color-base-content);
 }
 
 body {
   background-color: var(--color-base-200);
+  color: var(--color-base-content);
   min-height: 100vh;
 }
 
@@ -62,6 +67,7 @@ h1, h2, h3, h4, h5, h6,
   font-family: var(--font-heading);
   font-weight: 600;
   letter-spacing: -0.02em;
+  color: var(--color-neutral);
 }
 
 /* Custom card styling */
