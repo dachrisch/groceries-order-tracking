@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.7.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.1...v1.7.0) (2026-04-21)
+
+
+### Features
+
+* **frontend:** enhance desktop layout and fix DaisyUI ESM resolution ([e5b7a52](https://github.com/dachrisch/groceries-order-tracking/commit/e5b7a52c07d266344124de58bc4b9154a4fd3a72))
+* **ui:** implement organic/modern market design system ([2792792](https://github.com/dachrisch/groceries-order-tracking/commit/279279207d5bb26ae533378d0a18ceabef4df64a)), closes [#3a7d6](https://github.com/dachrisch/groceries-order-tracking/issues/3a7d6)
+
 ## [1.6.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.1...v1.6.0) (2026-03-27)
 
 
