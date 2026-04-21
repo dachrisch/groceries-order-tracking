@@ -124,7 +124,7 @@ export function Dashboard() {
       <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div class="animate-fade-in">
           <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">Dashboard</h1>
-          <p class="text-base-content/60 mt-2 text-lg">Spending insights and order statistics</p>
+          <p class="text-base-content/85 mt-2 text-lg">Spending insights and order statistics</p>
         </div>
       </div>
       

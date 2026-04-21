@@ -38,7 +38,7 @@ export function Login() {
             </svg>
           </div>
           <h2 class="text-3xl font-bold text-neutral">Welcome back</h2>
-          <p class="text-sm opacity-60 mt-2">Sign in to track your groceries</p>
+          <p class="text-sm opacity-85 mt-2">Sign in to track your groceries</p>
         </div>
         
         <form onSubmit={handleLogin} class="space-y-5">
@@ -58,7 +58,7 @@ export function Login() {
             <input 
               type="email" 
               placeholder="you@example.com" 
-              class="input input-bordered w-full bg-base-100/50" 
+              class="input input-bordered w-full bg-base-100/75" 
               value={email()} 
               onInput={(e) => setEmail(e.currentTarget.value)} 
               required
@@ -72,7 +72,7 @@ export function Login() {
             <input 
               type="password" 
               placeholder="••••••••" 
-              class="input input-bordered w-full bg-base-100/50" 
+              class="input input-bordered w-full bg-base-100/75" 
               value={password()} 
               onInput={(e) => setPassword(e.currentTarget.value)} 
               required
@@ -85,7 +85,7 @@ export function Login() {
         </form>
         
         <div class="mt-6 text-center text-sm">
-          <span class="opacity-60">Don't have an account? </span>
+          <span class="opacity-85">Don't have an account? </span>
           <A href="/register" class="font-medium text-primary hover:underline">Create one</A>
         </div>
       </div>

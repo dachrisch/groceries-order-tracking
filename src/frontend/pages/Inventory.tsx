@@ -156,7 +156,7 @@ export function Inventory() {
       <div class="flex justify-between items-center">
         <div class="animate-fade-in">
           <h1 class="text-4xl font-extrabold tracking-tight">Inventory</h1>
-          <p class="text-base-content/60 mt-1">Track your grocery stock levels</p>
+          <p class="text-base-content/85 mt-1">Track your grocery stock levels</p>
         </div>
         <button
           class="btn btn-ghost btn-sm gap-2 rounded-xl"
@@ -170,19 +170,19 @@ export function Inventory() {
 
       <div class="tabs tabs-box bg-base-100 p-1 rounded-2xl border border-base-300 shadow-sm w-fit">
         <button
-          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'running-out' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'running-out' ? 'btn-primary shadow-md' : 'btn-ghost opacity-85'}`}
           onClick={() => setTab('running-out')}
         >
           Running Out
         </button>
         <button
-          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'reorder' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'reorder' ? 'btn-primary shadow-md' : 'btn-ghost opacity-85'}`}
           onClick={() => setTab('reorder')}
         >
           Needs Reorder
         </button>
         <button
-          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'in-shelf' ? 'btn-primary shadow-md' : 'btn-ghost opacity-60'}`}
+          class={`btn btn-sm border-none rounded-xl px-6 ${tab() === 'in-shelf' ? 'btn-primary shadow-md' : 'btn-ghost opacity-85'}`}
           onClick={() => setTab('in-shelf')}
         >
           In Shelf
@@ -193,7 +193,7 @@ export function Inventory() {
         <div class="alert alert-error shadow-lg">
           <AlertCircle size={24} />
           <span class="font-bold">{error()}</span>
-          <button class="btn btn-sm bg-white/20 border-none hover:bg-white/30" onClick={fetchInventory}>Retry</button>
+          <button class="btn btn-sm bg-white/20 border-none hover:bg-white/60" onClick={fetchInventory}>Retry</button>
         </div>
       </Show>
 
@@ -209,7 +209,7 @@ export function Inventory() {
             <div class="col-span-full flex flex-col items-center justify-center p-20 bg-base-100 rounded-3xl shadow-sm border border-base-300">
               <div class="text-8xl mb-8 opacity-20">🛒</div>
               <h3 class="text-3xl font-black">All stocked up!</h3>
-              <p class="text-base-content/50 text-xl mt-2 font-medium">Nothing needs your attention in this category.</p>
+              <p class="text-base-content/75 text-xl mt-2 font-medium">Nothing needs your attention in this category.</p>
             </div>
           }>
             {(item) => {
@@ -247,7 +247,7 @@ export function Inventory() {
                       <div class="flex flex-wrap gap-1.5 mt-2">
                         <For each={item.categories?.slice(-1)}>
                           {(cat) => (
-                            <span class="badge badge-neutral badge-xs opacity-50 text-[9px] uppercase font-black tracking-widest py-2 px-2">{cat.name}</span>
+                            <span class="badge badge-neutral badge-xs opacity-75 text-[9px] uppercase font-black tracking-widest py-2 px-2">{cat.name}</span>
                           )}
                         </For>
                       </div>
@@ -265,12 +265,12 @@ export function Inventory() {
                     </div>
                     <div class="flex justify-between items-end">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-black uppercase opacity-30 tracking-tighter mb-0.5">Last Refill</span>
+                        <span class="text-[10px] font-black uppercase opacity-60 tracking-tighter mb-0.5">Last Refill</span>
                         <span class="text-sm font-bold opacity-80">{Math.round(item.daysSinceLast)}d ago</span>
                       </div>
                       <div class="flex flex-col text-right">
-                        <span class="text-[10px] font-black uppercase opacity-30 tracking-tighter mb-0.5">Cycle</span>
-                        <span class="text-xs font-medium opacity-50">~{Math.round(item.avgInterval)}d</span>
+                        <span class="text-[10px] font-black uppercase opacity-60 tracking-tighter mb-0.5">Cycle</span>
+                        <span class="text-xs font-medium opacity-75">~{Math.round(item.avgInterval)}d</span>
                       </div>
                     </div>
                   </div>
@@ -389,7 +389,7 @@ export function Inventory() {
                           </div>
                           <div class="flex-1 min-w-0">
                             <p class="text-xs font-medium truncate">{cartItem.productName}</p>
-                            <p class="text-[10px] opacity-60">
+                            <p class="text-[10px] opacity-85">
                               €{cartItem.price.toFixed(2)}
                               <Show when={cartItem.avgPrice && Math.abs(cartItem.price - cartItem.avgPrice) > 0.01}>
                                 <span class={`ml-2 ${(cartItem.price - cartItem.avgPrice!) > 0 ? 'text-error' : 'text-success'}`}>

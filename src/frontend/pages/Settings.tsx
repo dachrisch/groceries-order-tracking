@@ -99,7 +99,7 @@ export function Settings() {
     <div class="max-w-2xl mx-auto space-y-8">
       <div class="animate-fade-in">
         <h1 class="page-title">Settings</h1>
-        <p class="text-base-content/60 mt-1">Manage your account and integrations</p>
+        <p class="text-base-content/85 mt-1">Manage your account and integrations</p>
       </div>
 
       <Show when={message()}>
@@ -127,7 +127,7 @@ export function Settings() {
                 </div>
                 <div class="flex-grow">
                   <div class="font-semibold text-lg">Knuspr</div>
-                  <div class="text-xs opacity-60">Online supermarket order history</div>
+                  <div class="text-xs opacity-85">Online supermarket order history</div>
                 </div>
                 <Show
                   when={knusprIntegration()}

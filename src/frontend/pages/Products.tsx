@@ -148,7 +148,7 @@ export function Products() {
         <div class="flex items-center justify-between gap-4 flex-wrap">
           <div class="animate-fade-in">
             <h1 class="page-title">{orderId() ? `Order Detail` : 'Product Trends'}</h1>
-            <p class="text-base-content/60 mt-1">{orderId() ? 'Items in this order' : 'Track price trends across your orders'}</p>
+            <p class="text-base-content/85 mt-1">{orderId() ? 'Items in this order' : 'Track price trends across your orders'}</p>
           </div>
           <Show when={orderId()}>
             <div class="flex items-center gap-2 flex-wrap">
@@ -220,7 +220,7 @@ export function Products() {
             <div class="max-h-[750px] overflow-y-auto">
               <table class="table table-pin-rows table-sm md:table-md">
                 <thead>
-                  <tr class="bg-base-200/50 text-xs uppercase tracking-wider">
+                  <tr class="bg-base-200/75 text-xs uppercase tracking-wider">
                     <th class="py-4 px-6">Product</th>
                     <th class="text-center py-4">{orderId() ? 'Qty' : '#'}</th>
                     <th class="py-4 px-6 text-right">Price</th>
@@ -254,14 +254,14 @@ export function Products() {
                             <div class="flex items-center gap-4">
                               <div class="avatar shrink-0">
                                 <div class="mask mask-squircle w-12 h-12 bg-base-200 shadow-sm group-hover:scale-105 transition-transform">
-                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-30 font-bold">N/A</div>}>
+                                  <Show when={item.image} fallback={<div class="flex items-center justify-center h-full text-[10px] text-opacity-60 font-bold">N/A</div>}>
                                     <img src={item.image} alt={item._id.name} loading="lazy" />
                                   </Show>
                                 </div>
                               </div>
                               <div class="min-w-0">
                                 <div class="font-bold text-sm sm:text-base mb-0.5 leading-tight group-hover:text-primary transition-colors" title={item._id.name}>{item._id.name}</div>
-                                <div class="text-[10px] sm:text-xs opacity-50 font-mono">ID: {item._id.id}</div>
+                                <div class="text-[10px] sm:text-xs opacity-75 font-mono">ID: {item._id.id}</div>
                               </div>
                             </div>
                           </td>
@@ -279,13 +279,13 @@ export function Products() {
           {/* Trend Detail Card - Visible on mobile only if a product is selected */}
           <div class={`space-y-6 xl:col-span-7 ${productId() ? 'block' : 'hidden xl:block'}`}>
             <Show when={selectedItem()} fallback={
-              <div class="card bg-base-100 shadow-xl h-full min-h-[400px] flex items-center justify-center p-12 opacity-50 border-2 border-dashed border-base-300">
+              <div class="card bg-base-100 shadow-xl h-full min-h-[400px] flex items-center justify-center p-12 opacity-75 border-2 border-dashed border-base-300">
                 <div class="text-center">
                   <div class="bg-base-200 p-6 rounded-full inline-block mb-6 shadow-inner">
-                    <TrendingUp size={64} class="opacity-30" />
+                    <TrendingUp size={64} class="opacity-60" />
                   </div>
                   <p class="text-xl font-medium">Select a product to view price history</p>
-                  <p class="text-sm opacity-60 mt-2">Click on any item in the list to see its trends</p>
+                  <p class="text-sm opacity-85 mt-2">Click on any item in the list to see its trends</p>
                 </div>
               </div>
             }>
@@ -301,7 +301,7 @@ export function Products() {
                       <div class="flex-grow min-w-0">
                         <h2 class="card-title text-primary text-2xl md:text-3xl line-clamp-2 leading-tight mb-2">{item()._id.name}</h2>
                         <div class="flex items-center gap-3">
-                           <span class="badge badge-outline badge-md opacity-60 font-mono px-3">ID: {item()._id.id}</span>
+                           <span class="badge badge-outline badge-md opacity-85 font-mono px-3">ID: {item()._id.id}</span>
                            <span class="text-xs font-semibold uppercase tracking-widest opacity-40">Price History</span>
                         </div>
                       </div>
@@ -320,18 +320,18 @@ export function Products() {
                       </button>
                     </div>
                     
-                    <div class="h-[350px] md:h-[450px] mt-4 p-4 bg-base-200/30 rounded-2xl border border-base-200">
+                    <div class="h-[350px] md:h-[450px] mt-4 p-4 bg-base-200/60 rounded-2xl border border-base-200">
                       <Line data={getChartData(item())} options={chartOptions} />
                     </div>
 
-                    <div class="divider text-xs font-bold uppercase tracking-[0.2em] my-8 opacity-30">Purchase History</div>
+                    <div class="divider text-xs font-bold uppercase tracking-[0.2em] my-8 opacity-60">Purchase History</div>
                     
                     <div class="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-3 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
                       <For each={[...item().prices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())}>
                         {(p) => (
                           <A 
                             href={`/order/${p.orderId}?highlight=${item()._id.id}`}
-                            class={`flex justify-between items-center w-full p-4 rounded-xl transition-all border ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 border-primary/30 shadow-inner' : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-400 hover:translate-x-1'}`}
+                            class={`flex justify-between items-center w-full p-4 rounded-xl transition-all border ${String(orderId()) === String(p.orderId) ? 'bg-primary/20 border-primary/60 shadow-inner' : 'bg-base-100 border-base-300 hover:bg-base-200 hover:border-base-400 hover:translate-x-1'}`}
                           >
                             <div class="flex flex-col">
                               <span class="text-[10px] opacity-40 font-black uppercase tracking-tighter mb-1">Order #{p.orderId}</span>

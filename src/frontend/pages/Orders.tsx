@@ -32,7 +32,7 @@ export function Orders() {
     <div class="space-y-10">
       <div class="flex flex-col gap-2 animate-fade-in">
         <h1 class="text-4xl font-extrabold tracking-tight">Your Orders</h1>
-        <p class="text-base-content/60 text-lg">Detailed history of all synced Knuspr orders</p>
+        <p class="text-base-content/85 text-lg">Detailed history of all synced Knuspr orders</p>
       </div>
 
       <Show when={!loading()} fallback={
@@ -50,15 +50,15 @@ export function Orders() {
                       <ShoppingBag size={28} />
                     </div>
                     <div class="text-right">
-                      <div class="text-[10px] font-black opacity-30 uppercase tracking-widest mb-1">Order ID</div>
-                      <div class="text-xs font-mono font-bold opacity-60">#{order.id}</div>
+                      <div class="text-[10px] font-black opacity-60 uppercase tracking-widest mb-1">Order ID</div>
+                      <div class="text-xs font-mono font-bold opacity-85">#{order.id}</div>
                     </div>
                   </div>
                   
                   <div class="space-y-4">
                     <div class="flex flex-col">
                       <div class="text-3xl font-black text-primary mb-1">{order.priceComposition.total.amount.toFixed(2)}€</div>
-                      <div class="flex items-center gap-2 text-xs font-semibold opacity-60">
+                      <div class="flex items-center gap-2 text-xs font-semibold opacity-85">
                         <Calendar size={14} />
                         <span>{new Date(order.orderTimeDate).toLocaleDateString(undefined, { 
                           year: 'numeric', month: 'short', day: 'numeric'
@@ -99,7 +99,7 @@ export function Orders() {
               </div>
               <div>
                 <h3 class="text-2xl font-black text-neutral">No orders yet</h3>
-                <p class="text-base-content/60 text-lg">Use the Import page to fetch your data.</p>
+                <p class="text-base-content/85 text-lg">Use the Import page to fetch your data.</p>
               </div>
               <A href="/settings" class="btn btn-primary btn-md rounded-xl px-8 mt-2">Connect Knuspr</A>
             </div>
