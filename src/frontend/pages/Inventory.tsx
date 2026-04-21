@@ -193,7 +193,7 @@ export function Inventory() {
         <div class="alert alert-error shadow-lg">
           <AlertCircle size={24} />
           <span class="font-bold">{error()}</span>
-          <button class="btn btn-sm bg-white/20 border-none hover:bg-white/60" onClick={fetchInventory}>Retry</button>
+          <button class="btn btn-sm bg-white/20 border-none hover:bg-white/85" onClick={fetchInventory}>Retry</button>
         </div>
       </Show>
 
@@ -265,12 +265,12 @@ export function Inventory() {
                     </div>
                     <div class="flex justify-between items-end">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-black uppercase opacity-60 tracking-tighter mb-0.5">Last Refill</span>
-                        <span class="text-sm font-bold opacity-80">{Math.round(item.daysSinceLast)}d ago</span>
+                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Last Refill</span>
+                        <span class="text-sm font-bold opacity-95">{Math.round(item.daysSinceLast)}d ago</span>
                       </div>
                       <div class="flex flex-col text-right">
-                        <span class="text-[10px] font-black uppercase opacity-60 tracking-tighter mb-0.5">Cycle</span>
-                        <span class="text-xs font-medium opacity-75">~{Math.round(item.avgInterval)}d</span>
+                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Cycle</span>
+                        <span class="text-xs font-medium opacity-90">~{Math.round(item.avgInterval)}d</span>
                       </div>
                     </div>
                   </div>
