@@ -107,7 +107,7 @@ describe('GET /api/inventory', () => {
     expect(item.daysSinceLast).toBeGreaterThan(0);
   });
 
-  it('handles string prices from Knuspr API by converting to numbers', async () => {
+  it('fetches enhanced metadata from Knuspr API including sale prices and stock', async () => {
     // Seed 2 orders for product 220
     await createOrder(userId, {
       id: 111,
@@ -120,13 +120,25 @@ describe('GET /api/inventory', () => {
       items: [makeItem(220, 'Sojasprossen', 1, 101)],
     });
 
-    // Mock session and string price response
+    // Mock session and enhanced metadata response
     vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
     const originalFetch = global.fetch;
     type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ price: { amount: "2.50" } })
+      json: async () => ({
+        data: {
+          prices: {
+            salePrice: 1.99,
+            originalPrice: 2.49,
+            saleValidTill: "2024-12-31T23:59:59Z"
+          },
+          stock: {
+            availabilityStatus: "IN_STOCK",
+            availabilityReason: "Fresh arrival"
+          }
+        }
+      })
     }) as unknown as MockFetch;
 
     try {
@@ -134,8 +146,47 @@ describe('GET /api/inventory', () => {
       expect(res.status).toBe(200);
       const item = res.body.find((i: { _id: number }) => i._id === 220);
       expect(item).toBeDefined();
-      expect(item.currentPrice).toBe(2.5);
-      expect(typeof item.currentPrice).toBe('number');
+      expect(item.currentPrice).toBe(1.99);
+      expect(item.priceValidUntil).toBe("2024-12-31T23:59:59Z");
+      expect(item.availabilityStatus).toBe("IN_STOCK");
+      expect(item.availabilityReason).toBe("Fresh arrival");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('falls back to originalPrice if salePrice is missing', async () => {
+    await createOrder(userId, {
+      id: 333,
+      orderTimeDate: new Date('2024-01-01'),
+      items: [makeItem(221, 'Tofu', 1, 200)],
+    });
+    await createOrder(userId, {
+      id: 444,
+      orderTimeDate: new Date('2024-01-10'),
+      items: [makeItem(221, 'Tofu', 1, 201)],
+    });
+
+    vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
+    const originalFetch = global.fetch;
+    type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          prices: {
+            originalPrice: 2.99
+          }
+        }
+      })
+    }) as unknown as MockFetch;
+
+    try {
+      const res = await request(app).get('/api/inventory').set('Cookie', cookies);
+      expect(res.status).toBe(200);
+      const item = res.body.find((i: { _id: number }) => i._id === 221);
+      expect(item).toBeDefined();
+      expect(item.currentPrice).toBe(2.99);
     } finally {
       global.fetch = originalFetch;
     }

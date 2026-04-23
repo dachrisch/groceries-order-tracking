@@ -170,9 +170,9 @@ export async function handleGetInventory(req: Request, res: Response) {
     }
 
     if (session) {
-      const fetchPrice = async (item: { _id: number; currentPrice?: number }) => {
+      const fetchEnhancedMetadata = async (item: any) => {
         try {
-          const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id}/prices`, {
+          const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id}`, {
             headers: {
               'Cookie': `PHPSESSION_de-production=${session}`,
               'x-origin': 'WEB',
@@ -180,25 +180,28 @@ export async function handleGetInventory(req: Request, res: Response) {
           });
           if (res.ok) {
             const data = await res.json();
-            // Handle both { price: { amount: 2.49 } } and { price: 2.49 }
-            const priceData = data.price ?? data.data?.price;
-            const price = (typeof priceData === 'object' && priceData !== null) 
-              ? priceData.amount 
-              : priceData;
+            const product = data.data ?? data;
 
-            if (price !== undefined && price !== null) {
-              item.currentPrice = Number(price);
+            if (product.prices) {
+              const { salePrice, originalPrice, saleValidTill } = product.prices;
+              item.currentPrice = salePrice ?? originalPrice;
+              item.priceValidUntil = saleValidTill;
+            }
+
+            if (product.stock) {
+              item.availabilityStatus = product.stock.availabilityStatus;
+              item.availabilityReason = product.stock.availabilityReason;
             }
           }
         } catch (e) {
-          console.error(`Failed to fetch price for ${item._id}:`, e);
+          console.error(`Failed to fetch enhanced metadata for ${item._id}:`, e);
         }
       };
 
       // Limit concurrency by processing in chunks of 10
       for (let i = 0; i < inventory.length; i += 10) {
         const chunk = inventory.slice(i, i + 10);
-        await Promise.all(chunk.map(fetchPrice));
+        await Promise.all(chunk.map(fetchEnhancedMetadata));
       }
     }
 

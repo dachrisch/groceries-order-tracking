@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import {
@@ -10,6 +10,18 @@ import {
   getSessionUserId,
   createOrder,
 } from './helpers';
+
+// Mock getKnusprSession
+vi.mock('../../lib/knuspr-auth', async () => {
+  const actual = await vi.importActual('../../lib/knuspr-auth');
+  return {
+    ...actual,
+    getKnusprSession: vi.fn(),
+  };
+});
+
+// Import the mocked function
+import { getKnusprSession } from '../../lib/knuspr-auth';
 
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
@@ -180,6 +192,44 @@ describe('Order endpoints', () => {
       expect(res.body[0]._id.name).toBe('Milk');
       expect(res.body[0].count).toBe(2); // purchased twice
       expect(res.body[0].prices).toHaveLength(2);
+    });
+
+    it('fetches enhanced metadata from Knuspr API including sale prices and stock', async () => {
+      await createOrder(userId, { id: 101, items: [{ id: 420, name: 'Sojasprossen', images: [], priceComposition: { unit: { amount: 100 } } }] });
+
+      // Mock session and enhanced metadata response
+      vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
+      const originalFetch = global.fetch;
+      type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            prices: {
+              salePrice: 1.99,
+              originalPrice: 2.49,
+              saleValidTill: "2024-12-31T23:59:59Z"
+            },
+            stock: {
+              availabilityStatus: "IN_STOCK",
+              availabilityReason: "Fresh arrival"
+            }
+          }
+        })
+      }) as unknown as MockFetch;
+
+      try {
+        const res = await request(app).get('/api/product-trends').set('Cookie', cookies);
+        expect(res.status).toBe(200);
+        const item = res.body.find((i: any) => i._id.id === 420);
+        expect(item).toBeDefined();
+        expect(item.currentPrice).toBe(1.99);
+        expect(item.priceValidUntil).toBe("2024-12-31T23:59:59Z");
+        expect(item.availabilityStatus).toBe("IN_STOCK");
+        expect(item.availabilityReason).toBe("Fresh arrival");
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
     it('returns 401 when not authenticated', async () => {

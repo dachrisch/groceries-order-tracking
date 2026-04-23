@@ -3,7 +3,34 @@ import { Line } from 'solid-chartjs';
 import { useParams, A, useSearchParams, useNavigate } from '@solidjs/router';
 import { ArrowLeft, X, List, TrendingUp } from 'lucide-solid';
 
-// ... (interfaces stay same)
+interface TrendItem {
+  _id: { id: number; name: string };
+  prices: Array<{ date: string; unitPrice: number; orderId: number }>;
+  count: number;
+  image?: string;
+  categories?: Array<{ id: number; name: string; slug: string; level: number }>;
+  priceValidUntil?: string;
+  availabilityStatus?: string;
+  availabilityReason?: string;
+}
+
+interface OrderDetail {
+  id: number;
+  itemsCount: number;
+  priceComposition: {
+    total: { amount: number };
+  };
+  orderTimeDate: string;
+  address: string;
+  items: Array<{
+    id: number;
+    amount: number;
+    textualAmount?: string;
+    priceComposition: {
+      unit: { amount: number };
+    };
+  }>;
+}
 
 export function Products() {
   const navigate = useNavigate();
@@ -245,7 +272,7 @@ export function Products() {
 
                       return (
                         <tr 
-                          class={`cursor-pointer transition-all border-b border-base-200 group ${selectedItem()?._id.id === item._id.id || highlightedId() === String(item._id.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-base-200/70'}`}
+                          class={`cursor-pointer transition-all border-b border-base-200 group ${selectedItem()?._id.id === item._id.id || highlightedId() === String(item._id.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/20' : 'hover:bg-base-200/70'} ${item.availabilityStatus === 'UNAVAILABLE' ? 'opacity-60' : ''}`}
                           onClick={() => {
                             setSearchParams({ product: item._id.id, highlight: undefined });
                           }}
@@ -260,8 +287,21 @@ export function Products() {
                                 </div>
                               </div>
                               <div class="min-w-0">
-                                <div class="font-bold text-sm sm:text-base mb-0.5 leading-tight group-hover:text-primary transition-colors" title={item._id.name}>{item._id.name}</div>
-                                <div class="text-[10px] sm:text-xs opacity-75 font-mono">ID: {item._id.id}</div>
+                                <div class="font-bold text-sm sm:text-base mb-0.5 leading-tight group-hover:text-primary transition-colors flex items-center gap-2" title={item._id.name}>
+                                  {item._id.name}
+                                  <Show when={item.availabilityStatus === 'UNAVAILABLE'}>
+                                    <span class="badge badge-error badge-xs font-black uppercase tracking-tighter shrink-0">OOS</span>
+                                  </Show>
+                                </div>
+                                <div class="text-[10px] sm:text-xs opacity-75 font-mono flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                  <span>ID: {item._id.id}</span>
+                                  <Show when={item.priceValidUntil}>
+                                    <span class="text-primary font-bold">Until: {new Date(item.priceValidUntil!).toLocaleDateString()}</span>
+                                  </Show>
+                                  <Show when={item.availabilityStatus === 'UNAVAILABLE' && item.availabilityReason}>
+                                    <span class="text-error font-bold italic">{item.availabilityReason}</span>
+                                  </Show>
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -290,7 +330,7 @@ export function Products() {
               </div>
             }>
               {(item) => (
-                <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden">
+                <div class={`card bg-base-100 shadow-xl border border-base-300 overflow-hidden ${item().availabilityStatus === 'UNAVAILABLE' ? 'opacity-60 grayscale-[0.5]' : ''}`}>
                   <div class="card-body p-6 md:p-10">
                     <div class="flex flex-row gap-6 items-center mb-6">
                       <Show when={item().image}>
@@ -299,9 +339,20 @@ export function Products() {
                         </div>
                       </Show>
                       <div class="flex-grow min-w-0">
-                        <h2 class="card-title text-primary text-2xl md:text-3xl line-clamp-2 leading-tight mb-2">{item()._id.name}</h2>
-                        <div class="flex items-center gap-3">
+                        <h2 class="card-title text-primary text-2xl md:text-3xl line-clamp-2 leading-tight mb-2">
+                          {item()._id.name}
+                          <Show when={item().availabilityStatus === 'UNAVAILABLE'}>
+                            <div class="badge badge-error ml-2 uppercase font-black text-xs">Out of Stock</div>
+                          </Show>
+                        </h2>
+                        <div class="flex items-center gap-3 flex-wrap">
                            <span class="badge badge-outline badge-md opacity-85 font-mono px-3">ID: {item()._id.id}</span>
+                           <Show when={item().priceValidUntil}>
+                              <span class="badge badge-primary font-black uppercase tracking-tighter text-xs">Price until {new Date(item().priceValidUntil!).toLocaleDateString()}</span>
+                           </Show>
+                           <Show when={item().availabilityStatus === 'UNAVAILABLE' && item().availabilityReason}>
+                              <span class="text-error font-bold uppercase tracking-tighter text-xs">{item().availabilityReason}</span>
+                           </Show>
                            <span class="text-xs font-semibold uppercase tracking-widest opacity-40">Price History</span>
                         </div>
                       </div>
