@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET, formatZodError } from '../utils';
 import { z } from 'zod';
 import { deriveKey } from '../../lib/crypto';
+import Integration, { IntegrationProvider } from '../../models/Integration';
+import { importOrders } from '../../lib/order-importer';
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -51,6 +53,57 @@ export async function handleLogin(req: Request, res: Response) {
 
   const key = deriveKey(email, password);
   res.cookie('dkey', key.toString('base64'), { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+
+  // Trigger background sync if needed (atomic lock via findOneAndUpdate)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  Integration.findOneAndUpdate(
+    {
+      userId: user._id,
+      provider: IntegrationProvider.KNUSPR,
+      syncInProgress: { $ne: true }, // Not already syncing
+      $or: [
+        { lastSyncAt: { $exists: false } },
+        { lastSyncAt: { $lt: oneHourAgo } }
+      ],
+      // Cooldown for failures: don't retry more than every 15 mins
+      $and: [
+        { $or: [
+          { lastSyncAttemptAt: { $exists: false } },
+          { lastSyncAttemptAt: { $lt: fifteenMinsAgo } }
+        ]}
+      ]
+    },
+    { 
+      $set: { 
+        syncInProgress: true,
+        lastSyncAttemptAt: new Date() 
+      } 
+    },
+    { returnDocument: 'after' }
+  ).then(async (integration) => {
+    if (integration) {
+      console.log(`Triggering background sync for user ${user._id}`);
+      try {
+        await importOrders(user._id.toString(), key, integration);
+        await Integration.updateOne(
+          { _id: integration._id },
+          { $set: { lastSyncAt: new Date(), syncInProgress: false } }
+        );
+        console.log(`Background sync completed for user ${user._id}`);
+      } catch (err) {
+        console.error(`Background sync error for user ${user._id}:`, err);
+        // Reset flag on error so we can retry later (cooldown handled by lastSyncAttemptAt)
+        await Integration.updateOne(
+          { _id: integration._id },
+          { $set: { syncInProgress: false } }
+        );
+      }
+    }
+  }).catch((err) => {
+    console.error(`Error checking integration for sync:`, err);
+  });
 
   res.json({ message: 'Logged in', user: { name: user.name, email: user.email } });
 }

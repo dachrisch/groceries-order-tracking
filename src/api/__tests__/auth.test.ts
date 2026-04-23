@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser } from './helpers';
+import Integration, { IntegrationProvider } from '../../models/Integration';
+import * as orderImporter from '../../lib/order-importer';
+
+vi.mock('../../lib/order-importer', () => ({
+  importOrders: vi.fn().mockResolvedValue({ importedCount: 0 })
+}));
 
 beforeAll(setupTestDB);
-beforeEach(clearDB);
+beforeEach(async () => {
+  await clearDB();
+  vi.clearAllMocks();
+});
 afterAll(teardownTestDB);
 
 describe('POST /api/register', () => {
@@ -67,6 +76,110 @@ describe('POST /api/login', () => {
       .send({ email: 'unknown@example.com', password: 'secret123' });
 
     expect(res.status).toBe(401);
+  });
+
+  it('triggers background sync if a Knuspr integration exists and lastSyncAt is old', async () => {
+    const userRes = await registerUser({ name: 'Bob', email: 'bob@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      encryptedCredentials: 'fake-encrypted-data',
+      lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+      syncInProgress: false
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'bob@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).toHaveBeenCalled();
+
+    // Verify flag was reset and lastSyncAt updated
+    const integration = await Integration.findOne({ userId });
+    expect(integration.syncInProgress).toBe(false);
+    expect(integration.lastSyncAt.getTime()).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it('retries sync after failure if cooldown has passed', async () => {
+    const userRes = await registerUser({ name: 'Retry', email: 'retry@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    // Last success was 2h ago, but last ATTEMPT was 20 mins ago (and failed)
+    const oldSuccess = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      lastSyncAt: oldSuccess,
+      lastSyncAttemptAt: new Date(Date.now() - 20 * 60 * 1000), // 20 mins ago
+      syncInProgress: false
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'retry@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).toHaveBeenCalled();
+  });
+
+  it('does NOT retry sync after failure if within 15m cooldown', async () => {
+    const userRes = await registerUser({ name: 'NoRetry', email: 'noretry@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      lastSyncAttemptAt: new Date(Date.now() - 5 * 60 * 1000), // Only 5 mins ago
+      syncInProgress: false
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'noretry@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).not.toHaveBeenCalled();
+  });
+
+  it('does NOT trigger background sync if lastSyncAt is recent', async () => {
+    const userRes = await registerUser({ name: 'Charlie', email: 'charlie@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      lastSyncAt: new Date(Date.now() - 30 * 60 * 1000) // 30 mins ago
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'charlie@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).not.toHaveBeenCalled();
+  });
+
+  it('does NOT trigger background sync if already in progress', async () => {
+    const userRes = await registerUser({ name: 'Busy', email: 'busy@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      syncInProgress: true // Lock active
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'busy@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).not.toHaveBeenCalled();
   });
 });
 

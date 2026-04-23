@@ -12,7 +12,7 @@
     "build:server": "esbuild src/api/server.ts --bundle --platform=node --outfile=dist-server/server.js --format=esm --packages=external",
     "start:prod": "node dist-server/server.js",
     "serve": "vite preview",
-    "test": "vitest run",
+    "test": "NODE_ENV=test vitest run",
     "lint": "eslint .",
     "release": "standard-version && git push --follow-tags origin HEAD",
     "release:patch": "standard-version --release-as patch && git push --follow-tags origin HEAD",
