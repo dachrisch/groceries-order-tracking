@@ -20,8 +20,12 @@ export interface IIntegration extends Document {
   /** Encrypted JSON string of session cookies */
   cookies?: string;
   /** Timestamp of the last successful sync */
-  lastSyncAt?: Date;
-  createdAt: Date;
+  lastSyncAt?: Date,
+  /** Timestamp of the last sync attempt (started) */
+  lastSyncAttemptAt?: Date,
+  /** Whether a sync is currently running */
+  syncInProgress: { type: Boolean, default: false },
+  createdAt: Date,
   updatedAt: Date;
 }
 
@@ -35,7 +39,9 @@ const integrationSchema = new Schema<IIntegration>({
   encryptedCredentials: { type: String },
   headers: { type: String },
   cookies: { type: String },
-  lastSyncAt: { type: Date }
+  lastSyncAt: { type: Date },
+  lastSyncAttemptAt: { type: Date },
+  syncInProgress: { type: Boolean, default: false }
 }, { timestamps: true });
 
 // Ensure one document per (userId, provider) pair
