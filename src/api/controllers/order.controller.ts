@@ -155,7 +155,13 @@ export async function handleGetProductTrends(req: Request, res: Response) {
     }
 
     if (session) {
-      const fetchEnhancedMetadata = async (item: any) => {
+      const fetchEnhancedMetadata = async (item: { 
+        _id: { id: number; name: string }; 
+        currentPrice?: number; 
+        priceValidUntil?: string; 
+        availabilityStatus?: string; 
+        availabilityReason?: string 
+      }) => {
         try {
           const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id.id}`, {
             headers: {

@@ -221,7 +221,7 @@ describe('Order endpoints', () => {
       try {
         const res = await request(app).get('/api/product-trends').set('Cookie', cookies);
         expect(res.status).toBe(200);
-        const item = res.body.find((i: any) => i._id.id === 420);
+        const item = res.body.find((i: { _id: { id: number } }) => i._id.id === 420);
         expect(item).toBeDefined();
         expect(item.currentPrice).toBe(1.99);
         expect(item.priceValidUntil).toBe("2024-12-31T23:59:59Z");
