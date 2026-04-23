@@ -146,6 +146,56 @@ export async function handleGetProductTrends(req: Request, res: Response) {
       { $sort: { "_id.name": 1 } }
     ]);
 
+    // Fetch current prices from Knuspr if session is available
+    let session: string | null = null;
+    try {
+      session = await getKnusprSession(userId, req.derivedKey);
+    } catch (e) {
+      console.warn('Failed to get Knuspr session for product trends:', e);
+    }
+
+    if (session) {
+      const fetchEnhancedMetadata = async (item: { 
+        _id: { id: number; name: string }; 
+        currentPrice?: number; 
+        priceValidUntil?: string; 
+        availabilityStatus?: string; 
+        availabilityReason?: string 
+      }) => {
+        try {
+          const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id.id}`, {
+            headers: {
+              'Cookie': `PHPSESSION_de-production=${session}`,
+              'x-origin': 'WEB',
+            },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const product = data.data ?? data;
+
+            if (product.prices) {
+              const { salePrice, originalPrice, saleValidTill } = product.prices;
+              item.currentPrice = salePrice ?? originalPrice;
+              item.priceValidUntil = saleValidTill;
+            }
+
+            if (product.stock) {
+              item.availabilityStatus = product.stock.availabilityStatus;
+              item.availabilityReason = product.stock.availabilityReason;
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to fetch enhanced metadata for ${item._id.id}:`, e);
+        }
+      };
+
+      // Limit concurrency by processing in chunks of 10
+      for (let i = 0; i < trends.length; i += 10) {
+        const chunk = trends.slice(i, i + 10);
+        await Promise.all(chunk.map(fetchEnhancedMetadata));
+      }
+    }
+
     res.json(trends);
   } catch (err: unknown) {
     res.status(500).json({ error: (err as Error).message });

@@ -66,7 +66,7 @@ export function Orders() {
                       </div>
                     </div>
 
-                    <div class="divider my-0 opacity-10"></div>
+                    <div class="divider my-0 opacity-10" />
 
                     <div class="flex justify-between items-center text-sm font-medium">
                       <div class="flex flex-col">

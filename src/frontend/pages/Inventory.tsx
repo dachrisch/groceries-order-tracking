@@ -13,6 +13,9 @@ interface InventoryItem {
   avgQuantity: number;
   avgPrice: number;
   currentPrice?: number;
+  priceValidUntil?: string;
+  availabilityStatus?: string;
+  availabilityReason?: string;
 }
 
 
@@ -216,7 +219,7 @@ export function Inventory() {
               const id = String(item._id);
               return (
               <div 
-                class="card bg-base-100 shadow-lg border border-base-300 hover:shadow-2xl transition-all group cursor-pointer hover-lift"
+                class={`card bg-base-100 shadow-lg border border-base-300 hover:shadow-2xl transition-all group cursor-pointer hover-lift ${item.availabilityStatus === 'UNAVAILABLE' ? 'opacity-60 grayscale-[0.5]' : ''}`}
                 onClick={(e) => {
                   // Only navigate if we didn't click an action element
                   if (!(e.target as HTMLElement).closest('.card-actions')) {
@@ -224,7 +227,20 @@ export function Inventory() {
                   }
                 }}
               >
-                <div class="card-body p-8 flex flex-col h-full">
+                <div class="card-body p-8 flex flex-col h-full relative">
+                    <Show when={item.availabilityStatus === 'UNAVAILABLE'}>
+                      <div class="absolute top-4 right-4 z-10">
+                        <div class="badge badge-error gap-1 font-black py-3 shadow-md uppercase tracking-tighter">
+                          Out of Stock
+                        </div>
+                        <Show when={item.availabilityReason}>
+                          <div class="text-[10px] text-right font-black mt-1 text-error uppercase tracking-tighter bg-base-100/80 px-1 rounded">
+                            {item.availabilityReason}
+                          </div>
+                        </Show>
+                      </div>
+                    </Show>
+
                     {/* Header: Image + Title Side-by-Side */}
                     <div class="flex items-start gap-5 mb-4">
                       <div class="avatar flex-shrink-0">
@@ -284,7 +300,7 @@ export function Inventory() {
                           <button
                             class={`btn btn-md gap-2 w-full shadow-sm ${addedItems().has(id) ? 'btn-success text-white' : 'btn-primary'}`}
                             onClick={(e) => { e.stopPropagation(); openStepper(item); }}
-                            disabled={addedItems().has(id)}
+                            disabled={addedItems().has(id) || item.availabilityStatus === 'UNAVAILABLE'}
                           >
                             <Show when={addedItems().has(id)} fallback={<ShoppingCart size={18} />}>
                               <Check size={18} />
@@ -312,7 +328,7 @@ export function Inventory() {
                           <button
                             class="btn btn-sm btn-primary gap-1 shadow-sm px-4"
                             onClick={() => addToCart(id)}
-                            disabled={addingToCart()}
+                            disabled={addingToCart() || item.availabilityStatus === 'UNAVAILABLE'}
                           >
                             <Show when={addingToCart()}>
                               <span class="loading loading-spinner loading-xs" />
@@ -328,6 +344,11 @@ export function Inventory() {
                         <div class="text-lg font-black opacity-10">€--</div>
                       }>
                          <div class="text-xl font-black text-primary leading-none">€{Number(item.currentPrice).toFixed(2)}</div>
+                         <Show when={item.priceValidUntil}>
+                           <div class="text-[9px] font-bold opacity-60 mt-1 leading-tight">
+                             Order by {new Date(item.priceValidUntil!).toLocaleDateString()}
+                           </div>
+                         </Show>
                          <Show when={Math.abs(Number(item.currentPrice) - item.avgPrice) >= 0.01}>
                            <div class={`text-[10px] font-black flex items-center justify-end gap-0.5 mt-1 ${Number(item.currentPrice) - item.avgPrice > 0 ? 'text-error' : 'text-success'}`}>
                              {Number(item.currentPrice) - item.avgPrice > 0 ? '↑' : '↓'} {Math.abs(Number(item.currentPrice) - item.avgPrice).toFixed(2)}€
