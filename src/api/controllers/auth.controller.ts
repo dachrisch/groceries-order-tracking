@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET, formatZodError } from '../utils';
 import { z } from 'zod';
 import { deriveKey } from '../../lib/crypto';
+import Integration, { IntegrationProvider } from '../../models/Integration';
+import { importOrders } from '../../lib/order-importer';
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -51,6 +53,28 @@ export async function handleLogin(req: Request, res: Response) {
 
   const key = deriveKey(email, password);
   res.cookie('dkey', key.toString('base64'), { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+
+  // Trigger background sync if needed
+  Integration.findOne({ userId: user._id, provider: IntegrationProvider.KNUSPR })
+    .then(async (integration) => {
+      if (integration) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        if (!integration.lastSyncAt || integration.lastSyncAt < oneHourAgo) {
+          console.log(`Triggering background sync for user ${user._id}`);
+          try {
+            await importOrders(user._id.toString(), key, integration);
+            integration.lastSyncAt = new Date();
+            await integration.save();
+            console.log(`Background sync completed for user ${user._id}`);
+          } catch (err) {
+            console.error(`Background sync error for user ${user._id}:`, err);
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      console.error(`Error checking integration for sync:`, err);
+    });
 
   res.json({ message: 'Logged in', user: { name: user.name, email: user.email } });
 }
