@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser } from './helpers';
+import Integration, { IntegrationProvider } from '../../models/Integration';
+import * as orderImporter from '../../lib/order-importer';
+
+vi.mock('../../lib/order-importer', () => ({
+  importOrders: vi.fn().mockResolvedValue({ importedCount: 0 })
+}));
 
 beforeAll(setupTestDB);
-beforeEach(clearDB);
+beforeEach(async () => {
+  await clearDB();
+  vi.clearAllMocks();
+});
 afterAll(teardownTestDB);
 
 describe('POST /api/register', () => {
@@ -67,6 +76,47 @@ describe('POST /api/login', () => {
       .send({ email: 'unknown@example.com', password: 'secret123' });
 
     expect(res.status).toBe(401);
+  });
+
+  it('triggers background sync if a Knuspr integration exists and lastSyncAt is old', async () => {
+    // 1. Get user
+    const userRes = await registerUser({ name: 'Bob', email: 'bob@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    // 2. Create old integration
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      encryptedCredentials: 'fake-encrypted-data',
+      lastSyncAt: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
+    });
+
+    // 3. Login
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'bob@example.com', password: 'password123' });
+
+    // 4. Verify sync was triggered (allow some time for background promise)
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).toHaveBeenCalled();
+  });
+
+  it('does NOT trigger background sync if lastSyncAt is recent', async () => {
+    const userRes = await registerUser({ name: 'Charlie', email: 'charlie@example.com', password: 'password123' });
+    const userId = userRes.body.userId;
+
+    await Integration.create({
+      userId,
+      provider: IntegrationProvider.KNUSPR,
+      lastSyncAt: new Date(Date.now() - 30 * 60 * 1000) // 30 mins ago
+    });
+
+    await request(app)
+      .post('/api/login')
+      .send({ email: 'charlie@example.com', password: 'password123' });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(orderImporter.importOrders).not.toHaveBeenCalled();
   });
 });
 
