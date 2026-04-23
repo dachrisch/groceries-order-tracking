@@ -24,7 +24,7 @@ export interface IIntegration extends Document {
   /** Timestamp of the last sync attempt (started) */
   lastSyncAttemptAt?: Date,
   /** Whether a sync is currently running */
-  syncInProgress: { type: Boolean, default: false },
+  syncInProgress: { type: boolean, default: false },
   createdAt: Date,
   updatedAt: Date;
 }
