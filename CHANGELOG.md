@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [1.8.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.7.0...v1.8.0) (2026-05-07)
+
+
+### Features
+
+* include sale prices and stock availability in inventory and trends ([5b1a4d6](https://github.com/dachrisch/groceries-order-tracking/commit/5b1a4d66a8071fe789ccc3659c3f3fd9fdba16bc))
+* make background sync logic robust with in-progress flag and failure cooldown ([ac37361](https://github.com/dachrisch/groceries-order-tracking/commit/ac3736176816170bfd0969c3e0359d3f61a767d1))
+* trigger background sync on login if older than 1h ([fb06834](https://github.com/dachrisch/groceries-order-tracking/commit/fb06834422691556df5dd5e7b48303c84f4f35d2))
+
+
+### Bug Fixes
+
+* **docker:** copy .npmrc before npm install and use npm ci ([9ea5fda](https://github.com/dachrisch/groceries-order-tracking/commit/9ea5fda767a905e8393bc0d82ffbae31137f0372))
+* lint errors and self-closing component ([9908130](https://github.com/dachrisch/groceries-order-tracking/commit/990813088c667b6d049b3fa1a031d1194aa7df44))
+* prevent concurrent background syncs and fix test environment ([95f723a](https://github.com/dachrisch/groceries-order-tracking/commit/95f723aedc9630f67b64ce77b1fadb02f02a8f0e))
+
 ## [1.7.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.5.1...v1.7.0) (2026-04-21)
 
 
