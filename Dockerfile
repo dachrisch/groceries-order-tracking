@@ -3,8 +3,8 @@ FROM node:24-alpine AS build
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+COPY package*.json .npmrc ./
+RUN npm ci
 
 COPY . .
 RUN npm run build
@@ -18,11 +18,11 @@ WORKDIR /app
 # Copy built assets
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
-COPY --from=build /app/package*.json ./
+COPY --from=build /app/package*.json /app/.npmrc ./
 COPY --from=build /app/healthcheck.js ./
 
 # Install production dependencies only
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 ENV NODE_ENV=production
 ENV PORT=3000
