@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ## [1.8.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.7.0...v1.8.0) (2026-05-07)
 
