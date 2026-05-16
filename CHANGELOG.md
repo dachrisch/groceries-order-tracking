@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.1...v1.8.2) (2026-05-16)
+
+
+### Bug Fixes
+
+* quote if condition to fix yaml syntax ([1622e9f](https://github.com/dachrisch/groceries-order-tracking/commit/1622e9f90b83d4f38857453cfa49803cf7f2b6fb))
+* workflow syntax error in automerge ([a8c8ed5](https://github.com/dachrisch/groceries-order-tracking/commit/a8c8ed5b7f55e8e1737ad4d4ac7ea5d2789e2a5f))
+
 ## [1.8.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.0...v1.8.1) (2026-05-11)
 
 
