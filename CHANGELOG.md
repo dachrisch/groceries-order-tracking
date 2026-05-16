@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.3](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.2...v1.8.3) (2026-05-16)
+
+
+### Bug Fixes
+
+* trigger release-please automation ([e6a7ed7](https://github.com/dachrisch/groceries-order-tracking/commit/e6a7ed7fe2a7ce29b3084515eb3cd6b7f3caf0bf))
+* use pull_request_target for automerge to ensure master workflow is used ([a120808](https://github.com/dachrisch/groceries-order-tracking/commit/a1208082b3cd4d5556fd7881b34c884728dfcf9e))
+
 ## [1.8.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.1...v1.8.2) (2026-05-16)
 
 
