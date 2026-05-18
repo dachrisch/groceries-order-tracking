@@ -1,6 +1,6 @@
 {
   "name": "groceries-order-tracking",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "description": "Track grocery orders and price trends from Knuspr",
   "main": "src/api/server.ts",
   "type": "module",
