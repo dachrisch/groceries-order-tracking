@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.11](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.10...v1.8.11) (2026-05-19)
+
+
+### Bug Fixes
+
+* linting errors in security tests ([cfb875e](https://github.com/dachrisch/groceries-order-tracking/commit/cfb875e37c901e0c328d8f2609aff1759babe362))
+
 ## [1.8.10](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.9...v1.8.10) (2026-05-19)
 
 
