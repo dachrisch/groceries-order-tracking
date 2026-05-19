@@ -1,6 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { JWT_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
@@ -11,8 +13,25 @@ import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 
 export const app = express();
 
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https://cdn.knuspr.de"],
+    },
+  },
+}));
 app.use(express.json());
 app.use(cookieParser());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+  standardHeaders: 'draft-7', // set `RateLimit` and `RateLimit-Policy` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+});
+
+app.use('/api/', limiter);
 app.use(derivedKeyMiddleware);
 
 app.get('/health', (_req, res) => {
