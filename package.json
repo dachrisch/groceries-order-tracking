@@ -29,6 +29,8 @@
     "cookie-parser": "^1.4.7",
     "date-fns": "^4.1.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-solid": "^1.8.0",
     "mongodb": "^7.2.0",
@@ -62,6 +64,6 @@
     "typescript-eslint": "^8.59.0",
     "vite": "^8.0.9",
     "vite-plugin-solid": "^2.11.12",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.6"
   }
 }
