@@ -49,10 +49,18 @@ export async function handleLogin(req: Request, res: Response) {
   }
 
   const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
-  res.cookie('token', token, { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+  const cookieOptions = {
+    path: '/',
+    httpOnly: true,
+    maxAge: 604800000,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production'
+  };
+
+  res.cookie('token', token, cookieOptions);
 
   const key = deriveKey(email, password);
-  res.cookie('dkey', key.toString('base64'), { path: '/', httpOnly: true, maxAge: 604800000, sameSite: 'lax' });
+  res.cookie('dkey', key.toString('base64'), cookieOptions);
 
   // Trigger background sync if needed (atomic lock via findOneAndUpdate)
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -116,7 +124,13 @@ export async function handleSession(req: Request, res: Response) {
 }
 
 export async function handleLogout(req: Request, res: Response) {
-  res.clearCookie('token', { path: '/', httpOnly: true, sameSite: 'lax' });
-  res.clearCookie('dkey', { path: '/', httpOnly: true, sameSite: 'lax' });
+  const cookieOptions = {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production'
+  };
+  res.clearCookie('token', cookieOptions);
+  res.clearCookie('dkey', cookieOptions);
   res.json({ message: 'Logged out' });
 }
