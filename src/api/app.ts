@@ -13,7 +13,14 @@ import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 
 export const app = express();
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https://cdn.knuspr.de"],
+    },
+  },
+}));
 app.use(express.json());
 app.use(cookieParser());
 

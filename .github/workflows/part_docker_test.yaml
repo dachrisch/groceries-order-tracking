@@ -20,6 +20,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
     steps:
       - name: 📥 Download Docker image artifact
         uses: actions/download-artifact@v8
@@ -34,7 +39,12 @@ jobs:
 
       - name: 🐳🧪 Test Docker image
         run: |
-          docker run --rm --detach --name test_container -e ENCRYPTION_KEY=ci-test-key-123 ${{ inputs.image_name }}:latest
+          docker run --rm --detach --name test_container \
+            -e ENCRYPTION_KEY=ci-test-key-123 \
+            -e MONGODB_URI=mongodb://host.docker.internal:27017/test \
+            -e JWT_SECRET=ci-test-secret-456 \
+            --add-host=host.docker.internal:host-gateway \
+            ${{ inputs.image_name }}:latest
           for i in {1..10}; do
             status=$(docker inspect --format='{{.State.Health.Status}}' test_container)
             health_details=$(docker inspect --format='{{json .State.Health}}' test_container)
