@@ -45,7 +45,7 @@ describe('Security - SSRF Protection (Unit)', () => {
     // but it should NOT return 400.
     try {
         await handleGetProductPrice(req, res);
-    } catch (e) {
+    } catch {
         // ignore
     }
     

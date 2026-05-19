@@ -2,11 +2,10 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser } from './helpers';
-import * as knusprAuth from '../../lib/knuspr-auth';
 
 // Mock getKnusprSession to avoid needing actual credentials
 vi.mock('../../lib/knuspr-auth', async () => {
-  const actual = await vi.importActual('../../lib/knuspr-auth') as any;
+  const actual = await vi.importActual('../../lib/knuspr-auth') as Record<string, unknown>;
   return {
     ...actual,
     getKnusprSession: vi.fn().mockResolvedValue('fake-session-token'),
