@@ -5,6 +5,12 @@ import mongoose from 'mongoose';
 
 export async function handleGetProductPrice(req: Request, res: Response) {
   const { id } = req.params;
+
+  // SSRF Protection: Validate product ID format
+  if (!/^[a-zA-Z0-9-]+$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid product ID format' });
+  }
+
   try {
     const session = await getKnusprSession(req.userId, req.derivedKey);
     const response = await fetch(`https://www.knuspr.de/api/v1/products/${id}/prices`, {
