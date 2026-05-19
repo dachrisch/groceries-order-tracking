@@ -10,7 +10,15 @@ declare global {
   }
 }
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'groceries-secret-key-123-change-me';
+const _JWT_SECRET = process.env.JWT_SECRET;
+
+if (!_JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('FATAL: JWT_SECRET environment variable is not set');
+}
+
+export const JWT_SECRET = _JWT_SECRET || 'groceries-secret-key-development-only';
+
+
 
 export function formatZodError(error: { issues: Array<{ path: PropertyKey[], message: string }> }) {
   return error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
