@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.13](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.12...v1.8.13) (2026-05-20)
+
+
+### Bug Fixes
+
+* **security:** refactor CSRF middleware for CodeQL detection ([#80](https://github.com/dachrisch/groceries-order-tracking/issues/80)) ([9e95e52](https://github.com/dachrisch/groceries-order-tracking/commit/9e95e5268684455deccf9e85a770259d7074dccd))
+
 ## [1.8.12](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.11...v1.8.12) (2026-05-20)
 
 
