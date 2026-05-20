@@ -25,7 +25,7 @@ app.use(helmet({
 app.use(express.json());
 app.use(cookieParser());
 
-const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
+const csrf = doubleCsrf({
   getSecret: () => CSRF_SECRET,
   cookieName: 'x-csrf-token',
   cookieOptions: {
@@ -40,6 +40,9 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
   getSessionIdentifier: (req) => req.cookies.token || 'anonymous',
 });
 
+// Protect all following routes with CSRF check (ignored for GET/HEAD/OPTIONS)
+app.use(csrf.doubleCsrfProtection);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
@@ -50,14 +53,13 @@ const limiter = rateLimit({
 
 app.use(limiter);
 app.use(derivedKeyMiddleware);
-app.use(doubleCsrfProtection);
 
 app.get('/health', (_req, res) => {
   res.status(200).send('OK');
 });
 
 app.get('/api/csrf-token', (req, res) => {
-  res.json({ token: generateCsrfToken(req, res) });
+  res.json({ token: csrf.generateCsrfToken(req, res) });
 });
 
 app.get('/api/version', (_req, res) => {
