@@ -67,3 +67,52 @@ describe('Security - SSRF Protection', () => {
     global.fetch = globalFetch;
   });
 });
+
+describe('Security - CSRF Protection', () => {
+  let cookies: string;
+
+  beforeEach(async () => {
+    await setupTestDB();
+    await clearDB();
+    await registerUser();
+    cookies = await loginUser();
+  });
+
+  afterAll(async () => {
+    await teardownTestDB();
+  });
+
+  it('fails state-changing requests without CSRF token', async () => {
+    const res = await request(app)
+      .post('/api/cart/add')
+      .set('x-test-enable-csrf', 'true')
+      .set('Cookie', cookies)
+      .send({ id: '123', quantity: 1 });
+    
+    expect(res.status).toBe(403);
+  });
+
+  it('allows state-changing requests with valid CSRF token', async () => {
+    // 1. Get token
+    const tokenRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', cookies);
+    
+    const token = tokenRes.body.token;
+    const resCookies = tokenRes.headers['set-cookie'] as string[];
+
+    // 2. Perform request
+    // Use only the JWT token from cookies and the fresh CSRF cookie
+    const jwtCookie = cookies.split('; ').find(c => c.startsWith('token='));
+    const combinedCookies = [jwtCookie, ...resCookies].join('; ');
+
+    const res = await request(app)
+      .post('/api/cart/add')
+      .set('x-test-enable-csrf', 'true')
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
+      .send({ id: '123', quantity: 1 });
+    
+    expect(res.status).not.toBe(403);
+  });
+});

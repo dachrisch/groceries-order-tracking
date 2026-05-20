@@ -2,6 +2,7 @@
 import { render } from 'solid-js/web';
 import { Router, Route } from '@solidjs/router';
 import { App } from './App';
+import { patchFetch } from './lib/api';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
@@ -10,6 +11,8 @@ import { Products } from './pages/Products';
 import { Inventory } from './pages/Inventory';
 import { Settings } from './pages/Settings';
 import './index.css';
+
+patchFetch();
 
 const root = document.getElementById('root');
 

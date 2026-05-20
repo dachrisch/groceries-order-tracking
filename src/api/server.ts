@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { connectDB, dumpDB } from '../lib/mongodb';
 import { app } from './app';
 
@@ -13,8 +14,15 @@ const PORT = process.env.PORT || 3000;
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
+const spaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100, // Limit each IP to 100 requests per `window`
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
 // SPA Fallback: Serve index.html for all other routes
-app.get('*path', (req, res) => {
+app.get('*path', spaLimiter, (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(distPath, 'index.html'));
   } else {

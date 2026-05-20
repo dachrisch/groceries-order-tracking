@@ -43,6 +43,7 @@ jobs:
             -e ENCRYPTION_KEY=ci-test-key-123 \
             -e MONGODB_URI=mongodb://host.docker.internal:27017/test \
             -e JWT_SECRET=ci-test-secret-456 \
+            -e CSRF_SECRET=ci-test-csrf-secret-789 \
             --add-host=host.docker.internal:host-gateway \
             ${{ inputs.image_name }}:latest
           for i in {1..10}; do

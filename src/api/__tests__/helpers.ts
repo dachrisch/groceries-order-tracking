@@ -29,7 +29,11 @@ export async function loginUser(
   credentials = { email: 'alice@example.com', password: 'secret123' }
 ): Promise<string> {
   const res = await request(app).post('/api/login').send(credentials);
-  return (res.headers['set-cookie'] as string[]).join('; ');
+  const cookies = res.headers['set-cookie'] as string[];
+  if (!cookies) {
+    throw new Error(`Login failed with status ${res.status}: ${JSON.stringify(res.body)}`);
+  }
+  return cookies.join('; ');
 }
 
 /** Get the current user's _id from the session endpoint */

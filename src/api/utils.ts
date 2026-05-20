@@ -11,12 +11,18 @@ declare global {
 }
 
 const _JWT_SECRET = process.env.JWT_SECRET;
+const _CSRF_SECRET = process.env.CSRF_SECRET;
 
 if (!_JWT_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('FATAL: JWT_SECRET environment variable is not set');
 }
 
+if (!_CSRF_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('FATAL: CSRF_SECRET environment variable is not set');
+}
+
 export const JWT_SECRET = _JWT_SECRET || 'groceries-secret-key-development-only';
+export const CSRF_SECRET = _CSRF_SECRET || 'groceries-csrf-secret-development-only';
 
 
 
