@@ -38,6 +38,13 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
   getSessionIdentifier: (req) => req.cookies.token || 'anonymous',
+  skipCsrfProtection: (req) => {
+    // Skip CSRF for login/register as they establish the session
+    if (['/api/login', '/api/register'].includes(req.path)) return true;
+    // Skip CSRF in tests unless explicitly requested
+    if (process.env.NODE_ENV === 'test' && !req.get('x-test-enable-csrf')) return true;
+    return false;
+  },
 });
 
 const limiter = rateLimit({
@@ -47,8 +54,9 @@ const limiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
 });
 
-app.use('/api/', limiter);
+app.use(limiter);
 app.use(derivedKeyMiddleware);
+app.use(doubleCsrfProtection);
 
 app.get('/health', (_req, res) => {
   res.status(200).send('OK');
@@ -60,21 +68,6 @@ app.get('/api/csrf-token', (req, res) => {
 
 app.get('/api/version', (_req, res) => {
   res.json({ version: process.env.APP_VERSION || 'dev' });
-});
-
-// Protect all following /api/ routes with CSRF check (ignored for GET/HEAD/OPTIONS)
-app.use('/api/', (req, res, next) => {
-  // Skip CSRF for login/register as they establish the session
-  if (['/api/login', '/api/register'].includes(req.path)) {
-    return next();
-  }
-  
-  // Skip CSRF in tests unless explicitly requested (to avoid breaking existing tests)
-  if (process.env.NODE_ENV === 'test' && !req.get('x-test-enable-csrf')) {
-    return next();
-  }
-
-  doubleCsrfProtection(req, res, next);
 });
 
 const auth = (req: Request, res: Response, next: NextFunction) => {
