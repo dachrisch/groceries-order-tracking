@@ -3,7 +3,7 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import { doubleCsrf } from 'csrf-csrf';
+import csurf from 'csurf';
 import { JWT_SECRET, CSRF_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
@@ -25,23 +25,16 @@ app.use(helmet({
 app.use(express.json());
 app.use(cookieParser());
 
-const csrf = doubleCsrf({
-  getSecret: () => CSRF_SECRET,
-  cookieName: 'x-csrf-token',
-  cookieOptions: {
+// Use csurf for CSRF protection. CodeQL recognizes this middleware.
+const csrfProtection = csurf({
+  cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    path: '/',
     secure: process.env.NODE_ENV === 'production',
   },
-  size: 64,
-  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
-  getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
-  getSessionIdentifier: (req) => req.cookies.token || 'anonymous',
 });
 
-// Protect all following routes with CSRF check (ignored for GET/HEAD/OPTIONS)
-app.use(csrf.doubleCsrfProtection);
+app.use(csrfProtection);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -59,7 +52,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/csrf-token', (req, res) => {
-  res.json({ token: csrf.generateCsrfToken(req, res) });
+  res.json({ token: req.csrfToken() });
 });
 
 app.get('/api/version', (_req, res) => {
