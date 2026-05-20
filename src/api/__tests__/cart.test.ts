@@ -3,7 +3,7 @@ import request from 'supertest';
 import { app } from '../app';
 import {
   setupTestDB, clearDB, teardownTestDB,
-  registerUser, loginUser, getSessionUserId,
+  registerUser, loginUser, getSessionUserId, fetchCsrf
 } from './helpers';
 import Integration from '../../models/Integration';
 
@@ -37,9 +37,13 @@ describe('POST /api/cart/add', () => {
   });
 
   it('returns 404 when Knuspr is not connected', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
     const res = await request(app)
       .post('/api/cart/add')
-      .set('Cookie', cookies)
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
       .send({ productId: '12345', count: 1 });
 
     expect(res.status).toBe(404);
@@ -47,9 +51,13 @@ describe('POST /api/cart/add', () => {
   });
 
   it('returns 400 when productId is missing', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
     const res = await request(app)
       .post('/api/cart/add')
-      .set('Cookie', cookies)
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
       .send({ count: 1 });
 
     expect(res.status).toBe(400);
@@ -88,9 +96,13 @@ describe('POST /api/cart/add', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => mockCartResponse })
     );
 
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
     const res = await request(app)
       .post('/api/cart/add')
-      .set('Cookie', cookies)
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
       .send({ productId: '12345', count: 1 });
 
     expect(res.status).toBe(200);
@@ -129,9 +141,13 @@ describe('POST /api/cart/add', () => {
       .mockRejectedValueOnce(new Error('network error'))
     );
 
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
     const res = await request(app)
       .post('/api/cart/add')
-      .set('Cookie', cookies)
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
       .send({ productId: '12345', count: 1 });
 
     expect(res.status).toBe(200);
@@ -152,9 +168,13 @@ describe('POST /api/cart/add', () => {
       .mockResolvedValueOnce({ ok: false, status: 409, text: async () => 'Out of stock' })
     );
 
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
     const res = await request(app)
       .post('/api/cart/add')
-      .set('Cookie', cookies)
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token)
       .send({ productId: '12345', count: 1 });
 
     expect(res.status).toBe(409);

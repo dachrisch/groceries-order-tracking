@@ -17,23 +17,53 @@ export async function teardownTestDB() {
   await mongoose.disconnect();
 }
 
+/** Fetch a fresh CSRF token and return { token, cookies } */
+export async function fetchCsrf(existingCookies?: string): Promise<{ token: string; cookies: string[] }> {
+  let req = request(app).get('/api/csrf-token');
+  if (existingCookies) {
+    req = req.set('Cookie', existingCookies);
+  }
+  const res = await req;
+  return {
+    token: res.body.token,
+    cookies: res.headers['set-cookie'] as string[],
+  };
+}
+
 /** Register a user and return the response */
 export async function registerUser(
   data = { name: 'Alice', email: 'alice@example.com', password: 'secret123' }
 ) {
-  return request(app).post('/api/register').send(data);
+  const { token, cookies } = await fetchCsrf();
+  return request(app)
+    .post('/api/register')
+    .set('Cookie', cookies)
+    .set('x-csrf-token', token)
+    .send(data);
 }
 
-/** Login and return the Set-Cookie header string */
+/** Login and return the Set-Cookie header string (session cookies only) */
 export async function loginUser(
   credentials = { email: 'alice@example.com', password: 'secret123' }
 ): Promise<string> {
-  const res = await request(app).post('/api/login').send(credentials);
-  const cookies = res.headers['set-cookie'] as string[];
-  if (!cookies) {
+  const { token, cookies: csrfCookies } = await fetchCsrf();
+  const res = await request(app)
+    .post('/api/login')
+    .set('Cookie', csrfCookies)
+    .set('x-csrf-token', token)
+    .send(credentials);
+  
+  if (res.status !== 200) {
     throw new Error(`Login failed with status ${res.status}: ${JSON.stringify(res.body)}`);
   }
-  return cookies.join('; ');
+
+  const loginCookies = res.headers['set-cookie'] as string[];
+  if (!loginCookies) {
+    throw new Error(`Login failed: No cookies returned`);
+  }
+  
+  // Return only session cookies (token, dkey) to avoid CSRF cookie conflicts later
+  return loginCookies.join('; ');
 }
 
 /** Get the current user's _id from the session endpoint */
