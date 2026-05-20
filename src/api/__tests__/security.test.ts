@@ -85,6 +85,7 @@ describe('Security - CSRF Protection', () => {
   it('fails state-changing requests without CSRF token', async () => {
     const res = await request(app)
       .post('/api/cart/add')
+      .set('x-test-enable-csrf', 'true')
       .set('Cookie', cookies)
       .send({ id: '123', quantity: 1 });
     
@@ -107,6 +108,7 @@ describe('Security - CSRF Protection', () => {
 
     const res = await request(app)
       .post('/api/cart/add')
+      .set('x-test-enable-csrf', 'true')
       .set('Cookie', combinedCookies)
       .set('x-csrf-token', token)
       .send({ id: '123', quantity: 1 });
