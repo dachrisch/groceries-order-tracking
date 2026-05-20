@@ -3,7 +3,8 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import { JWT_SECRET, derivedKeyMiddleware } from './utils';
+import { doubleCsrf } from 'csrf-csrf';
+import { JWT_SECRET, CSRF_SECRET, derivedKeyMiddleware } from './utils';
 import { handleLogin, handleRegister, handleSession, handleLogout } from './controllers/auth.controller';
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
 
@@ -24,6 +25,21 @@ app.use(helmet({
 app.use(express.json());
 app.use(cookieParser());
 
+const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
+  getSecret: () => CSRF_SECRET,
+  cookieName: 'x-csrf-token',
+  cookieOptions: {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+  },
+  size: 64,
+  ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+  getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
+  getSessionIdentifier: (req) => req.cookies.token || 'anonymous',
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
@@ -38,9 +54,16 @@ app.get('/health', (_req, res) => {
   res.status(200).send('OK');
 });
 
+app.get('/api/csrf-token', (req, res) => {
+  res.json({ token: generateCsrfToken(req, res) });
+});
+
 app.get('/api/version', (_req, res) => {
   res.json({ version: process.env.APP_VERSION || 'dev' });
 });
+
+// Protect all following /api/ routes with CSRF check (ignored for GET/HEAD/OPTIONS)
+app.use('/api/', doubleCsrfProtection);
 
 const auth = (req: Request, res: Response, next: NextFunction) => {
   const token = req.cookies.token;

@@ -21,15 +21,37 @@ export async function teardownTestDB() {
 export async function registerUser(
   data = { name: 'Alice', email: 'alice@example.com', password: 'secret123' }
 ) {
-  return request(app).post('/api/register').send(data);
+  const tokenRes = await request(app).get('/api/csrf-token');
+  const token = tokenRes.body.token;
+  const csrfCookie = tokenRes.headers['set-cookie'] as string[];
+
+  return request(app)
+    .post('/api/register')
+    .set('Cookie', csrfCookie)
+    .set('x-csrf-token', token)
+    .send(data);
 }
 
 /** Login and return the Set-Cookie header string */
 export async function loginUser(
   credentials = { email: 'alice@example.com', password: 'secret123' }
 ): Promise<string> {
-  const res = await request(app).post('/api/login').send(credentials);
-  return (res.headers['set-cookie'] as string[]).join('; ');
+  const tokenRes = await request(app).get('/api/csrf-token');
+  const token = tokenRes.body.token;
+  const csrfCookie = tokenRes.headers['set-cookie'] as string[];
+
+  const res = await request(app)
+    .post('/api/login')
+    .set('Cookie', csrfCookie)
+    .set('x-csrf-token', token)
+    .send(credentials);
+  
+  const loginCookies = res.headers['set-cookie'] as string[];
+  if (!loginCookies) {
+    throw new Error(`Login failed with status ${res.status}: ${JSON.stringify(res.body)}`);
+  }
+  
+  return [...loginCookies, ...csrfCookie].join('; ');
 }
 
 /** Get the current user's _id from the session endpoint */
