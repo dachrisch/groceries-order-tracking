@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.17](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.16...v1.8.17) (2026-05-20)
+
+
+### Bug Fixes
+
+* **ci:** remove unused CSRF_SECRET import to fix lint error ([840c02c](https://github.com/dachrisch/groceries-order-tracking/commit/840c02c16aace25f47a3a9b3f52527646ed32642))
+
 ## [1.8.16](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.15...v1.8.16) (2026-05-20)
 
 
