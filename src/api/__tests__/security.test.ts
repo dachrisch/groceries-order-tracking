@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
-import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser } from './helpers';
+import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf } from './helpers';
 
 // Mock getKnusprSession to avoid needing actual credentials
 vi.mock('../../lib/knuspr-auth', async () => {
@@ -85,7 +85,6 @@ describe('Security - CSRF Protection', () => {
   it('fails state-changing requests without CSRF token', async () => {
     const res = await request(app)
       .post('/api/cart/add')
-      .set('x-test-enable-csrf', 'true')
       .set('Cookie', cookies)
       .send({ id: '123', quantity: 1 });
     
@@ -94,21 +93,13 @@ describe('Security - CSRF Protection', () => {
 
   it('allows state-changing requests with valid CSRF token', async () => {
     // 1. Get token
-    const tokenRes = await request(app)
-      .get('/api/csrf-token')
-      .set('Cookie', cookies);
+    const { token, cookies: resCookies } = await fetchCsrf(cookies);
     
-    const token = tokenRes.body.token;
-    const resCookies = tokenRes.headers['set-cookie'] as string[];
-
     // 2. Perform request
-    // Use only the JWT token from cookies and the fresh CSRF cookie
-    const jwtCookie = cookies.split('; ').find(c => c.startsWith('token='));
-    const combinedCookies = [jwtCookie, ...resCookies].join('; ');
+    const combinedCookies = [cookies, ...resCookies].join('; ');
 
     const res = await request(app)
       .post('/api/cart/add')
-      .set('x-test-enable-csrf', 'true')
       .set('Cookie', combinedCookies)
       .set('x-csrf-token', token)
       .send({ id: '123', quantity: 1 });

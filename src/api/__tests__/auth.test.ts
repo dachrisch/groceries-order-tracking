@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
-import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser } from './helpers';
+import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf } from './helpers';
 import Integration, { IntegrationProvider } from '../../models/Integration';
 import * as orderImporter from '../../lib/order-importer';
 
@@ -34,8 +34,11 @@ describe('POST /api/register', () => {
   });
 
   it('returns 400 when required fields are missing or invalid', async () => {
+    const { token, cookies } = await fetchCsrf();
     const res = await request(app)
       .post('/api/register')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'bad-email', password: '123' }); // no name, invalid email, short password
 
     expect(res.status).toBe(400);
@@ -47,8 +50,11 @@ describe('POST /api/login', () => {
   beforeEach(() => registerUser());
 
   it('returns 200 and sets httpOnly auth cookies on valid credentials', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf();
     const res = await request(app)
       .post('/api/login')
+      .set('Cookie', csrfCookies)
+      .set('x-csrf-token', token)
       .send({ email: 'alice@example.com', password: 'secret123' });
 
     expect(res.status).toBe(200);
@@ -62,8 +68,11 @@ describe('POST /api/login', () => {
   });
 
   it('returns 401 on wrong password', async () => {
+    const { token, cookies } = await fetchCsrf();
     const res = await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'alice@example.com', password: 'wrongpassword' });
 
     expect(res.status).toBe(401);
@@ -71,8 +80,11 @@ describe('POST /api/login', () => {
   });
 
   it('returns 401 for an unknown email', async () => {
+    const { token, cookies } = await fetchCsrf();
     const res = await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'unknown@example.com', password: 'secret123' });
 
     expect(res.status).toBe(401);
@@ -90,8 +102,11 @@ describe('POST /api/login', () => {
       syncInProgress: false
     });
 
+    const { token, cookies } = await fetchCsrf();
     await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'bob@example.com', password: 'password123' });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -117,8 +132,11 @@ describe('POST /api/login', () => {
       syncInProgress: false
     });
 
+    const { token, cookies } = await fetchCsrf();
     await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'retry@example.com', password: 'password123' });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -137,8 +155,11 @@ describe('POST /api/login', () => {
       syncInProgress: false
     });
 
+    const { token, cookies } = await fetchCsrf();
     await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'noretry@example.com', password: 'password123' });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -155,8 +176,11 @@ describe('POST /api/login', () => {
       lastSyncAt: new Date(Date.now() - 30 * 60 * 1000) // 30 mins ago
     });
 
+    const { token, cookies } = await fetchCsrf();
     await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'charlie@example.com', password: 'password123' });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -174,8 +198,11 @@ describe('POST /api/login', () => {
       syncInProgress: true // Lock active
     });
 
+    const { token, cookies } = await fetchCsrf();
     await request(app)
       .post('/api/login')
+      .set('Cookie', cookies)
+      .set('x-csrf-token', token)
       .send({ email: 'busy@example.com', password: 'password123' });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -208,7 +235,13 @@ describe('POST /api/logout', () => {
     await registerUser();
     const cookies = await loginUser();
 
-    const res = await request(app).post('/api/logout').set('Cookie', cookies);
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
+    const res = await request(app)
+      .post('/api/logout')
+      .set('Cookie', combinedCookies)
+      .set('x-csrf-token', token);
 
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Logged out');

@@ -38,13 +38,6 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
   getSessionIdentifier: (req) => req.cookies.token || 'anonymous',
-  skipCsrfProtection: (req) => {
-    // Skip CSRF for login/register as they establish the session
-    if (['/api/login', '/api/register'].includes(req.path)) return true;
-    // Skip CSRF in tests unless explicitly requested
-    if (process.env.NODE_ENV === 'test' && !req.get('x-test-enable-csrf')) return true;
-    return false;
-  },
 });
 
 const limiter = rateLimit({
@@ -52,6 +45,7 @@ const limiter = rateLimit({
   limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
   standardHeaders: 'draft-7', // set `RateLimit` and `RateLimit-Policy` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+  skip: () => process.env.NODE_ENV === 'test',
 });
 
 app.use(limiter);

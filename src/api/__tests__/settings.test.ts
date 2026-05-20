@@ -7,6 +7,7 @@ import {
   teardownTestDB,
   registerUser,
   loginUser,
+  fetchCsrf,
 } from './helpers';
 
 // Mock the external Knuspr API calls so tests are self-contained
@@ -49,9 +50,13 @@ describe('Settings / integrations endpoints', () => {
 
   describe('POST /api/settings/integrations/knuspr', () => {
     it('connects Knuspr and returns 200', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+      const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
       const res = await request(app)
         .post('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies)
+        .set('Cookie', combinedCookies)
+        .set('x-csrf-token', token)
         .send({ email: 'user@knuspr.de', password: 'knusprpass' });
 
       expect(res.status).toBe(200);
@@ -59,9 +64,13 @@ describe('Settings / integrations endpoints', () => {
     });
 
     it('persists the integration so it appears in the list', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+      const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
       await request(app)
         .post('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies)
+        .set('Cookie', combinedCookies)
+        .set('x-csrf-token', token)
         .send({ email: 'user@knuspr.de', password: 'knusprpass' });
 
       const listRes = await request(app)
@@ -74,17 +83,24 @@ describe('Settings / integrations endpoints', () => {
     });
 
     it('returns 400 when email or password is missing', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+      const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
       const res = await request(app)
         .post('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies)
+        .set('Cookie', combinedCookies)
+        .set('x-csrf-token', token)
         .send({ email: 'user@knuspr.de' }); // missing password
 
       expect(res.status).toBe(400);
     });
 
     it('returns 401 when not authenticated', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf();
       const res = await request(app)
         .post('/api/settings/integrations/knuspr')
+        .set('Cookie', csrfCookies)
+        .set('x-csrf-token', token)
         .send({ email: 'user@knuspr.de', password: 'knusprpass' });
 
       expect(res.status).toBe(401);
@@ -93,15 +109,23 @@ describe('Settings / integrations endpoints', () => {
 
   describe('DELETE /api/settings/integrations/knuspr', () => {
     it('disconnects Knuspr and removes it from the list', async () => {
+      const { token: connectToken, cookies: connectCsrfCookies } = await fetchCsrf(cookies);
+      const connectCookies = [cookies, ...connectCsrfCookies].join('; ');
+
       // Connect first
       await request(app)
         .post('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies)
+        .set('Cookie', connectCookies)
+        .set('x-csrf-token', connectToken)
         .send({ email: 'user@knuspr.de', password: 'knusprpass' });
+
+      const { token: deleteToken, cookies: deleteCsrfCookies } = await fetchCsrf(cookies);
+      const deleteCombinedCookies = [cookies, ...deleteCsrfCookies].join('; ');
 
       const deleteRes = await request(app)
         .delete('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies);
+        .set('Cookie', deleteCombinedCookies)
+        .set('x-csrf-token', deleteToken);
 
       expect(deleteRes.status).toBe(200);
       expect(deleteRes.body.message).toBe('Knuspr disconnected');
@@ -113,47 +137,71 @@ describe('Settings / integrations endpoints', () => {
     });
 
     it('returns 200 even when Knuspr was not connected', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+      const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
       const res = await request(app)
         .delete('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies);
+        .set('Cookie', combinedCookies)
+        .set('x-csrf-token', token);
 
       expect(res.status).toBe(200);
     });
 
     it('returns 401 when not authenticated', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf();
       expect(
-        (await request(app).delete('/api/settings/integrations/knuspr')).status
+        (await request(app)
+          .delete('/api/settings/integrations/knuspr')
+          .set('Cookie', csrfCookies)
+          .set('x-csrf-token', token)).status
       ).toBe(401);
     });
   });
 
   describe('POST /api/settings/integrations/knuspr/sync', () => {
     it('syncs orders and returns the imported count', async () => {
+      const { token: connectToken, cookies: connectCsrfCookies } = await fetchCsrf(cookies);
+      const connectCookies = [cookies, ...connectCsrfCookies].join('; ');
+
       // Connect first
       await request(app)
         .post('/api/settings/integrations/knuspr')
-        .set('Cookie', cookies)
+        .set('Cookie', connectCookies)
+        .set('x-csrf-token', connectToken)
         .send({ email: 'user@knuspr.de', password: 'knusprpass' });
+
+      const { token: syncToken, cookies: syncCsrfCookies } = await fetchCsrf(cookies);
+      const syncCookies = [cookies, ...syncCsrfCookies].join('; ');
 
       const res = await request(app)
         .post('/api/settings/integrations/knuspr/sync')
-        .set('Cookie', cookies);
+        .set('Cookie', syncCookies)
+        .set('x-csrf-token', syncToken);
 
       expect(res.status).toBe(200);
       expect(res.body.importedCount).toBe(5);
     });
 
     it('returns 404 when Knuspr is not connected', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+      const combinedCookies = [cookies, ...csrfCookies].join('; ');
+
       const res = await request(app)
         .post('/api/settings/integrations/knuspr/sync')
-        .set('Cookie', cookies);
+        .set('Cookie', combinedCookies)
+        .set('x-csrf-token', token);
 
       expect(res.status).toBe(404);
     });
 
     it('returns 401 when not authenticated', async () => {
+      const { token, cookies: csrfCookies } = await fetchCsrf();
       expect(
-        (await request(app).post('/api/settings/integrations/knuspr/sync')).status
+        (await request(app)
+          .post('/api/settings/integrations/knuspr/sync')
+          .set('Cookie', csrfCookies)
+          .set('x-csrf-token', token)).status
       ).toBe(401);
     });
   });
