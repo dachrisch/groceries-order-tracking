@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createSignal, untrack } from 'solid-js';
 
 const [csrfToken, setCsrfToken] = createSignal<string | null>(null);
 const originalFetch = window.fetch;
@@ -22,7 +22,7 @@ export async function apiFetch(url: string, options: RequestInit = {}) {
   const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
 
   if (isMutation) {
-    let token = csrfToken();
+    let token = untrack(() => csrfToken());
     if (!token) {
       token = await refreshCsrfToken();
     }
