@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.16](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.15...v1.8.16) (2026-05-20)
+
+
+### Bug Fixes
+
+* **security:** switch to csurf for CodeQL detection ([bbd90d3](https://github.com/dachrisch/groceries-order-tracking/commit/bbd90d36804ae578962485a2447a412b17647be3))
+
 ## [1.8.15](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.14...v1.8.15) (2026-05-20)
 
 
