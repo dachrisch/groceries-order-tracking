@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.24](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.23...v1.8.24) (2026-05-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-solid to v1.17.0 ([#99](https://github.com/dachrisch/groceries-order-tracking/issues/99)) ([afeec92](https://github.com/dachrisch/groceries-order-tracking/commit/afeec924988c339df95c5f64fd959a4a368b11f9))
+* **deps:** update dependency mongodb-memory-server to v11.2.0 ([#100](https://github.com/dachrisch/groceries-order-tracking/issues/100)) ([164370d](https://github.com/dachrisch/groceries-order-tracking/commit/164370d59d618d7adb75dccb69bef957e6b2abae))
+
 ## [1.8.23](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.22...v1.8.23) (2026-05-27)
 
 
