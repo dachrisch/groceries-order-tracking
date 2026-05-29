@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.27](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.26...v1.8.27) (2026-05-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency eslint to v10.4.1 ([#105](https://github.com/dachrisch/groceries-order-tracking/issues/105)) ([23b274b](https://github.com/dachrisch/groceries-order-tracking/commit/23b274bef04840b0ea2b7db325f78b017e039014))
+
 ## [1.8.26](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.25...v1.8.26) (2026-05-29)
 
 
