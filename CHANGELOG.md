@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.26](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.25...v1.8.26) (2026-05-29)
+
+
+### Bug Fixes
+
+* remove unused CSRF_SECRET check causing production crashes ([c5fcfe9](https://github.com/dachrisch/groceries-order-tracking/commit/c5fcfe990912f6b3f4cfcea559530cd7352aa7b5))
+
 ## [1.8.25](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.24...v1.8.25) (2026-05-28)
 
 
