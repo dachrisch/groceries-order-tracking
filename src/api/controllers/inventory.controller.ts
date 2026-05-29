@@ -187,17 +187,23 @@ export async function handleGetInventory(req: Request, res: Response) {
           if (res.ok) {
             const data = await res.json();
             const product = data.data ?? data;
+            
+            console.log(`Successfully fetched metadata for ${item._id}:`, product);
 
             if (product.prices) {
               const { salePrice, originalPrice, saleValidTill } = product.prices;
               item.currentPrice = salePrice ?? originalPrice;
               item.priceValidUntil = saleValidTill;
+            } else {
+                console.warn(`No price data found for ${item._id}:`, product);
             }
 
             if (product.stock) {
               item.availabilityStatus = product.stock.availabilityStatus;
               item.availabilityReason = product.stock.availabilityReason;
             }
+          } else {
+            console.error(`Failed to fetch metadata for ${item._id}:`, res.status, await res.text());
           }
         } catch (e) {
           console.error(`Failed to fetch enhanced metadata for ${item._id}:`, e);
