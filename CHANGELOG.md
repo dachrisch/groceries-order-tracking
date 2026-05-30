@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.29](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.28...v1.8.29) (2026-05-30)
+
+
+### Bug Fixes
+
+* refactor inventory pricing to use bulk API ([cc7d235](https://github.com/dachrisch/groceries-order-tracking/commit/cc7d2355e1e26757869e8c74a2972aa5e1b42d8c))
+
 ## [1.8.28](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.27...v1.8.28) (2026-05-30)
 
 
