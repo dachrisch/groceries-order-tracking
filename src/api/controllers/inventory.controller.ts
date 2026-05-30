@@ -187,11 +187,11 @@ export async function handleGetInventory(req: Request, res: Response) {
           if (res.ok) {
             const priceData = await res.json();
             // priceData is an array of objects
-            priceData.forEach((p: any) => {
+            priceData.forEach((p: { productId: number; price: { amount: number }; sales?: { active: boolean; price: { amount: number } }[] }) => {
               const item = inventory.find(i => i._id === p.productId);
               if (item) {
                 // Use sale price if active, else original price
-                const activeSale = p.sales?.find((s: any) => s.active);
+                const activeSale = p.sales?.find((s: { active: boolean }) => s.active);
                 item.currentPrice = activeSale ? activeSale.price.amount : p.price.amount;
               }
             });
