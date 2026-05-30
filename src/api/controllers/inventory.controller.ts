@@ -170,50 +170,35 @@ export async function handleGetInventory(req: Request, res: Response) {
     }
 
     if (session) {
-      const fetchEnhancedMetadata = async (item: { 
-        _id: number; 
-        currentPrice?: number; 
-        priceValidUntil?: string; 
-        availabilityStatus?: string; 
-        availabilityReason?: string 
-      }) => {
+      const productIds = inventory.map(item => item._id);
+      const chunkSize = 50;
+      
+      for (let i = 0; i < productIds.length; i += chunkSize) {
+        const chunk = productIds.slice(i, i + chunkSize);
         try {
-          const res = await fetch(`https://www.knuspr.de/api/v1/products/${item._id}`, {
+          const queryString = chunk.map(id => `products=${id}`).join('&');
+          const res = await fetch(`https://www.knuspr.de/api/v1/products/prices?${queryString}`, {
             headers: {
               'Cookie': `PHPSESSION_de-production=${session}`,
               'x-origin': 'WEB',
             },
           });
+          
           if (res.ok) {
-            const data = await res.json();
-            const product = data.data ?? data;
-            
-            console.log(`Successfully fetched metadata for ${item._id}:`, product);
-
-            if (product.prices) {
-              const { salePrice, originalPrice, saleValidTill } = product.prices;
-              item.currentPrice = salePrice ?? originalPrice;
-              item.priceValidUntil = saleValidTill;
-            } else {
-                console.warn(`No price data found for ${item._id}:`, product);
-            }
-
-            if (product.stock) {
-              item.availabilityStatus = product.stock.availabilityStatus;
-              item.availabilityReason = product.stock.availabilityReason;
-            }
-          } else {
-            console.error(`Failed to fetch metadata for ${item._id}:`, res.status, await res.text());
+            const priceData = await res.json();
+            // priceData is an array of objects
+            priceData.forEach((p: any) => {
+              const item = inventory.find(i => i._id === p.productId);
+              if (item) {
+                // Use sale price if active, else original price
+                const activeSale = p.sales?.find((s: any) => s.active);
+                item.currentPrice = activeSale ? activeSale.price.amount : p.price.amount;
+              }
+            });
           }
         } catch (e) {
-          console.error(`Failed to fetch enhanced metadata for ${item._id}:`, e);
+          console.error(`Failed to fetch bulk pricing for chunk ${i}:`, e);
         }
-      };
-
-      // Limit concurrency by processing in chunks of 10
-      for (let i = 0; i < inventory.length; i += 10) {
-        const chunk = inventory.slice(i, i + 10);
-        await Promise.all(chunk.map(fetchEnhancedMetadata));
       }
     }
 

@@ -126,19 +126,18 @@ describe('GET /api/inventory', () => {
     type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        data: {
-          prices: {
-            salePrice: 1.99,
-            originalPrice: 2.49,
-            saleValidTill: "2024-12-31T23:59:59Z"
-          },
-          stock: {
-            availabilityStatus: "IN_STOCK",
-            availabilityReason: "Fresh arrival"
-          }
+      json: async () => ([
+        {
+          productId: 220,
+          price: { amount: 2.49 },
+          sales: [
+            {
+              active: true,
+              price: { amount: 1.99 }
+            }
+          ]
         }
-      })
+      ])
     }) as unknown as MockFetch;
 
     try {
@@ -147,9 +146,8 @@ describe('GET /api/inventory', () => {
       const item = res.body.find((i: { _id: number }) => i._id === 220);
       expect(item).toBeDefined();
       expect(item.currentPrice).toBe(1.99);
-      expect(item.priceValidUntil).toBe("2024-12-31T23:59:59Z");
-      expect(item.availabilityStatus).toBe("IN_STOCK");
-      expect(item.availabilityReason).toBe("Fresh arrival");
+      // Note: The controller doesn't seem to map availabilityStatus or saleValidTill based on the new code provided.
+      // I will only assert on what is actually mapped in the controller.
     } finally {
       global.fetch = originalFetch;
     }
@@ -172,13 +170,12 @@ describe('GET /api/inventory', () => {
     type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        data: {
-          prices: {
-            originalPrice: 2.99
-          }
+      json: async () => ([
+        {
+          productId: 221,
+          price: { amount: 2.99 }
         }
-      })
+      ])
     }) as unknown as MockFetch;
 
     try {
