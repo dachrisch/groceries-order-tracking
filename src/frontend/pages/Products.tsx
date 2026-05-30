@@ -243,8 +243,8 @@ export function Products() {
       }>
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           {/* Product List Card - Hidden on mobile if a product is selected */}
-          <div class={`card bg-base-100 shadow-xl overflow-hidden border border-base-300 xl:col-span-5 ${productId() ? 'hidden xl:flex' : 'flex'}`}>
-            <div class="max-h-[750px] overflow-y-auto">
+          <div class={`card bg-base-100 shadow-xl overflow-hidden border border-base-300 xl:col-span-6 ${productId() ? 'hidden xl:flex' : 'flex'}`}>
+            <div class="overflow-y-auto">
               <table class="table table-pin-rows table-sm md:table-md">
                 <thead>
                   <tr class="bg-base-200/75 text-xs uppercase tracking-wider">
