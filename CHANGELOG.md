@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.8.28](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.27...v1.8.28) (2026-05-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency date-fns to v4.4.0 ([#107](https://github.com/dachrisch/groceries-order-tracking/issues/107)) ([94adad2](https://github.com/dachrisch/groceries-order-tracking/commit/94adad2a69583a4b9105ef5e5bc4c61d8afff93d))
+
 ## [1.8.27](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.26...v1.8.27) (2026-05-29)
 
 
