@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.0...v1.9.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency tsx to v4.22.4 ([#112](https://github.com/dachrisch/groceries-order-tracking/issues/112)) ([6888b83](https://github.com/dachrisch/groceries-order-tracking/commit/6888b83a6c0ff488460b54c91c11ab1b3fcf9317))
+
 ## [1.9.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.30...v1.9.0) (2026-05-31)
 
 
