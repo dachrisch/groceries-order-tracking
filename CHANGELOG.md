@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.30...v1.9.0) (2026-05-31)
+
+
+### Features
+
+* expand product list width and allow vertical growth ([8dc0fbe](https://github.com/dachrisch/groceries-order-tracking/commit/8dc0fbe3df3f75a9d77b77ce08688ed8a33dc547))
+
 ## [1.8.30](https://github.com/dachrisch/groceries-order-tracking/compare/v1.8.29...v1.8.30) (2026-05-30)
 
 
