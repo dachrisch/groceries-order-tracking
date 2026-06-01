@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.3](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.2...v1.9.3) (2026-06-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency typescript-eslint to v8.60.1 ([#117](https://github.com/dachrisch/groceries-order-tracking/issues/117)) ([76c7d70](https://github.com/dachrisch/groceries-order-tracking/commit/76c7d709d665393603ab342d000610394d811996))
+* **deps:** update dependency vite to v8.0.16 ([#118](https://github.com/dachrisch/groceries-order-tracking/issues/118)) ([9d812e7](https://github.com/dachrisch/groceries-order-tracking/commit/9d812e73d4bdd8e9b67cd9fc028c3a3e31fa2e10))
+
 ## [1.9.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.1...v1.9.2) (2026-06-01)
 
 
