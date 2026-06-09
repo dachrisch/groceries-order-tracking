@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.10](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.9...v1.9.10) (2026-06-09)
+
+
+### Bug Fixes
+
+* **deps:** update dependency mongoose to v9.7.0 ([#132](https://github.com/dachrisch/groceries-order-tracking/issues/132)) ([973a913](https://github.com/dachrisch/groceries-order-tracking/commit/973a91378e5196440d44e2d7ec4cfc9cbf2efbe2))
+
 ## [1.9.9](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.8...v1.9.9) (2026-06-09)
 
 
