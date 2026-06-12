@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.11](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.10...v1.9.11) (2026-06-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency esbuild to v0.28.1 ([#134](https://github.com/dachrisch/groceries-order-tracking/issues/134)) ([ca6fc0f](https://github.com/dachrisch/groceries-order-tracking/commit/ca6fc0f3f07e5f71dfbd2760630987e13042153c))
+
 ## [1.9.10](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.9...v1.9.10) (2026-06-09)
 
 
