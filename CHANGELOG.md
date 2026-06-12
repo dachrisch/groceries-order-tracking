@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.13](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.12...v1.9.13) (2026-06-12)
+
+
+### Bug Fixes
+
+* **deps:** update eslint monorepo to v10.5.0 ([#139](https://github.com/dachrisch/groceries-order-tracking/issues/139)) ([cac1212](https://github.com/dachrisch/groceries-order-tracking/commit/cac121214558994ff6db6c851a1a6a45bed016ed))
+* **deps:** update tailwindcss monorepo to v4.3.1 ([#138](https://github.com/dachrisch/groceries-order-tracking/issues/138)) ([cf8ef42](https://github.com/dachrisch/groceries-order-tracking/commit/cf8ef42224090c7cb0aa1c9ca3b4382a6986e8f7))
+
 ## [1.9.12](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.11...v1.9.12) (2026-06-12)
 
 
