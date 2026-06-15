@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.16](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.15...v1.9.16) (2026-06-15)
+
+
+### Bug Fixes
+
+* **deps:** update typescript-eslint monorepo to v8.61.1 ([#145](https://github.com/dachrisch/groceries-order-tracking/issues/145)) ([78bd3ad](https://github.com/dachrisch/groceries-order-tracking/commit/78bd3ada5cc9cbe444a8c8cefe5ae424326d5815))
+
 ## [1.9.15](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.14...v1.9.15) (2026-06-15)
 
 
