@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.19](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.18...v1.9.19) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** update lucide monorepo to v1.21.0 ([#151](https://github.com/dachrisch/groceries-order-tracking/issues/151)) ([d12ef69](https://github.com/dachrisch/groceries-order-tracking/commit/d12ef69b7cde8ff0a091ffb6cb9cde04c274313c))
+
 ## [1.9.18](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.17...v1.9.18) (2026-06-17)
 
 
