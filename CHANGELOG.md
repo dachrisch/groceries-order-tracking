@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.20](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.19...v1.9.20) (2026-06-22)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#154](https://github.com/dachrisch/groceries-order-tracking/issues/154)) ([2464e9e](https://github.com/dachrisch/groceries-order-tracking/commit/2464e9e032d5a8d90dd251351772b26cb4ed42f4))
+
 ## [1.9.19](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.18...v1.9.19) (2026-06-18)
 
 
