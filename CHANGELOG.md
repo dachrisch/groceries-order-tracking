@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.30](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.29...v1.9.30) (2026-06-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.6.6 ([#178](https://github.com/dachrisch/groceries-order-tracking/issues/178)) ([a792270](https://github.com/dachrisch/groceries-order-tracking/commit/a7922703b4eebb65860cbd5b5e9b07988bfc9d3e))
+* **deps:** update dependency typescript-eslint to v8.62.1 ([#179](https://github.com/dachrisch/groceries-order-tracking/issues/179)) ([226a04f](https://github.com/dachrisch/groceries-order-tracking/commit/226a04f0d73e2da02ad93b65cd6d23aaa7797a3a))
+
 ## [1.9.29](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.28...v1.9.29) (2026-06-29)
 
 
