@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.41](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.40...v1.9.41) (2026-07-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.6.11 ([#202](https://github.com/dachrisch/groceries-order-tracking/issues/202)) ([45a0545](https://github.com/dachrisch/groceries-order-tracking/commit/45a05451eca38137dfa98fce9d426a2387a9c18b))
+
 ## [1.9.40](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.39...v1.9.40) (2026-07-03)
 
 
