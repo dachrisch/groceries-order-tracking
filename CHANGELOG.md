@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.49](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.48...v1.9.49) (2026-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update dependency typescript to v7 ([#220](https://github.com/dachrisch/groceries-order-tracking/issues/220)) ([be87231](https://github.com/dachrisch/groceries-order-tracking/commit/be87231d755177553d09852d28714d00f9cc92de))
+
 ## [1.9.48](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.47...v1.9.48) (2026-07-08)
 
 
