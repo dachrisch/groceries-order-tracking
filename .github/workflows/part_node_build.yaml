@@ -27,7 +27,7 @@ jobs:
           node-version: "24.x"
           cache: "npm"
           cache-dependency-path: ${{ inputs.project }}/package.json
-      - name: 🔍 Run eslint ${{ inputs.project }}
+      - name: 🔍 Run oxlint ${{ inputs.project }}
         run: |
           npm ci
           npm run lint
