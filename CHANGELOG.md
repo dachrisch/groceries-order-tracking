@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.61](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.60...v1.9.61) (2026-07-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency vite-plugin-solid to v2.11.13 ([#248](https://github.com/dachrisch/groceries-order-tracking/issues/248)) ([1fd66ef](https://github.com/dachrisch/groceries-order-tracking/commit/1fd66efe44d7b97a85bcc35a4d2161975aba3e67))
+
 ## [1.9.60](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.59...v1.9.60) (2026-07-17)
 
 
