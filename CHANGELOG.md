@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.71](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.70...v1.9.71) (2026-07-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jsdom to v30 ([#270](https://github.com/dachrisch/groceries-order-tracking/issues/270)) ([2688fdf](https://github.com/dachrisch/groceries-order-tracking/commit/2688fdf1c2249f7357858c074edea691aeb7b754))
+
 ## [1.9.70](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.69...v1.9.70) (2026-07-27)
 
 
