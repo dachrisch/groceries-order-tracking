@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.76](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.75...v1.9.76) (2026-07-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @solidjs/router to v1 ([#279](https://github.com/dachrisch/groceries-order-tracking/issues/279)) ([e416f44](https://github.com/dachrisch/groceries-order-tracking/commit/e416f44614d5a454c037a8d6e0f0e7ba402854aa))
+
 ## [1.9.75](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.74...v1.9.75) (2026-07-29)
 
 
