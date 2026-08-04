@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.90](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.89...v1.9.90) (2026-08-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.7.16 ([#313](https://github.com/dachrisch/groceries-order-tracking/issues/313)) ([dc298dd](https://github.com/dachrisch/groceries-order-tracking/commit/dc298dd420b9c2da31fff1efb1049f37292a61bf))
+* **deps:** update dependency express-rate-limit to v8.6.2 ([#314](https://github.com/dachrisch/groceries-order-tracking/issues/314)) ([dcd9fd4](https://github.com/dachrisch/groceries-order-tracking/commit/dcd9fd49d8c9566689599760921ac27b1d9be87f))
+
 ## [1.9.89](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.88...v1.9.89) (2026-08-04)
 
 
