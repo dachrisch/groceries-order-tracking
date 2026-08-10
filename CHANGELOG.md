@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.102](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.101...v1.9.102) (2026-08-10)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#339](https://github.com/dachrisch/groceries-order-tracking/issues/339)) ([74b909f](https://github.com/dachrisch/groceries-order-tracking/commit/74b909f290af143f68e75aee4af19a697779691a))
+* **deps:** update dependency @testing-library/jest-dom to v7.0.1 ([#338](https://github.com/dachrisch/groceries-order-tracking/issues/338)) ([2733ec5](https://github.com/dachrisch/groceries-order-tracking/commit/2733ec536128e3baecee670d61a62793ed12d3cb))
+
 ## [1.9.101](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.100...v1.9.101) (2026-08-09)
 
 
