@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.111](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.110...v1.9.111) (2026-08-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-solid to v1.32.0 ([#359](https://github.com/dachrisch/groceries-order-tracking/issues/359)) ([e882e09](https://github.com/dachrisch/groceries-order-tracking/commit/e882e0911b03a9be8be387c32bea917eecd4aea8))
+* **deps:** update vitest monorepo to v4.1.11 ([#358](https://github.com/dachrisch/groceries-order-tracking/issues/358)) ([100a90c](https://github.com/dachrisch/groceries-order-tracking/commit/100a90c37910cf7e5538633f1c1efce5ff8cdda8))
+
 ## [1.9.110](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.109...v1.9.110) (2026-08-18)
 
 
