@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.125](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.124...v1.9.125) (2026-08-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-solid to v1.37.0 ([#390](https://github.com/dachrisch/groceries-order-tracking/issues/390)) ([415b74e](https://github.com/dachrisch/groceries-order-tracking/commit/415b74e72583bd96cb3be05bd36c6d594d4972cd))
+
 ## [1.9.124](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.123...v1.9.124) (2026-08-29)
 
 
