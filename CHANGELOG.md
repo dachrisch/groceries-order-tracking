@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.137](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.136...v1.9.137) (2026-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.7.28 ([#416](https://github.com/dachrisch/groceries-order-tracking/issues/416)) ([b29646e](https://github.com/dachrisch/groceries-order-tracking/commit/b29646e16ff76554f92e2786bba576421d5ce715))
+* **deps:** update vitest monorepo to v5 ([#417](https://github.com/dachrisch/groceries-order-tracking/issues/417)) ([76276fc](https://github.com/dachrisch/groceries-order-tracking/commit/76276fce017d9a702fb7dcb9a1f131bf098e5191))
+
 ## [1.9.136](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.135...v1.9.136) (2026-09-03)
 
 
