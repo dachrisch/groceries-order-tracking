@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.151](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.150...v1.9.151) (2026-09-14)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#450](https://github.com/dachrisch/groceries-order-tracking/issues/450)) ([a8e0eb3](https://github.com/dachrisch/groceries-order-tracking/commit/a8e0eb33a7b0db63d8d61e2c93748effced4579e))
+* **deps:** update dependency zod to v4.6.5 ([#449](https://github.com/dachrisch/groceries-order-tracking/issues/449)) ([00d5241](https://github.com/dachrisch/groceries-order-tracking/commit/00d5241ca438dcc4d2df7114abf5dcf9eb2bfd1f))
+
 ## [1.9.150](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.149...v1.9.150) (2026-09-13)
 
 
