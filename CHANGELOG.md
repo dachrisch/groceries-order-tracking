@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.161](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.160...v1.9.161) (2026-09-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.7.43 ([#473](https://github.com/dachrisch/groceries-order-tracking/issues/473)) ([9cb3d38](https://github.com/dachrisch/groceries-order-tracking/commit/9cb3d3839ee0d7aa79bcbae1e891a708e1de01c0))
+* **deps:** update dependency mongodb-memory-server to v11.3.0 ([#474](https://github.com/dachrisch/groceries-order-tracking/issues/474)) ([74cc270](https://github.com/dachrisch/groceries-order-tracking/commit/74cc270ea25100ff0c41a375ce619c6e405ac483))
+
 ## [1.9.160](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.159...v1.9.160) (2026-09-20)
 
 
