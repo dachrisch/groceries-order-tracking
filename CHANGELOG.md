@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.162](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.161...v1.9.162) (2026-09-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jsdom to v30.1.1 ([#476](https://github.com/dachrisch/groceries-order-tracking/issues/476)) ([6291c9e](https://github.com/dachrisch/groceries-order-tracking/commit/6291c9e56b28fa4bdd4e5346435ba2f41a409fd3))
+* **deps:** update dependency oxlint to v1.85.0 ([#477](https://github.com/dachrisch/groceries-order-tracking/issues/477)) ([8cfa14e](https://github.com/dachrisch/groceries-order-tracking/commit/8cfa14e1d2efc3ff82e2b0a1c1df79f63f8157cc))
+
 ## [1.9.161](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.160...v1.9.161) (2026-09-21)
 
 
