@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.196](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.195...v1.9.196) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** update vitest monorepo to v5.0.4 ([#553](https://github.com/dachrisch/groceries-order-tracking/issues/553)) ([ee41b48](https://github.com/dachrisch/groceries-order-tracking/commit/ee41b487d66ebd6b4f3ccb312cdf570e680992d7))
+
 ## [1.9.195](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.194...v1.9.195) (2026-10-11)
 
 
