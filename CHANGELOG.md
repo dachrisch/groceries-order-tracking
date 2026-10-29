@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.9.216](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.215...v1.9.216) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency express-rate-limit to v8.7.2 ([#597](https://github.com/dachrisch/groceries-order-tracking/issues/597)) ([9376756](https://github.com/dachrisch/groceries-order-tracking/commit/9376756d095bddb23b6ce134c34f3de097c39990))
+
 ## [1.9.215](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.214...v1.9.215) (2026-10-29)
 
 
