@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.10.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.222...v1.10.0) (2026-11-02)
+
+
+### Features
+
+* add order bot for weekly fills and learned occasions ([578af5c](https://github.com/dachrisch/groceries-order-tracking/commit/578af5cf7cd0779173a9b06a0ee2286b63b4b3ff))
+
+
+### Bug Fixes
+
+* **bot:** migrate opencode client to the V2 API ([bd76e30](https://github.com/dachrisch/groceries-order-tracking/commit/bd76e3093dbae905b00c8c58a45ab7cccc4007d3))
+
 ## [1.9.222](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.221...v1.9.222) (2026-11-02)
 
 
