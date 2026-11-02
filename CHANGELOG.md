@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.10.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.10.0...v1.10.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bot:** pick opencode models from the server registry ([90f825e](https://github.com/dachrisch/groceries-order-tracking/commit/90f825e668496bb8e2b8d3cec33e1064751a912e))
+* **bot:** pick opencode models from the server registry ([63a8ac1](https://github.com/dachrisch/groceries-order-tracking/commit/63a8ac14807f9c88ebf356161ba1007193e4b666))
+* **deps:** update dependency undici to v8 ([74203cf](https://github.com/dachrisch/groceries-order-tracking/commit/74203cf0219a2ea14390b4ea85a30d9044563437))
+
 ## [1.10.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.9.222...v1.10.0) (2026-11-02)
 
 
