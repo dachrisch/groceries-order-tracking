@@ -30,12 +30,63 @@ export interface ModelRef {
   providerID: string;
 }
 
-// Free models on OpenCode Zen, fastest first. The fallback is a different
-// model, so a per-model rate limit or outage does not fail the whole call.
-export const MODEL_TIERS: ModelRef[] = [
-  { id: 'mimo-v2.5-free', providerID: 'opencode' },
-  { id: 'big-pickle', providerID: 'opencode' },
+export interface RegistryModel extends ModelRef {
+  status?: string;
+  enabled?: boolean;
+  cost?: Array<{ input?: number; output?: number }>;
+}
+
+// GET /api/model is the truth for which models are servable. A pinned model
+// that the registry has deprecated is admitted at /prompt and then fails with
+// "Model unavailable" (how mimo-v2.5-free died), so never trust a hard-coded
+// name without checking it against the registry first.
+//
+// Preference among discovered free models, best first. Other active cost-0
+// `opencode` models follow in registry order. Used as-is only when discovery
+// itself is down.
+const FREE_PREFERENCE = [
+  'mimo-v2.6-flash-free',
+  'big-pickle',
+  'nemotron-3.5-lightning-free',
+  'nemotron-3-ultra-free',
+  'ling-3.1-flash-free',
 ];
+const MODELS_TTL_MS = 10 * 60 * 1000;
+// A failed discovery suppresses re-probing briefly and never replaces a good list.
+const MODELS_FAILURE_TTL_MS = 30 * 1000;
+// A model that answered with a quota/rate-limit error is skipped this long.
+const EXHAUSTED_COOLDOWN_MS = 15 * 60 * 1000;
+const QUOTA_ERROR = /\b429\b|FreeUsageLimitError|rate limit|quota/i;
+
+let lastGoodModels: RegistryModel[] | null = null;
+let lastGoodAtMs = 0;
+let lastFailureAtMs = 0;
+const exhaustedUntil = new Map<string, number>();
+
+export function resetModelCacheForTests(): void {
+  lastGoodModels = null;
+  lastGoodAtMs = 0;
+  lastFailureAtMs = 0;
+  exhaustedUntil.clear();
+}
+
+const modelKey = (model: ModelRef) => `${model.providerID}:${model.id}`;
+
+function parseModelKey(value: string): ModelRef | null {
+  const [providerID, ...rest] = value.trim().split(':');
+  const id = rest.join(':');
+  return providerID && id ? { providerID, id } : null;
+}
+
+/** A registry entry is servable unless deprecated or disabled. */
+export function isUsable(model: RegistryModel): boolean {
+  return (model.status === undefined || model.status === 'active') && model.enabled !== false;
+}
+
+/** Cost-0 entries are the free tier. */
+export function isFree(model: RegistryModel): boolean {
+  return Array.isArray(model.cost) && model.cost.length > 0 && model.cost.every((c) => !c.input && !c.output);
+}
 
 interface OpencodeMessage {
   type: 'user' | 'assistant' | 'idle' | 'system' | 'synthetic';
@@ -148,6 +199,93 @@ async function pollForReply(
   throw new Error('opencode reply timed out');
 }
 
+async function discoverModels(config: OpencodeConfig): Promise<RegistryModel[] | null> {
+  try {
+    const response = await undiciFetch(`${config.baseUrl}/api/model`, {
+      headers: { 'X-Api-Key': config.apiKey },
+      dispatcher: dispatcherFor(config),
+    });
+    if (!response.ok) return null;
+    const json = (await response.json()) as unknown;
+    const body = json as { data?: unknown; models?: unknown };
+    const list = Array.isArray(json) ? json : Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : null;
+    // Right after opencode idles the registry can answer 200 with no models.
+    if (!list || list.length === 0) return null;
+    return (list as Array<Record<string, unknown>>)
+      .filter((m) => m?.id && m?.providerID)
+      .map((m) => ({
+        id: String(m.id),
+        providerID: String(m.providerID),
+        status: typeof m.status === 'string' ? m.status : undefined,
+        enabled: typeof m.enabled === 'boolean' ? m.enabled : undefined,
+        cost: Array.isArray(m.cost) ? (m.cost as RegistryModel['cost']) : undefined,
+      }));
+  } catch {
+    return null;
+  }
+}
+
+/** The server registry, cached; null when discovery is unavailable. Never throws. */
+async function getRegistry(config: OpencodeConfig): Promise<RegistryModel[] | null> {
+  const now = Date.now();
+  if (lastGoodModels && now - lastGoodAtMs < MODELS_TTL_MS) return lastGoodModels;
+  if (lastFailureAtMs && now - lastFailureAtMs < MODELS_FAILURE_TTL_MS) return lastGoodModels;
+  const discovered = await discoverModels(config);
+  if (discovered) {
+    lastGoodModels = discovered;
+    lastGoodAtMs = now;
+    return discovered;
+  }
+  lastFailureAtMs = now;
+  console.warn(
+    `[opencode] model discovery failed, using ${lastGoodModels ? 'the last good list' : 'the pinned preference list'}`
+  );
+  return lastGoodModels;
+}
+
+const preferenceRank = (id: string) => {
+  const index = FREE_PREFERENCE.indexOf(id);
+  return index === -1 ? FREE_PREFERENCE.length : index;
+};
+
+/**
+ * Free models to try, best first: OPENCODE_MODELS ("provider:id,...") if set,
+ * else the registry's active cost-0 `opencode` models, else (discovery down)
+ * the pinned preference list. Models the registry cannot serve are dropped;
+ * quota-exhausted models are skipped while their cooldown lasts.
+ */
+export async function getModelChain(): Promise<ModelRef[]> {
+  const config = getOpencodeConfig();
+  if (!config) throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
+
+  const registry = await getRegistry(config);
+  const usable = registry ? new Set(registry.filter(isUsable).map(modelKey)) : null;
+  const servable = (m: ModelRef) => !usable || usable.has(modelKey(m));
+
+  const override = (process.env.OPENCODE_MODELS ?? '')
+    .split(',')
+    .map(parseModelKey)
+    .filter((m): m is ModelRef => m !== null);
+
+  let chain: ModelRef[];
+  if (override.length > 0) {
+    chain = override.filter(servable);
+  } else if (registry) {
+    chain = registry
+      .filter((m) => m.providerID === 'opencode' && isUsable(m) && isFree(m))
+      .map((m, order) => ({ m, order }))
+      .sort((a, b) => preferenceRank(a.m.id) - preferenceRank(b.m.id) || a.order - b.order)
+      .map(({ m }) => ({ id: m.id, providerID: m.providerID }));
+  } else {
+    chain = FREE_PREFERENCE.map((id) => ({ id, providerID: 'opencode' }));
+  }
+
+  const now = Date.now();
+  const available = chain.filter((m) => (exhaustedUntil.get(modelKey(m)) ?? 0) <= now);
+  // Everything cooling down: try the full chain rather than fail without asking.
+  return available.length > 0 ? available : chain;
+}
+
 /**
  * A failed attempt leaves its session running server-side, burning model quota
  * on a reply we gave up on. Best effort: cleanup never throws over the real
@@ -178,7 +316,10 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
     throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
   }
 
-  const models = options.models ?? MODEL_TIERS;
+  const models = options.models ?? (await getModelChain());
+  if (models.length === 0) {
+    throw new Error('no free opencode model is available (GET /api/model lists none active at cost 0)');
+  }
   const timeoutMs = options.timeoutMs ?? POLL_TIMEOUT_MS;
   let lastError: unknown;
 
@@ -195,6 +336,12 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
           await discardSession(config, sessionId);
         }
         lastError = error;
+        // Quota/rate limit: retrying the same model won't help for minutes.
+        // Cool it down and move straight to the next model.
+        if (QUOTA_ERROR.test(error instanceof Error ? error.message : String(error))) {
+          exhaustedUntil.set(modelKey(model), Date.now() + EXHAUSTED_COOLDOWN_MS);
+          break;
+        }
         if (attempt < MAX_ATTEMPTS) {
           await sleep(RETRY_DELAY_MS * 2 ** (attempt - 1));
         }

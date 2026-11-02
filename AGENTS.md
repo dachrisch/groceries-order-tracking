@@ -57,7 +57,8 @@ from the servyy-container Ansible role (`groceries/.env.j2`).
 Required in production: `MONGODB_URI`, `JWT_SECRET`.
 Optional bot settings: `OPENCODE_BASE_URL`, `OPENCODE_API_KEY`,
 `OPENCODE_ALLOW_INSECURE_TLS` (only for a test host with a self-signed
-opencode certificate). Without opencode, simple commands still work because
+opencode certificate), `OPENCODE_MODELS` (`provider:id,...` override; normally
+unset, because the client picks active cost-0 models from `GET /api/model`). Without opencode, simple commands still work because
 `src/lib/bot/intent.ts` has a regex parser.
 
 ## Testing notes
