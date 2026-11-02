@@ -12,6 +12,7 @@ import Integration from '../../models/Integration';
 
 vi.mock('../../lib/knuspr-auth', () => ({
   loginToKnuspr: vi.fn().mockResolvedValue({ session: 'test-session', userId: 99 }),
+  getKnusprSession: vi.fn().mockResolvedValue('test-session'),
 }));
 
 // Mock decrypt so we don't need real key derivation in tests.

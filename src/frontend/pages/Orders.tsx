@@ -1,6 +1,6 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Calendar, ShoppingBag, ChevronRight } from 'lucide-solid';
+import { Calendar, ShoppingBag, ChevronRight, Bot } from 'lucide-solid';
 
 interface OrderSummary {
   id: number;
@@ -8,6 +8,10 @@ interface OrderSummary {
   orderTimeDate: string;
   itemsCount: number;
   state: string;
+  botRunId?: string;
+  botRunItemCount?: number;
+  botRunDeliveredCount?: number;
+  occasionIds?: string[];
 }
 
 export function Orders() {
@@ -67,6 +71,21 @@ export function Orders() {
                     </div>
 
                     <div class="divider my-0 opacity-10" />
+
+                    <Show when={order.botRunId || order.occasionIds?.length}>
+                      <div class="flex flex-wrap gap-1.5">
+                        <Show when={order.botRunId}>
+                          <A href="/bot" class="badge badge-primary badge-sm gap-1 font-bold">
+                            <Bot size={12} /> Bot {order.botRunDeliveredCount ?? 0}/{order.botRunItemCount ?? 0}
+                          </A>
+                        </Show>
+                        <Show when={order.occasionIds?.length}>
+                          <A href="/bot" class="badge badge-secondary badge-sm gap-1 font-bold">
+                            🎉 {order.occasionIds!.length} occasion{order.occasionIds!.length > 1 ? 's' : ''}
+                          </A>
+                        </Show>
+                      </div>
+                    </Show>
 
                     <div class="flex justify-between items-center text-sm font-medium">
                       <div class="flex flex-col">

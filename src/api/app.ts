@@ -11,6 +11,16 @@ import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGet
 import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
+import {
+  handleFillWeek,
+  handleGetRuns,
+  handleUndoRun,
+  handleGetGroups,
+  handleMergeGroups,
+  handleSplitGroup,
+  handleGetSettings,
+  handleUpdateSettings,
+} from './controllers/bot.controller';
 
 export const app = express();
 
@@ -86,6 +96,15 @@ app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
 app.get('/api/cart', auth, handleGetCart);
 app.post('/api/cart/add', auth, handleAddToCart);
+
+app.post('/api/bot/fill-week', auth, handleFillWeek);
+app.get('/api/bot/runs', auth, handleGetRuns);
+app.post('/api/bot/runs/:id/undo', auth, handleUndoRun);
+app.get('/api/bot/groups', auth, handleGetGroups);
+app.post('/api/bot/groups/merge', auth, handleMergeGroups);
+app.post('/api/bot/groups/:id/split', auth, handleSplitGroup);
+app.get('/api/bot/settings', auth, handleGetSettings);
+app.put('/api/bot/settings', auth, handleUpdateSettings);
 
 app.get('/api/settings/integrations', auth, handleListIntegrations);
 app.post('/api/settings/integrations/knuspr', auth, handleConnectKnuspr);

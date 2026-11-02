@@ -1,7 +1,7 @@
 // src/frontend/pages/Inventory.tsx
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
+import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink, Sparkles } from 'lucide-solid';
 
 interface InventoryItem {
   _id: number;
@@ -59,6 +59,7 @@ export function Inventory() {
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
   const [addedItems, setAddedItems] = createSignal<Set<string>>(new Set());
   const [cart, setCart] = createSignal<Cart | null>(null);
+  const [fillingWeek, setFillingWeek] = createSignal(false);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -146,7 +147,56 @@ export function Inventory() {
     }
   };
 
-  onMount(() => Promise.all([fetchInventory(), fetchCart()]));
+  const fillWeek = async () => {
+    if (fillingWeek()) return;
+    setFillingWeek(true);
+    try {
+      let res = await fetch('/api/bot/fill-week', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      let data = await res.json();
+
+      if (res.ok && data.status === 'requires-confirmation') {
+        const confirmed = window.confirm(
+          `This run would add ${data.items.length} items (~€${Number(data.estimatedTotal).toFixed(2)}), above your guardrails. Continue?`
+        );
+        if (!confirmed) return;
+        res = await fetch('/api/bot/fill-week', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true }),
+        });
+        data = await res.json();
+      }
+
+      if (!res.ok) {
+        showToast(data.error ?? 'Fill failed', 'error');
+        return;
+      }
+
+      if (data.status === 'added') {
+        showToast(`Added ${data.items.length} items (€${Number(data.estimatedTotal).toFixed(2)})`);
+      } else if (data.status === 'nothing-to-add') {
+        showToast('Nothing to add — your inventory is stocked.');
+      }
+
+      await Promise.all([fetchInventory(), fetchCart()]);
+      window.dispatchEvent(new CustomEvent('bot-run-complete'));
+    } catch {
+      showToast('Connection error. Could not fill the cart.', 'error');
+    } finally {
+      setFillingWeek(false);
+    }
+  };
+
+  onMount(() => {
+    const refreshCart = () => fetchCart();
+    window.addEventListener('bot-run-complete', refreshCart);
+    onCleanup(() => window.removeEventListener('bot-run-complete', refreshCart));
+    return Promise.all([fetchInventory(), fetchCart()]);
+  });
 
   const filteredItems = () => {
     const all = items();
@@ -180,14 +230,26 @@ export function Inventory() {
           <h1 class="text-4xl font-extrabold tracking-tight">Inventory</h1>
           <p class="text-base-content/85 mt-1">Track your grocery stock levels</p>
         </div>
-        <button
-          class="btn btn-ghost btn-sm gap-2 rounded-xl"
-          onClick={() => Promise.all([fetchInventory(), fetchCart()])}
-          disabled={loading() || cartLoading()}
-        >
-          <RefreshCw size={18} class={loading() || cartLoading() ? 'animate-spin' : ''} />
-          <span class="font-bold">Refresh</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="btn btn-primary btn-sm gap-2 rounded-xl shadow-md"
+            onClick={fillWeek}
+            disabled={fillingWeek() || loading()}
+          >
+            <Show when={fillingWeek()} fallback={<Sparkles size={18} />}>
+              <span class="loading loading-spinner loading-xs" />
+            </Show>
+            <span class="font-bold">{fillingWeek() ? 'Filling…' : 'Fill week'}</span>
+          </button>
+          <button
+            class="btn btn-ghost btn-sm gap-2 rounded-xl"
+            onClick={() => Promise.all([fetchInventory(), fetchCart()])}
+            disabled={loading() || cartLoading()}
+          >
+            <RefreshCw size={18} class={loading() || cartLoading() ? 'animate-spin' : ''} />
+            <span class="font-bold">Refresh</span>
+          </button>
+        </div>
       </div>
 
       <div class="tabs tabs-box bg-base-100 p-1 rounded-2xl border border-base-300 shadow-sm w-fit">
