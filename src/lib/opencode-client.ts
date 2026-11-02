@@ -7,6 +7,17 @@ import { Agent, fetch as undiciFetch } from 'undici';
  * everything from MongoDB and hands opencode only text (intent classification,
  * occasion naming, reply wording). Replies are polled because opencode's
  * session API acknowledges a prompt before the model has answered.
+ *
+ * Contract (opencode 2.1.2, V2 API), same as dontforget's client:
+ *   POST   /api/session               -> {"data": {"id": "ses_..."}}
+ *   POST   /api/session/:id/prompt    -> {"text": "..."} in, ack out (not the reply)
+ *   GET    /api/session/:id/message   -> {"data": [...]}, newest first;
+ *                                        ?limit=N&order=desc pages it
+ *   POST   /api/session/:id/interrupt -> stops the run (V2 has no /abort)
+ *   DELETE /api/session/:id           -> drops the session
+ * V2 appends idle/system/synthetic/user entries after an assistant turn, so
+ * the newest entry is not reliably the reply: scan for the newest assistant
+ * entry. A step ending in `tool-calls` is not terminal.
  */
 
 const POLL_INTERVAL_MS = 1000;
@@ -27,8 +38,9 @@ export const MODEL_TIERS: ModelRef[] = [
 ];
 
 interface OpencodeMessage {
-  type: 'user' | 'assistant';
+  type: 'user' | 'assistant' | 'idle' | 'system' | 'synthetic';
   finish?: string;
+  outcome?: string;
   content?: Array<{ type: string; text?: string }>;
   error?: { message: string };
 }
@@ -90,7 +102,7 @@ async function sendPrompt(config: OpencodeConfig, sessionId: string, text: strin
   const response = await undiciFetch(`${config.baseUrl}/api/session/${sessionId}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey },
-    body: JSON.stringify({ prompt: { text } }),
+    body: JSON.stringify({ text }),
     dispatcher: dispatcherFor(config),
   });
   if (!response.ok) {
@@ -106,17 +118,20 @@ async function pollForReply(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const response = await undiciFetch(`${config.baseUrl}/api/session/${sessionId}/message`, {
-      headers: { 'X-Api-Key': config.apiKey },
-      dispatcher: dispatcherFor(config),
-    });
+    const response = await undiciFetch(
+      `${config.baseUrl}/api/session/${sessionId}/message?limit=50&order=desc`,
+      {
+        headers: { 'X-Api-Key': config.apiKey },
+        dispatcher: dispatcherFor(config),
+      }
+    );
     if (!response.ok) {
       throw new Error(`opencode message poll failed: ${response.status}`);
     }
     const data = (await response.json()) as { data: OpencodeMessage[] };
-    const latest = data.data[0];
+    const latest = data.data.find((message) => message.type === 'assistant');
 
-    if (latest?.type === 'assistant' && latest.finish) {
+    if (latest?.finish && latest.finish !== 'tool-calls') {
       if (latest.finish === 'error') {
         throw new Error(`opencode generation failed: ${latest.error?.message ?? 'unknown error'}`);
       }
@@ -131,6 +146,26 @@ async function pollForReply(
   }
 
   throw new Error('opencode reply timed out');
+}
+
+/**
+ * A failed attempt leaves its session running server-side, burning model quota
+ * on a reply we gave up on. Best effort: cleanup never throws over the real
+ * error that sent us here.
+ */
+async function discardSession(config: OpencodeConfig, sessionId: string): Promise<void> {
+  const base = `${config.baseUrl}/api/session/${sessionId}`;
+  const headers = { 'X-Api-Key': config.apiKey };
+  try {
+    await undiciFetch(`${base}/interrupt`, { method: 'POST', headers, dispatcher: dispatcherFor(config) });
+  } catch {
+    // best effort
+  }
+  try {
+    await undiciFetch(base, { method: 'DELETE', headers, dispatcher: dispatcherFor(config) });
+  } catch {
+    // best effort
+  }
 }
 
 /**
@@ -149,12 +184,16 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
 
   for (const model of models) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      let sessionId: string | undefined;
       try {
-        const sessionId = await createSession(config, model);
+        sessionId = await createSession(config, model);
         await sendPrompt(config, sessionId, prompt);
         const replyText = await pollForReply(config, sessionId, timeoutMs);
         return JSON.parse(extractFirstJsonObject(replyText)) as T;
       } catch (error) {
+        if (sessionId) {
+          await discardSession(config, sessionId);
+        }
         lastError = error;
         if (attempt < MAX_ATTEMPTS) {
           await sleep(RETRY_DELAY_MS * 2 ** (attempt - 1));
