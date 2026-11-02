@@ -9,6 +9,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Orders } from './pages/Orders';
 import { Products } from './pages/Products';
 import { Inventory } from './pages/Inventory';
+import { Bot } from './pages/Bot';
 import { Settings } from './pages/Settings';
 import './index.css';
 
@@ -35,6 +36,7 @@ render(
       <Route path="/products" component={Products} />
       <Route path="/products/:productId" component={Products} />
       <Route path="/inventory" component={Inventory} />
+      <Route path="/bot" component={Bot} />
       <Route path="/settings" component={Settings} />
     </Router>
   ),

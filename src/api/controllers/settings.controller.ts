@@ -3,6 +3,9 @@ import Integration from '../../models/Integration';
 import { encrypt } from '../../lib/crypto';
 import { loginToKnuspr } from '../../lib/knuspr-auth';
 import { importOrders } from '../../lib/order-importer';
+import { invalidateProductGroupCache, rebuildProductGroups } from '../../lib/bot/product-groups';
+import { matchRunsToOrders, tagOccasionOrders } from '../../lib/bot/order-matching';
+import { detectOccasions } from '../../lib/bot/occasions';
 // Note: utils.ts declares the global Express.Request augmentation (userId, derivedKey),
 // so req.userId and req.derivedKey are typed without any casting.
 import '../utils';
@@ -63,6 +66,15 @@ export async function handleSyncKnuspr(req: Request, res: Response) {
   try {
     const result = await importOrders(req.userId, key, integration);
     await Integration.findByIdAndUpdate(integration._id, { lastSyncAt: new Date() });
+
+    // Learning runs after every sync: rebuild product groups, then match the
+    // new orders against open bot runs and occasion baskets.
+    invalidateProductGroupCache(req.userId);
+    await rebuildProductGroups(req.userId);
+    await detectOccasions(req.userId);
+    await matchRunsToOrders(req.userId);
+    await tagOccasionOrders(req.userId);
+
     res.json(result);
   } catch (err: unknown) {
     res.status(500).json({ error: (err as Error).message });

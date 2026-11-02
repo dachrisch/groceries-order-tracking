@@ -2,12 +2,18 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import { EJSON } from 'bson';
+import type { MongoMemoryServer } from 'mongodb-memory-server';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 const DEV_SEED_FILE = path.join(process.cwd(), 'dev-seed.json');
 export const MONGO_URI_FILE = '/tmp/groceries-mongo-uri';
+
+// One in-memory server per process. Tests reconnect after each file's
+// teardown; creating a new server every time leaked ~200 MB of data dirs
+// per test file until /tmp filled up.
+let inMemoryServer: MongoMemoryServer | null = null;
 
 async function seedFromFile() {
   if (!fs.existsSync(DEV_SEED_FILE)) return;
@@ -46,6 +52,15 @@ export async function dumpDB() {
   }
 }
 
+/** Disconnect and stop the in-memory server (used by tests). */
+export async function disconnectDB() {
+  await mongoose.disconnect();
+  if (inMemoryServer) {
+    await inMemoryServer.stop();
+    inMemoryServer = null;
+  }
+}
+
 export async function connectDB() {
   if (mongoose.connection.readyState >= 1) return;
 
@@ -58,10 +73,12 @@ export async function connectDB() {
       console.error('FATAL: MONGODB_URI environment variable is not set in production.');
       process.exit(1);
     }
-    console.log('Starting in-memory MongoDB server...');
-    const { MongoMemoryServer } = await import('mongodb-memory-server');
-    const mongoMemoryServer = await MongoMemoryServer.create();
-    uri = mongoMemoryServer.getUri();
+    if (!inMemoryServer) {
+      console.log('Starting in-memory MongoDB server...');
+      const { MongoMemoryServer } = await import('mongodb-memory-server');
+      inMemoryServer = await MongoMemoryServer.create();
+    }
+    uri = inMemoryServer.getUri();
     inMemory = true;
     // Write URI so the db:dump script can connect to this instance
     fs.writeFileSync(MONGO_URI_FILE, uri);

@@ -19,6 +19,9 @@ vi.mock('../../lib/knuspr-auth', async () => {
 // Import the mocked function
 import { getKnusprSession } from '../../lib/knuspr-auth';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysAgo = (days: number) => new Date(Date.now() - days * DAY_MS);
+
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
 
@@ -47,15 +50,15 @@ describe('GET /api/inventory', () => {
   it('returns avgQuantity based on typical order amounts', async () => {
     // Seed 3 orders for the same product with varying quantities
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-01-01'),
+      orderTimeDate: daysAgo(21),
       items: [makeItem(42, 'Milk', 2, 1)],
     });
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-02-01'),
+      orderTimeDate: daysAgo(14),
       items: [makeItem(42, 'Milk', 3, 2)],
     });
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-03-01'),
+      orderTimeDate: daysAgo(1),
       items: [makeItem(42, 'Milk', 2, 3)],
     });
 
@@ -66,18 +69,22 @@ describe('GET /api/inventory', () => {
     expect(item).toBeDefined();
     expect(item.avgQuantity).toBeGreaterThanOrEqual(1);
     expect(typeof item.avgQuantity).toBe('number');
-    // Average of [2, 3, 2] = 2.33 → rounds to 2
+    // Mode of [2, 3, 2] = 2
     expect(item.avgQuantity).toBe(2);
   });
 
   it('returns avgQuantity of at least 1 even for zero-amount items', async () => {
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-01-01'),
+      orderTimeDate: daysAgo(21),
       items: [makeItem(55, 'Bread', 0, 10)],
     });
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-02-01'),
+      orderTimeDate: daysAgo(14),
       items: [makeItem(55, 'Bread', 0, 11)],
+    });
+    await createOrder(userId, {
+      orderTimeDate: daysAgo(1),
+      items: [makeItem(55, 'Bread', 0, 12)],
     });
 
     const res = await request(app).get('/api/inventory').set('Cookie', cookies);
@@ -87,40 +94,58 @@ describe('GET /api/inventory', () => {
     expect(item.avgQuantity).toBe(1);
   });
 
-  it('still returns correct avgInterval after refactor', async () => {
-    // Verify the interval logic is intact after the tuple refactor
+  it('still returns a sensible interval after switching to the consumption model', async () => {
+    // Three purchases 31 days apart.
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-01-01'),
+      orderTimeDate: daysAgo(63),
       items: [makeItem(77, 'Eggs', 1, 20)],
     });
     await createOrder(userId, {
-      orderTimeDate: new Date('2024-02-01'),
+      orderTimeDate: daysAgo(32),
       items: [makeItem(77, 'Eggs', 1, 21)],
+    });
+    await createOrder(userId, {
+      orderTimeDate: daysAgo(1),
+      items: [makeItem(77, 'Eggs', 1, 22)],
     });
 
     const res = await request(app).get('/api/inventory').set('Cookie', cookies);
 
     const item = res.body.find((i: { _id: number }) => i._id === 77);
     expect(item).toBeDefined();
-    // ~31 days between Jan 1 and Feb 1
     expect(item.avgInterval).toBeCloseTo(31, 0);
     expect(item.daysSinceLast).toBeGreaterThan(0);
+    expect(item.stockDays).not.toBeNull();
   });
 
-  it('fetches enhanced metadata from Knuspr API including sale prices and stock', async () => {
-    // Seed 2 orders for product 220
+  it('excludes one-off purchases from the inventory', async () => {
+    await createOrder(userId, {
+      orderTimeDate: daysAgo(14),
+      items: [makeItem(88, 'Birthday cake', 1, 30)],
+    });
+
+    const res = await request(app).get('/api/inventory').set('Cookie', cookies);
+    expect(res.body.find((i: { _id: number }) => i._id === 88)).toBeUndefined();
+  });
+
+  it('fetches enhanced metadata from Knuspr API including sale prices', async () => {
+    // Seed 3 orders for product 220
     await createOrder(userId, {
       id: 111,
-      orderTimeDate: new Date('2024-01-01'),
+      orderTimeDate: daysAgo(21),
       items: [makeItem(220, 'Sojasprossen', 1, 100)],
     });
     await createOrder(userId, {
       id: 222,
-      orderTimeDate: new Date('2024-01-10'),
+      orderTimeDate: daysAgo(10),
       items: [makeItem(220, 'Sojasprossen', 1, 101)],
     });
+    await createOrder(userId, {
+      id: 223,
+      orderTimeDate: daysAgo(1),
+      items: [makeItem(220, 'Sojasprossen', 1, 102)],
+    });
 
-    // Mock session and enhanced metadata response
     vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');
     const originalFetch = global.fetch;
     type MockFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -146,8 +171,6 @@ describe('GET /api/inventory', () => {
       const item = res.body.find((i: { _id: number }) => i._id === 220);
       expect(item).toBeDefined();
       expect(item.currentPrice).toBe(1.99);
-      // Note: The controller doesn't seem to map availabilityStatus or saleValidTill based on the new code provided.
-      // I will only assert on what is actually mapped in the controller.
     } finally {
       global.fetch = originalFetch;
     }
@@ -156,13 +179,18 @@ describe('GET /api/inventory', () => {
   it('falls back to originalPrice if salePrice is missing', async () => {
     await createOrder(userId, {
       id: 333,
-      orderTimeDate: new Date('2024-01-01'),
+      orderTimeDate: daysAgo(21),
       items: [makeItem(221, 'Tofu', 1, 200)],
     });
     await createOrder(userId, {
       id: 444,
-      orderTimeDate: new Date('2024-01-10'),
+      orderTimeDate: daysAgo(10),
       items: [makeItem(221, 'Tofu', 1, 201)],
+    });
+    await createOrder(userId, {
+      id: 445,
+      orderTimeDate: daysAgo(1),
+      items: [makeItem(221, 'Tofu', 1, 202)],
     });
 
     vi.mocked(getKnusprSession).mockResolvedValueOnce('mock-session');

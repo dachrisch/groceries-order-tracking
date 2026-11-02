@@ -1,6 +1,7 @@
 import { createSignal, onMount, JSX, Show } from 'solid-js';
 import { useNavigate, useLocation, A } from '@solidjs/router';
-import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList } from 'lucide-solid';
+import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList, Bot } from 'lucide-solid';
+import { BotPanel } from './components/BotPanel';
 
 export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<{ name: string; email: string } | null>(null);
@@ -160,6 +161,13 @@ export function App(props: { children?: JSX.Element }) {
                       </A>
                     </li>
                     <li>
+                      <A href="/bot" activeClass="active" onClick={closeMobileDrawer}
+                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
+                        <Bot size={20} class="text-info/90" />
+                        <Show when={!sidebarCollapsed()}><span class="font-medium">Bot</span></Show>
+                      </A>
+                    </li>
+                    <li>
                       <A href="/settings" activeClass="active" onClick={closeMobileDrawer}
                         class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
                         <SettingsIcon size={20} class="text-neutral/90" />
@@ -200,6 +208,8 @@ export function App(props: { children?: JSX.Element }) {
               </div>
             </div>
           </div>
+
+          <BotPanel />
         </Show>
 
         <Show when={!user() || isAuthPage()}>

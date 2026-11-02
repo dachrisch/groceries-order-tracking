@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import request from 'supertest';
-import { connectDB } from '../../lib/mongodb';
+import { connectDB, disconnectDB } from '../../lib/mongodb';
 import Order from '../../models/Order';
 import { app } from '../app';
 
@@ -14,7 +14,7 @@ export async function clearDB() {
 }
 
 export async function teardownTestDB() {
-  await mongoose.disconnect();
+  await disconnectDB();
 }
 
 /** Fetch a fresh CSRF token and return { token, cookies } */

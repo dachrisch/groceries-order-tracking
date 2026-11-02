@@ -1,7 +1,7 @@
 // src/frontend/pages/Inventory.tsx
-import { createSignal, onMount, For, Show } from 'solid-js';
+import { createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { useNavigate } from '@solidjs/router';
-import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink } from 'lucide-solid';
+import { ShoppingCart, AlertCircle, RefreshCw, Check, ExternalLink, Sparkles } from 'lucide-solid';
 
 interface InventoryItem {
   _id: number;
@@ -16,6 +16,15 @@ interface InventoryItem {
   priceValidUntil?: string;
   availabilityStatus?: string;
   availabilityReason?: string;
+  // Consumption model output
+  groupKey?: string;
+  productIds?: number[];
+  stock?: number;
+  stockDays?: number | null;
+  qty?: number;
+  due?: boolean;
+  reason?: string;
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 
@@ -37,8 +46,6 @@ interface Cart {
   items: CartItem[];
 }
 
-const REORDER_THRESHOLD = 0.7;
-
 export function Inventory() {
   const navigate = useNavigate();
   const [items, setItems] = createSignal<InventoryItem[]>([]);
@@ -52,6 +59,7 @@ export function Inventory() {
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
   const [addedItems, setAddedItems] = createSignal<Set<string>>(new Set());
   const [cart, setCart] = createSignal<Cart | null>(null);
+  const [fillingWeek, setFillingWeek] = createSignal(false);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -139,17 +147,78 @@ export function Inventory() {
     }
   };
 
-  onMount(() => Promise.all([fetchInventory(), fetchCart()]));
+  const fillWeek = async () => {
+    if (fillingWeek()) return;
+    setFillingWeek(true);
+    try {
+      let res = await fetch('/api/bot/fill-week', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      let data = await res.json();
+
+      if (res.ok && data.status === 'requires-confirmation') {
+        const confirmed = window.confirm(
+          `This run would add ${data.items.length} items (~€${Number(data.estimatedTotal).toFixed(2)}), above your guardrails. Continue?`
+        );
+        if (!confirmed) return;
+        res = await fetch('/api/bot/fill-week', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm: true }),
+        });
+        data = await res.json();
+      }
+
+      if (!res.ok) {
+        showToast(data.error ?? 'Fill failed', 'error');
+        return;
+      }
+
+      if (data.status === 'added') {
+        showToast(`Added ${data.items.length} items (€${Number(data.estimatedTotal).toFixed(2)})`);
+      } else if (data.status === 'nothing-to-add') {
+        showToast('Nothing to add — your inventory is stocked.');
+      }
+
+      await Promise.all([fetchInventory(), fetchCart()]);
+      window.dispatchEvent(new CustomEvent('bot-run-complete'));
+    } catch {
+      showToast('Connection error. Could not fill the cart.', 'error');
+    } finally {
+      setFillingWeek(false);
+    }
+  };
+
+  onMount(() => {
+    const refreshCart = () => fetchCart();
+    window.addEventListener('bot-run-complete', refreshCart);
+    onCleanup(() => window.removeEventListener('bot-run-complete', refreshCart));
+    return Promise.all([fetchInventory(), fetchCart()]);
+  });
 
   const filteredItems = () => {
     const all = items();
     if (tab() === 'running-out') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
+      return all.filter(i => i.due && (i.stockDays ?? 0) > 0 && (i.stockDays ?? 0) <= 3);
     } else if (tab() === 'reorder') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval);
+      return all.filter(i => i.due);
     } else {
-      return all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
+      return all.filter(i => !i.due);
     }
+  };
+
+  const stockProgress = (item: InventoryItem) => {
+    if (item.stockDays === null || item.stockDays === undefined) return 0;
+    return Math.max(0, Math.min(100, item.stockDays));
+  };
+
+  const stockProgressClass = (item: InventoryItem) => {
+    if (item.stockDays === null || item.stockDays === undefined) return 'progress-success';
+    if (item.stockDays <= 0) return 'progress-error';
+    if (item.stockDays <= 3) return 'progress-warning';
+    return 'progress-success';
   };
 
 
@@ -161,14 +230,26 @@ export function Inventory() {
           <h1 class="text-4xl font-extrabold tracking-tight">Inventory</h1>
           <p class="text-base-content/85 mt-1">Track your grocery stock levels</p>
         </div>
-        <button
-          class="btn btn-ghost btn-sm gap-2 rounded-xl"
-          onClick={() => Promise.all([fetchInventory(), fetchCart()])}
-          disabled={loading() || cartLoading()}
-        >
-          <RefreshCw size={18} class={loading() || cartLoading() ? 'animate-spin' : ''} />
-          <span class="font-bold">Refresh</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="btn btn-primary btn-sm gap-2 rounded-xl shadow-md"
+            onClick={fillWeek}
+            disabled={fillingWeek() || loading()}
+          >
+            <Show when={fillingWeek()} fallback={<Sparkles size={18} />}>
+              <span class="loading loading-spinner loading-xs" />
+            </Show>
+            <span class="font-bold">{fillingWeek() ? 'Filling…' : 'Fill week'}</span>
+          </button>
+          <button
+            class="btn btn-ghost btn-sm gap-2 rounded-xl"
+            onClick={() => Promise.all([fetchInventory(), fetchCart()])}
+            disabled={loading() || cartLoading()}
+          >
+            <RefreshCw size={18} class={loading() || cartLoading() ? 'animate-spin' : ''} />
+            <span class="font-bold">Refresh</span>
+          </button>
+        </div>
       </div>
 
       <div class="tabs tabs-box bg-base-100 p-1 rounded-2xl border border-base-300 shadow-sm w-fit">
@@ -270,25 +351,30 @@ export function Inventory() {
                     </Show>
                     <div class="relative">
                        <progress
-                        class={`progress w-full h-4 rounded-full shadow-inner ${
-                          item.daysSinceLast >= item.avgInterval ? 'progress-error' :
-                          item.daysSinceLast >= item.avgInterval * REORDER_THRESHOLD ? 'progress-warning' :
-                          'progress-success'
-                        }`}
-                        value={item.daysSinceLast}
-                        max={item.avgInterval}
+                        class={`progress w-full h-4 rounded-full shadow-inner ${stockProgressClass(item)}`}
+                        value={stockProgress(item)}
+                        max={14}
                       />
                     </div>
                     <div class="flex justify-between items-end">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Last Refill</span>
-                        <span class="text-sm font-bold opacity-95">{Math.round(item.daysSinceLast)}d ago</span>
+                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Stock</span>
+                        <span class="text-sm font-bold opacity-95">
+                          {item.stockDays === null || item.stockDays === undefined
+                            ? '—'
+                            : item.stockDays <= 0
+                              ? 'Empty'
+                              : `~${Math.round(item.stockDays)}d left`}
+                        </span>
                       </div>
                       <div class="flex flex-col text-right">
                         <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Cycle</span>
                         <span class="text-xs font-medium opacity-90">~{Math.round(item.avgInterval)}d</span>
                       </div>
                     </div>
+                    <Show when={item.reason}>
+                      <p class="text-[11px] font-medium opacity-70 leading-tight">{item.reason}</p>
+                    </Show>
                   </div>
 
                   {/* Footer: Action + Price Next to Each Other */}

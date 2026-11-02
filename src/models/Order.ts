@@ -58,7 +58,13 @@ const orderSchema = new mongoose.Schema({
   deliveryType: { type: String },
   address: { type: String },
   state: { type: String },
-  items: [orderItemSchema]
+  items: [orderItemSchema],
+  // Set by the bot's post-sync order matching.
+  botRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'BotRun' },
+  botRunItemCount: { type: Number },
+  botRunDeliveredCount: { type: Number },
+  // Occasions whose baskets were detected in this order.
+  occasionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Occasion' }]
 }, { timestamps: true });
 
 // Create an index for unique orders per user
