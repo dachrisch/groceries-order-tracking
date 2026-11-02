@@ -16,6 +16,15 @@ interface InventoryItem {
   priceValidUntil?: string;
   availabilityStatus?: string;
   availabilityReason?: string;
+  // Consumption model output
+  groupKey?: string;
+  productIds?: number[];
+  stock?: number;
+  stockDays?: number | null;
+  qty?: number;
+  due?: boolean;
+  reason?: string;
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 
@@ -36,8 +45,6 @@ interface Cart {
   totalSavings: number;
   items: CartItem[];
 }
-
-const REORDER_THRESHOLD = 0.7;
 
 export function Inventory() {
   const navigate = useNavigate();
@@ -144,12 +151,24 @@ export function Inventory() {
   const filteredItems = () => {
     const all = items();
     if (tab() === 'running-out') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval * REORDER_THRESHOLD && i.daysSinceLast < i.avgInterval);
+      return all.filter(i => i.due && (i.stockDays ?? 0) > 0 && (i.stockDays ?? 0) <= 3);
     } else if (tab() === 'reorder') {
-      return all.filter(i => i.daysSinceLast >= i.avgInterval);
+      return all.filter(i => i.due);
     } else {
-      return all.filter(i => i.daysSinceLast < i.avgInterval * REORDER_THRESHOLD);
+      return all.filter(i => !i.due);
     }
+  };
+
+  const stockProgress = (item: InventoryItem) => {
+    if (item.stockDays === null || item.stockDays === undefined) return 0;
+    return Math.max(0, Math.min(100, item.stockDays));
+  };
+
+  const stockProgressClass = (item: InventoryItem) => {
+    if (item.stockDays === null || item.stockDays === undefined) return 'progress-success';
+    if (item.stockDays <= 0) return 'progress-error';
+    if (item.stockDays <= 3) return 'progress-warning';
+    return 'progress-success';
   };
 
 
@@ -270,25 +289,30 @@ export function Inventory() {
                     </Show>
                     <div class="relative">
                        <progress
-                        class={`progress w-full h-4 rounded-full shadow-inner ${
-                          item.daysSinceLast >= item.avgInterval ? 'progress-error' :
-                          item.daysSinceLast >= item.avgInterval * REORDER_THRESHOLD ? 'progress-warning' :
-                          'progress-success'
-                        }`}
-                        value={item.daysSinceLast}
-                        max={item.avgInterval}
+                        class={`progress w-full h-4 rounded-full shadow-inner ${stockProgressClass(item)}`}
+                        value={stockProgress(item)}
+                        max={14}
                       />
                     </div>
                     <div class="flex justify-between items-end">
                       <div class="flex flex-col">
-                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Last Refill</span>
-                        <span class="text-sm font-bold opacity-95">{Math.round(item.daysSinceLast)}d ago</span>
+                        <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Stock</span>
+                        <span class="text-sm font-bold opacity-95">
+                          {item.stockDays === null || item.stockDays === undefined
+                            ? '—'
+                            : item.stockDays <= 0
+                              ? 'Empty'
+                              : `~${Math.round(item.stockDays)}d left`}
+                        </span>
                       </div>
                       <div class="flex flex-col text-right">
                         <span class="text-[10px] font-black uppercase opacity-85 tracking-tighter mb-0.5">Cycle</span>
                         <span class="text-xs font-medium opacity-90">~{Math.round(item.avgInterval)}d</span>
                       </div>
                     </div>
+                    <Show when={item.reason}>
+                      <p class="text-[11px] font-medium opacity-70 leading-tight">{item.reason}</p>
+                    </Show>
                   </div>
 
                   {/* Footer: Action + Price Next to Each Other */}
