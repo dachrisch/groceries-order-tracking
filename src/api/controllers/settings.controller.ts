@@ -5,6 +5,7 @@ import { loginToKnuspr } from '../../lib/knuspr-auth';
 import { importOrders } from '../../lib/order-importer';
 import { invalidateProductGroupCache, rebuildProductGroups } from '../../lib/bot/product-groups';
 import { matchRunsToOrders, tagOccasionOrders } from '../../lib/bot/order-matching';
+import { detectOccasions } from '../../lib/bot/occasions';
 // Note: utils.ts declares the global Express.Request augmentation (userId, derivedKey),
 // so req.userId and req.derivedKey are typed without any casting.
 import '../utils';
@@ -70,6 +71,7 @@ export async function handleSyncKnuspr(req: Request, res: Response) {
     // new orders against open bot runs and occasion baskets.
     invalidateProductGroupCache(req.userId);
     await rebuildProductGroups(req.userId);
+    await detectOccasions(req.userId);
     await matchRunsToOrders(req.userId);
     await tagOccasionOrders(req.userId);
 

@@ -10,6 +10,8 @@ import { removeItems } from '../../lib/knuspr-cart';
 import { executeWeeklyFill, getBotSettings } from '../../lib/bot/fill';
 import { getProductGroups, invalidateProductGroupCache } from '../../lib/bot/product-groups';
 import { getBotJob, startBotJob } from '../../lib/bot/jobs';
+import { detectOccasions, fillOccasion } from '../../lib/bot/occasions';
+import Occasion from '../../models/Occasion';
 import { formatZodError } from '../utils';
 import '../utils';
 
@@ -27,6 +29,11 @@ const splitGroupSchema = z.object({
 
 const messageSchema = z.object({
   text: z.string().trim().min(1).max(500),
+});
+
+const occasionFillSchema = z.object({
+  servings: z.number().int().min(1).max(100),
+  confirm: z.boolean().optional(),
 });
 
 const settingsSchema = z.object({
@@ -68,6 +75,63 @@ export async function handleGetJob(req: Request, res: Response) {
   const job = getBotJob(req.userId, req.params.id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
   res.json(job);
+}
+
+export async function handleGetOccasions(req: Request, res: Response) {
+  try {
+    const occasions = await Occasion.find({ userId: req.userId }).sort({ lastSeen: -1 }).lean();
+    res.json(occasions);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load occasions' });
+  }
+}
+
+export async function handleGetOccasion(req: Request, res: Response) {
+  const { id } = req.params;
+  if (!mongoose.isValidObjectId(id)) {
+    return res.status(400).json({ error: 'Invalid occasion id' });
+  }
+  try {
+    const occasion = await Occasion.findOne({ _id: id, userId: req.userId }).lean();
+    if (!occasion) return res.status(404).json({ error: 'Occasion not found' });
+    res.json(occasion);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to load occasion' });
+  }
+}
+
+export async function handleFillOccasion(req: Request, res: Response) {
+  const parsed = occasionFillSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: formatZodError(parsed.error) });
+  }
+  const key = requireKey(req, res);
+  if (!key) return;
+
+  try {
+    const result = await fillOccasion(
+      req.userId,
+      key,
+      req.params.id,
+      parsed.data.servings,
+      { confirm: parsed.data.confirm }
+    );
+    res.json({ ...result, run: serializeRun(result.run) });
+  } catch (error) {
+    console.error('occasion fill failed:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Occasion fill failed' });
+  }
+}
+
+export async function handleDetectOccasions(req: Request, res: Response) {
+  try {
+    await detectOccasions(req.userId);
+    const occasions = await Occasion.find({ userId: req.userId }).sort({ lastSeen: -1 }).lean();
+    res.json(occasions);
+  } catch (error) {
+    console.error('occasion detection failed:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Detection failed' });
+  }
 }
 
 export async function handleFillWeek(req: Request, res: Response) {

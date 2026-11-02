@@ -16,14 +16,19 @@ interface OrderSummary {
 
 export function Orders() {
   const [orders, setOrders] = createSignal<OrderSummary[]>([]);
+  const [occasionNames, setOccasionNames] = createSignal<Record<string, string>>({});
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
     try {
-      const res = await fetch('/api/orders');
-      if (res.ok) {
-        const json = await res.json();
-        setOrders(json);
+      const [ordersRes, occasionsRes] = await Promise.all([
+        fetch('/api/orders'),
+        fetch('/api/bot/occasions'),
+      ]);
+      if (ordersRes.ok) setOrders(await ordersRes.json());
+      if (occasionsRes.ok) {
+        const occasions = (await occasionsRes.json()) as Array<{ _id: string; name: string }>;
+        setOccasionNames(Object.fromEntries(occasions.map((occasion) => [occasion._id, occasion.name])));
       }
     } catch (e) {
       console.error('Failed to fetch orders', e);
@@ -80,9 +85,13 @@ export function Orders() {
                           </A>
                         </Show>
                         <Show when={order.occasionIds?.length}>
-                          <A href="/bot" class="badge badge-secondary badge-sm gap-1 font-bold">
-                            🎉 {order.occasionIds!.length} occasion{order.occasionIds!.length > 1 ? 's' : ''}
-                          </A>
+                          <For each={order.occasionIds}>
+                            {(occasionId) => (
+                              <A href="/bot" class="badge badge-secondary badge-sm gap-1 font-bold">
+                                🎉 {occasionNames()[occasionId] ?? 'Occasion'}
+                              </A>
+                            )}
+                          </For>
                         </Show>
                       </div>
                     </Show>
