@@ -16,6 +16,11 @@ const occasionItemSchema = new mongoose.Schema({
   core: { type: Boolean, default: true },
 }, { _id: false });
 
+const occasionEvidenceSchema = new mongoose.Schema({
+  label: { type: String, required: true },
+  purchaseCount: { type: Number, required: true },
+}, { _id: false });
+
 const occasionSourceSchema = new mongoose.Schema({
   orderId: { type: Number, required: true },
   productIds: [{ type: Number }],
@@ -33,6 +38,19 @@ const occasionSchema = new mongoose.Schema({
   sourceOrders: [occasionSourceSchema],
   /** Set when the user corrected this occasion from chat; rebuilds keep items as-is. */
   manualEdits: { type: Boolean, default: false },
+  /**
+   * detected: repeated basket in the order history.
+   * recipe: built on request from the user's own products.
+   * discovered: suggested in the background from the ingredients the user buys.
+   */
+  source: { type: String, enum: ['detected', 'recipe', 'discovered'], default: 'detected' },
+  /** Drafts are shown for one confirmation before they ever reach the cart. */
+  status: { type: String, enum: ['draft', 'confirmed'], default: 'confirmed' },
+  style: { type: String, enum: ['homemade', 'ready-made'] },
+  /** Core ingredients with no match in the user's history. */
+  missing: [{ type: String }],
+  /** Ingredients the user buys regularly that made the bot pick this style. */
+  evidence: [occasionEvidenceSchema],
 }, { timestamps: true });
 
 occasionSchema.index({ userId: 1, key: 1 }, { unique: true });

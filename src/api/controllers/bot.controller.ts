@@ -11,6 +11,7 @@ import { executeWeeklyFill, getBotSettings, planWeeklyFill } from '../../lib/bot
 import { getProductGroups, invalidateProductGroupCache } from '../../lib/bot/product-groups';
 import { getBotJob, startBotJob } from '../../lib/bot/jobs';
 import { detectOccasions, fillOccasion } from '../../lib/bot/occasions';
+import { discoverRecipes } from '../../lib/bot/recipes';
 import Occasion from '../../models/Occasion';
 import { formatZodError } from '../utils';
 import '../utils';
@@ -109,6 +110,8 @@ export async function handleFillOccasion(req: Request, res: Response) {
   if (!key) return;
 
   try {
+    // Filling a draft from the Occasions page is the user's confirmation.
+    await Occasion.updateOne({ _id: req.params.id, userId: req.userId, status: 'draft' }, { $set: { status: 'confirmed' } });
     const result = await fillOccasion(
       req.userId,
       key,
@@ -120,6 +123,58 @@ export async function handleFillOccasion(req: Request, res: Response) {
   } catch (error) {
     console.error('occasion fill failed:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Occasion fill failed' });
+  }
+}
+
+function occasionId(req: Request, res: Response): string | null {
+  const id = String(req.params.id);
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Invalid occasion id' });
+    return null;
+  }
+  return id;
+}
+
+export async function handleConfirmOccasion(req: Request, res: Response) {
+  const id = occasionId(req, res);
+  if (!id) return;
+  const occasion = await Occasion.findOneAndUpdate(
+    { _id: id, userId: req.userId },
+    { $set: { status: 'confirmed' } },
+    { returnDocument: 'after' }
+  ).lean();
+  if (!occasion) return res.status(404).json({ error: 'Occasion not found' });
+  res.json(occasion);
+}
+
+export async function handleDeleteOccasion(req: Request, res: Response) {
+  const id = occasionId(req, res);
+  if (!id) return;
+  const result = await Occasion.deleteOne({ _id: id, userId: req.userId });
+  if (result.deletedCount === 0) return res.status(404).json({ error: 'Occasion not found' });
+  res.json({ success: true });
+}
+
+/** What the last detection looked at, so an empty Occasions tab is explainable. */
+export async function handleGetOccasionDiagnostics(req: Request, res: Response) {
+  const settings = await BotSettings.findOne({ userId: req.userId }).select('lastDetection recipeDiscovery').lean<{
+    lastDetection?: unknown;
+    recipeDiscovery?: { at?: Date };
+  } | null>();
+  res.json({
+    lastDetection: settings?.lastDetection ?? null,
+    lastRecipeDiscoveryAt: settings?.recipeDiscovery?.at ?? null,
+  });
+}
+
+export async function handleDiscoverRecipes(req: Request, res: Response) {
+  try {
+    const found = await discoverRecipes(req.userId, { force: true });
+    const occasions = await Occasion.find({ userId: req.userId }).sort({ lastSeen: -1 }).lean();
+    res.json({ found, occasions });
+  } catch (error) {
+    console.error('recipe discovery failed:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Recipe discovery failed' });
   }
 }
 

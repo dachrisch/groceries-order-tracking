@@ -6,6 +6,52 @@ import { getProductGroupMap } from './product-groups';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MATCH_WINDOW_DAYS = 7;
+/** How far one delivery moves a recipe amount toward what was actually ordered. */
+const LEARNING_RATE = 0.3;
+
+/**
+ * New per-serving amount after a delivery, or null when there is nothing to
+ * learn. Only a changed pack count teaches anything: re-learning from the
+ * bot's own rounded-up packs would make every recipe creep upwards.
+ */
+export function learnedQtyPerServing(
+  current: number,
+  plannedPacks: number,
+  deliveredPacks: number,
+  packSize: number,
+  servings: number
+): number | null {
+  if (deliveredPacks <= 0 || deliveredPacks === plannedPacks || servings <= 0) return null;
+  const observed = (deliveredPacks * packSize) / servings;
+  return current * (1 - LEARNING_RATE) + observed * LEARNING_RATE;
+}
+
+/** Nudge recipe amounts toward what the user actually ordered after editing the cart. */
+async function learnFromDelivery(
+  userId: string,
+  runItems: Array<{ productId: number; groupKey?: string; qty: number; occasionId?: unknown; servings?: number }>,
+  orderItems: Array<{ id: number; amount?: number }>,
+  groupByProduct: Map<number, { key: string }>
+): Promise<void> {
+  for (const runItem of runItems) {
+    if (!runItem.occasionId || !runItem.servings) continue;
+    const delivered = orderItems
+      .filter((item) => item.id === runItem.productId || (runItem.groupKey && groupByProduct.get(item.id)?.key === runItem.groupKey))
+      .reduce((sum, item) => sum + (item.amount ?? 1), 0);
+
+    const occasion = await Occasion.findOne({ _id: runItem.occasionId, userId });
+    if (!occasion) continue;
+    const item = occasion.items.find(
+      (entry: { productId: number; groupKey?: string }) =>
+        entry.productId === runItem.productId || (runItem.groupKey && entry.groupKey === runItem.groupKey)
+    );
+    if (!item) continue;
+    const next = learnedQtyPerServing(item.qtyPerServing, runItem.qty, delivered, item.packSize, runItem.servings);
+    if (next === null) continue;
+    item.qtyPerServing = next;
+    await occasion.save();
+  }
+}
 
 /**
  * Match newly delivered orders to open bot runs: same user, order placed at or
@@ -70,6 +116,9 @@ export async function matchRunsToOrders(userId: string): Promise<number> {
 
     usedOrderIds.add(best.orderId);
     matched++;
+
+    const matchedOrder = orders.find((order) => order.id === best!.orderId);
+    await learnFromDelivery(userId, run.items, matchedOrder?.items ?? [], groupByProduct);
 
     await Order.updateOne(
       { userId, id: best.orderId },

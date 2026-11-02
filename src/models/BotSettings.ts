@@ -7,6 +7,19 @@ const botSettingsSchema = new mongoose.Schema({
   horizonDays: { type: Number, default: 7 },
   deliveryLeadDays: { type: Number, default: 2 },
   opencodeEnabled: { type: Boolean, default: true },
+  /** What the last occasion detection looked at, shown when nothing was found. */
+  lastDetection: {
+    at: { type: Date },
+    ordersScanned: { type: Number },
+    candidateBaskets: { type: Number },
+    clusters: { type: Number },
+    kept: { type: Number },
+  },
+  /** Background recipe discovery runs at most daily and only when groups changed. */
+  recipeDiscovery: {
+    at: { type: Date },
+    groupsHash: { type: String },
+  },
 }, { timestamps: true });
 
 export interface BotSettingsShape {

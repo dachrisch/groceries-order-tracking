@@ -46,8 +46,12 @@ Bot:
 | GET | `/api/bot/forecast` | Dashboard weekly estimate + month occasions |
 | GET | `/api/bot/occasions` | Learned occasions |
 | POST | `/api/bot/occasions/detect` | Re-run occasion detection |
+| POST | `/api/bot/occasions/discover` | Suggest recipes from the groceries you buy (forced) |
+| GET | `/api/bot/occasions/diagnostics` | Stats of the last detection (why nothing was found) |
+| POST | `/api/bot/occasions/:id/confirm` | Save a draft recipe (then it fills without asking) |
+| DELETE | `/api/bot/occasions/:id` | Delete an occasion or recipe |
 | GET | `/api/bot/occasions/:id` | One occasion |
-| POST | `/api/bot/occasions/:id/fill` | Fill an occasion for N servings |
+| POST | `/api/bot/occasions/:id/fill` | Fill an occasion for N servings (confirms a draft) |
 | GET | `/api/bot/runs` | Recent `BotRun`s |
 | POST | `/api/bot/runs/:id/undo` | Best-effort cart undo |
 | GET | `/api/bot/groups` | Product groups with products |

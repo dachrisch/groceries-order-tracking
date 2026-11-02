@@ -14,7 +14,8 @@
     "serve": "vite preview",
     "test": "NODE_ENV=test vitest run",
     "lint": "oxlint .",
-    "db:dump": "tsx scripts/db-dump.ts"
+    "db:dump": "tsx scripts/db-dump.ts",
+    "bot:eval": "tsx scripts/bot-eval.ts"
   },
   "repository": {
     "type": "git",

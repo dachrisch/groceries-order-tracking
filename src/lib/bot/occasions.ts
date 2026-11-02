@@ -1,18 +1,18 @@
 import mongoose from 'mongoose';
 import Order from '../../models/Order';
 import Occasion from '../../models/Occasion';
-import BotRun from '../../models/BotRun';
-import { getKnusprSession } from '../knuspr-auth';
-import { addItems, cartQuantityByProduct, checkCart, fetchPrices, getCart, normalizeCart } from '../knuspr-cart';
+import BotSettings from '../../models/BotSettings';
 import { getOpencodeConfig, runPrompt } from '../opencode-client';
 import { getWeeklyConsumption, type ConsumptionItem } from './consumption';
 import { getProductGroupMap, parseSize, type BuiltGroup } from './product-groups';
 import {
-  chooseVariant,
+  executeCandidates,
   getBotSettings,
+  mergeCandidates,
   planWeeklyFill,
+  weeklyCandidates,
+  type FillCandidate,
   type FillResult,
-  type PlannedItem,
 } from './fill';
 import { tagOccasionOrders } from './order-matching';
 
@@ -391,9 +391,28 @@ export async function detectOccasions(
     );
   }
 
+  // Shown on the Occasions tab when nothing was found, so "no occasions" is explainable.
+  await BotSettings.updateOne(
+    { userId },
+    {
+      $set: {
+        lastDetection: {
+          at: new Date(),
+          ordersScanned: orders.length,
+          candidateBaskets: baskets.length,
+          clusters: clusters.length,
+          kept: detected.length,
+        },
+      },
+    },
+    { upsert: true }
+  );
+
+  // Only detected occasions are rebuilt here; recipes have their own lifecycle.
   await Occasion.deleteMany({
     userId,
     manualEdits: false,
+    $or: [{ source: 'detected' }, { source: { $exists: false } }],
     key: { $nin: detected.map((occasion) => occasion.key) },
   });
 
@@ -495,7 +514,7 @@ export function occasionPacks(qtyPerServing: number, servings: number, packSize:
   return Math.max(1, Math.ceil((qtyPerServing * servings) / Math.max(1, packSize)));
 }
 
-interface OccasionDoc {
+export interface OccasionDoc {
   _id: mongoose.Types.ObjectId;
   name: string;
   aliases?: string[];
@@ -510,7 +529,42 @@ interface OccasionDoc {
   basisServings: number;
 }
 
-/** Fill a learned occasion, scaled to the requested servings. */
+/** Cart candidates for an occasion, scaled to the requested servings. */
+export async function occasionCandidates(
+  userId: string,
+  occasion: OccasionDoc,
+  servings: number,
+  label = `${occasion.name} ×${servings}`
+): Promise<FillCandidate[]> {
+  const coreItems = occasion.items.filter((item) => item.core);
+  const groupProductIds = await productIdsForGroups(
+    userId,
+    coreItems.map((item) => item.groupKey).filter((key): key is string => !!key)
+  );
+  return coreItems.map((item) => ({
+    groupKey: item.groupKey ?? `product:${item.productId}`,
+    productIds: item.groupKey ? groupProductIds.get(item.groupKey) ?? [item.productId] : [item.productId],
+    productId: item.productId,
+    name: item.name,
+    qty: occasionPacks(item.qtyPerServing, servings, item.packSize),
+    reason: label,
+    fallbackPrice: 0,
+    occasionId: String(occasion._id),
+    servings,
+  }));
+}
+
+export async function loadOccasion(userId: string, occasionId: string): Promise<OccasionDoc> {
+  if (!mongoose.isValidObjectId(occasionId)) throw new Error('Invalid occasion id');
+  const occasion = await Occasion.findOne({ _id: occasionId, userId }).lean<OccasionDoc | null>();
+  if (!occasion) throw new Error('Occasion not found');
+  return occasion;
+}
+
+/**
+ * Fill one occasion. Weekly items in the same groups are merged in, so an
+ * occasion never leaves you short of what you need anyway.
+ */
 export async function fillOccasion(
   userId: string,
   derivedKey: Buffer | undefined,
@@ -519,132 +573,22 @@ export async function fillOccasion(
   options: { confirm?: boolean } = {}
 ): Promise<FillResult> {
   if (!derivedKey) throw new Error('Session key missing — please re-login');
-  if (!mongoose.isValidObjectId(occasionId)) throw new Error('Invalid occasion id');
-
-  const occasion = await Occasion.findOne({ _id: occasionId, userId }).lean<OccasionDoc | null>();
-  if (!occasion) throw new Error('Occasion not found');
-
+  const occasion = await loadOccasion(userId, occasionId);
   const settings = await getBotSettings(userId);
+
+  const candidates = await occasionCandidates(userId, occasion, servings);
+  const groups = new Set(candidates.map((candidate) => candidate.groupKey));
   const weeklyPlan = await planWeeklyFill(userId, settings);
-  const weeklyByGroup = new Map(weeklyPlan.consumption.map((item) => [item.groupKey, item]));
+  const overlap = weeklyCandidates(weeklyPlan.consumption).filter((candidate) => groups.has(candidate.groupKey));
 
-  const intent: FillResult['intent'] = {
-    type: 'occasion',
-    occasion: occasion.name,
-    occasionId: String(occasion._id),
-    servings,
-  };
-
-  const session = await getKnusprSession(userId, derivedKey);
-  const cart = await getCart(userId, session);
-  const inCart = cartQuantityByProduct(cart);
-
-  const occasionGroups = occasion.items
-    .filter((item) => item.core)
-    .map((item) => item.groupKey)
-    .filter((key): key is string => !!key);
-
-  const groupProductIds = await productIdsForGroups(userId, occasionGroups);
-  const prices = await fetchPrices(session, [...groupProductIds.values()].flat());
-
-  const planned: PlannedItem[] = [];
-  const skipped: string[] = [];
-
-  for (const item of occasion.items) {
-    if (!item.core) continue;
-
-    const groupIds = item.groupKey ? groupProductIds.get(item.groupKey) ?? [item.productId] : [item.productId];
-    if (groupIds.some((productId) => inCart.has(productId))) {
-      skipped.push(item.name);
-      continue;
-    }
-
-    let qty = occasionPacks(item.qtyPerServing, servings, item.packSize);
-    let reason = `${occasion.name} ×${servings}`;
-
-    if (item.groupKey) {
-      const weekly = weeklyByGroup.get(item.groupKey);
-      if (weekly && weekly.qty > qty) {
-        qty = weekly.qty;
-        reason += '; covers weekly fill';
-      }
-    }
-
-    const variant = chooseVariant(groupIds, item.productId, prices);
-    planned.push({
-      productId: variant.productId,
-      name: item.name,
-      qty,
-      reason: variant.reason ? `${reason}; ${variant.reason}` : reason,
-      groupKey: item.groupKey ?? `product:${item.productId}`,
-      price: variant.price?.effectivePrice ?? 0,
-    });
-  }
-
-  const estimatedTotal = planned.reduce((sum, item) => sum + item.price * item.qty, 0);
-
-  if (planned.length === 0) {
-    return {
-      status: 'nothing-to-add',
-      intent,
-      items: [],
-      estimatedTotal: 0,
-      cart,
-      skipped,
-      maxEuro: settings.maxEuro,
-      maxItems: settings.maxItems,
-    };
-  }
-
-  if (!options.confirm && (estimatedTotal > settings.maxEuro || planned.length > settings.maxItems)) {
-    return {
-      status: 'requires-confirmation',
-      intent,
-      items: planned,
-      estimatedTotal,
-      cart,
-      skipped,
-      maxEuro: settings.maxEuro,
-      maxItems: settings.maxItems,
-    };
-  }
-
-  const { added, failed } = await addItems(
-    session,
-    planned.map((item) => ({ productId: item.productId, amount: item.qty }))
-  );
-  const addedIds = new Set(added.map((line) => line.productId));
-  const addedItems = planned.filter((item) => addedIds.has(item.productId));
-  const actualTotal = addedItems.reduce((sum, item) => sum + item.price * item.qty, 0);
-
-  const run = await BotRun.create({
+  return executeCandidates(
     userId,
-    intent,
-    items: addedItems,
-    totalPrice: actualTotal,
-    status: 'in-cart',
-  });
-
-  let updatedCart = cart;
-  try {
-    const raw = await checkCart(session);
-    updatedCart = raw ? await normalizeCart(userId, raw) : cart;
-  } catch {
-    // Non-fatal.
-  }
-
-  return {
-    status: addedItems.length > 0 ? 'added' : 'nothing-to-add',
-    intent,
-    items: addedItems,
-    estimatedTotal: actualTotal,
-    run,
-    cart: updatedCart,
-    skipped,
-    failed: failed.map((entry) => ({ productId: entry.item.productId, error: entry.error })),
-    maxEuro: settings.maxEuro,
-    maxItems: settings.maxItems,
-  };
+    derivedKey,
+    mergeCandidates([candidates, overlap]),
+    { type: 'occasion', occasion: occasion.name, occasionId: String(occasion._id), servings },
+    settings,
+    options
+  );
 }
 
 async function productIdsForGroups(userId: string, groupKeys: string[]): Promise<Map<string, number[]>> {

@@ -19,6 +19,10 @@ import {
   handleGetOccasion,
   handleFillOccasion,
   handleDetectOccasions,
+  handleDiscoverRecipes,
+  handleGetOccasionDiagnostics,
+  handleConfirmOccasion,
+  handleDeleteOccasion,
   handleFillWeek,
   handleGetRuns,
   handleUndoRun,
@@ -110,6 +114,10 @@ app.post('/api/bot/fill-week', auth, handleFillWeek);
 app.get('/api/bot/forecast', auth, handleGetForecast);
 app.get('/api/bot/occasions', auth, handleGetOccasions);
 app.post('/api/bot/occasions/detect', auth, handleDetectOccasions);
+app.post('/api/bot/occasions/discover', auth, handleDiscoverRecipes);
+app.get('/api/bot/occasions/diagnostics', auth, handleGetOccasionDiagnostics);
+app.post('/api/bot/occasions/:id/confirm', auth, handleConfirmOccasion);
+app.delete('/api/bot/occasions/:id', auth, handleDeleteOccasion);
 app.get('/api/bot/occasions/:id', auth, handleGetOccasion);
 app.post('/api/bot/occasions/:id/fill', auth, handleFillOccasion);
 app.get('/api/bot/runs', auth, handleGetRuns);
