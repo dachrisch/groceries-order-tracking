@@ -7,7 +7,7 @@ import ProductGroup from '../../models/ProductGroup';
 import Order from '../../models/Order';
 import { getKnusprSession } from '../../lib/knuspr-auth';
 import { removeItems } from '../../lib/knuspr-cart';
-import { executeWeeklyFill, getBotSettings } from '../../lib/bot/fill';
+import { executeWeeklyFill, getBotSettings, planWeeklyFill } from '../../lib/bot/fill';
 import { getProductGroups, invalidateProductGroupCache } from '../../lib/bot/product-groups';
 import { getBotJob, startBotJob } from '../../lib/bot/jobs';
 import { detectOccasions, fillOccasion } from '../../lib/bot/occasions';
@@ -148,6 +148,64 @@ export async function handleFillWeek(req: Request, res: Response) {
   } catch (error) {
     console.error('fill-week failed:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Fill failed' });
+  }
+}
+
+/**
+ * Dashboard forecast: what the weekly model expects to buy next, plus the
+ * occasions tagged on this month's orders. Pure read — no Knuspr session.
+ */
+export async function handleGetForecast(req: Request, res: Response) {
+  try {
+    const plan = await planWeeklyFill(req.userId);
+
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+    const orders = await Order.find({
+      userId: req.userId,
+      orderTimeDate: { $gte: monthStart, $lt: monthEnd },
+      occasionIds: { $exists: true, $ne: [] },
+    })
+      .select('occasionIds')
+      .lean();
+
+    const counts = new Map<string, number>();
+    for (const order of orders) {
+      for (const occasionId of order.occasionIds ?? []) {
+        const key = String(occasionId);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+
+    const occasions = await Occasion.find({
+      userId: req.userId,
+      _id: { $in: [...counts.keys()].filter((id) => mongoose.isValidObjectId(id)) },
+    })
+      .select('name')
+      .lean();
+
+    res.json({
+      week: {
+        estimatedTotal: plan.items.reduce((sum, item) => sum + item.price * item.qty, 0),
+        itemCount: plan.items.length,
+        items: plan.items.slice(0, 8),
+        horizonDays: plan.settings.horizonDays + plan.settings.deliveryLeadDays,
+      },
+      month: {
+        key: `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`,
+        orderCount: orders.length,
+        occasions: occasions.map((occasion) => ({
+          id: String(occasion._id),
+          name: occasion.name,
+          count: counts.get(String(occasion._id)) ?? 0,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('forecast failed:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Forecast failed' });
   }
 }
 

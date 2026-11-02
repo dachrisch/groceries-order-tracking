@@ -14,6 +14,7 @@ import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 import {
   handleBotMessage,
   handleGetJob,
+  handleGetForecast,
   handleGetOccasions,
   handleGetOccasion,
   handleFillOccasion,
@@ -106,6 +107,7 @@ app.post('/api/cart/add', auth, handleAddToCart);
 app.post('/api/bot/message', auth, handleBotMessage);
 app.get('/api/bot/jobs/:id', auth, handleGetJob);
 app.post('/api/bot/fill-week', auth, handleFillWeek);
+app.get('/api/bot/forecast', auth, handleGetForecast);
 app.get('/api/bot/occasions', auth, handleGetOccasions);
 app.post('/api/bot/occasions/detect', auth, handleDetectOccasions);
 app.get('/api/bot/occasions/:id', auth, handleGetOccasion);

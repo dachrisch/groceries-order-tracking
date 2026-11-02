@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, For, onMount, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Chart, Title, Tooltip, Legend, Colors, LineElement, PointElement, LinearScale, CategoryScale, TimeScale, LineController } from 'chart.js';
 import { Line } from 'solid-chartjs';
@@ -22,16 +22,32 @@ interface StatsData {
   lastOrder?: string;
 }
 
+interface ForecastData {
+  week: {
+    estimatedTotal: number;
+    itemCount: number;
+    items: Array<{ productId: number; name: string; qty: number; reason: string }>;
+    horizonDays: number;
+  };
+  month: {
+    key: string;
+    orderCount: number;
+    occasions: Array<{ id: string; name: string; count: number }>;
+  };
+}
+
 export function Dashboard() {
   const [data, setData] = createSignal<AggregateData[]>([]);
   const [stats, setStats] = createSignal<StatsData | null>(null);
+  const [forecast, setForecast] = createSignal<ForecastData | null>(null);
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
     try {
-      const [aggRes, statsRes] = await Promise.all([
+      const [aggRes, statsRes, forecastRes] = await Promise.all([
         fetch('/api/aggregates'),
-        fetch('/api/stats')
+        fetch('/api/stats'),
+        fetch('/api/bot/forecast')
       ]);
 
       if (aggRes.ok) {
@@ -41,6 +57,9 @@ export function Dashboard() {
       if (statsRes.ok) {
         const json = await statsRes.json();
         setStats(json);
+      }
+      if (forecastRes.ok) {
+        setForecast(await forecastRes.json());
       }
     } catch (e) {
       console.error('Failed to fetch dashboard data', e);
@@ -181,6 +200,78 @@ export function Dashboard() {
               )}
             </Show>
           </div>
+
+          <Show when={forecast()}>
+            {(f) => (
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card bg-base-100 shadow-xl border border-base-300 rounded-2xl">
+                  <div class="card-body p-6">
+                    <h2 class="card-title text-xl">Next week's forecast</h2>
+                    <Show
+                      when={f().week.itemCount > 0}
+                      fallback={
+                        <p class="text-sm opacity-70">
+                          Nothing due yet. Sync more orders so the bot can learn your rhythm.
+                        </p>
+                      }
+                    >
+                      <div class="flex items-baseline gap-2 flex-wrap">
+                        <span class="text-4xl font-black text-primary">
+                          ~{f().week.estimatedTotal.toFixed(2)}€
+                        </span>
+                        <span class="opacity-70">
+                          {f().week.itemCount} item{f().week.itemCount === 1 ? '' : 's'} over ~
+                          {f().week.horizonDays} days
+                        </span>
+                      </div>
+                      <div class="flex flex-wrap gap-1 mt-3">
+                        <For each={f().week.items}>
+                          {(item) => (
+                            <span class="badge badge-ghost badge-sm" title={item.reason}>
+                              {item.name} ×{item.qty}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+                      <A href="/inventory" class="btn btn-sm btn-outline mt-4 self-start">
+                        Open inventory
+                      </A>
+                    </Show>
+                  </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-xl border border-base-300 rounded-2xl">
+                  <div class="card-body p-6">
+                    <h2 class="card-title text-xl">Occasions this month</h2>
+                    <Show
+                      when={f().month.occasions.length > 0}
+                      fallback={
+                        <p class="text-sm opacity-70">
+                          No occasion baskets tagged in {f().month.key} yet.
+                        </p>
+                      }
+                    >
+                      <div class="flex flex-wrap gap-2">
+                        <For each={f().month.occasions}>
+                          {(occasion) => (
+                            <span class="badge badge-secondary badge-lg gap-1">
+                              🎉 {occasion.name} ×{occasion.count}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <p class="text-xs opacity-60 mt-3">
+                      From {f().month.orderCount} order{f().month.orderCount === 1 ? '' : 's'} tagged this month.
+                    </p>
+                    <A href="/bot" class="btn btn-sm btn-outline mt-4 self-start">
+                      Open the bot
+                    </A>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Show>
 
           <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden rounded-2xl">
             <div class="card-body p-8">

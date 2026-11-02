@@ -1,5 +1,5 @@
 import { createSignal, onMount, Show } from 'solid-js';
-import { Link2, Link2Off, RefreshCw, ShoppingCart } from 'lucide-solid';
+import { Bot, Link2, Link2Off, RefreshCw, Save, ShoppingCart } from 'lucide-solid';
 
 interface Integration {
   _id: string;
@@ -8,8 +8,18 @@ interface Integration {
   createdAt: string;
 }
 
+interface BotSettings {
+  maxEuro: number;
+  maxItems: number;
+  horizonDays: number;
+  deliveryLeadDays: number;
+  opencodeEnabled: boolean;
+}
+
 export function Settings() {
   const [integrations, setIntegrations] = createSignal<Integration[]>([]);
+  const [botSettings, setBotSettings] = createSignal<BotSettings | null>(null);
+  const [savingBot, setSavingBot] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
   const [knusprEmail, setKnusprEmail] = createSignal('');
   const [knusprPassword, setKnusprPassword] = createSignal('');
@@ -32,7 +42,47 @@ export function Settings() {
     }
   };
 
-  onMount(fetchIntegrations);
+  const fetchBotSettings = async () => {
+    try {
+      const res = await fetch('/api/bot/settings');
+      if (res.ok) setBotSettings(await res.json());
+    } catch {
+      // The bot card is optional; leave it hidden if the request fails.
+    }
+  };
+
+  onMount(() => {
+    void fetchIntegrations();
+    void fetchBotSettings();
+  });
+
+  const updateBotSetting = <K extends keyof BotSettings>(key: K, value: BotSettings[K]) => {
+    setBotSettings((previous) => (previous ? { ...previous, [key]: value } : previous));
+  };
+
+  const saveBotSettings = async () => {
+    const current = botSettings();
+    if (!current) return;
+    setSavingBot(true);
+    try {
+      const res = await fetch('/api/bot/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(current),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBotSettings(data);
+        showMessage('success', 'Bot settings saved');
+      } else {
+        showMessage('error', data.error || 'Could not save bot settings');
+      }
+    } catch {
+      showMessage('error', 'Network error while saving bot settings');
+    } finally {
+      setSavingBot(false);
+    }
+  };
 
   const knusprIntegration = () => integrations().find(i => i.provider === 'knuspr');
 
@@ -236,6 +286,112 @@ export function Settings() {
           </Show>
         </div>
       </div>
+
+      <Show when={botSettings()}>
+        {(settings) => (
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h2 class="card-title gap-2 mb-1">
+                <Bot size={20} />
+                Order bot
+              </h2>
+              <p class="text-sm opacity-70">
+                Guardrails apply before anything is added to your Knuspr cart.
+              </p>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                <div class="form-control w-full">
+                  <label for="bot-max-euro" class="label">
+                    <span class="label-text font-semibold text-xs">Max € per run</span>
+                  </label>
+                  <input
+                    id="bot-max-euro"
+                    type="number"
+                    min="1"
+                    max="10000"
+                    class="input input-bordered input-sm w-full"
+                    value={settings().maxEuro}
+                    onInput={(event) => updateBotSetting('maxEuro', Number(event.currentTarget.value))}
+                  />
+                </div>
+
+                <div class="form-control w-full">
+                  <label for="bot-max-items" class="label">
+                    <span class="label-text font-semibold text-xs">Max items per run</span>
+                  </label>
+                  <input
+                    id="bot-max-items"
+                    type="number"
+                    min="1"
+                    max="500"
+                    class="input input-bordered input-sm w-full"
+                    value={settings().maxItems}
+                    onInput={(event) => updateBotSetting('maxItems', Number(event.currentTarget.value))}
+                  />
+                </div>
+
+                <div class="form-control w-full">
+                  <label for="bot-horizon" class="label">
+                    <span class="label-text font-semibold text-xs">Plan ahead (days)</span>
+                  </label>
+                  <input
+                    id="bot-horizon"
+                    type="number"
+                    min="1"
+                    max="60"
+                    class="input input-bordered input-sm w-full"
+                    value={settings().horizonDays}
+                    onInput={(event) => updateBotSetting('horizonDays', Number(event.currentTarget.value))}
+                  />
+                </div>
+
+                <div class="form-control w-full">
+                  <label for="bot-lead" class="label">
+                    <span class="label-text font-semibold text-xs">Delivery lead time (days)</span>
+                  </label>
+                  <input
+                    id="bot-lead"
+                    type="number"
+                    min="0"
+                    max="14"
+                    class="input input-bordered input-sm w-full"
+                    value={settings().deliveryLeadDays}
+                    onInput={(event) => updateBotSetting('deliveryLeadDays', Number(event.currentTarget.value))}
+                  />
+                </div>
+              </div>
+
+              <label class="label cursor-pointer justify-start gap-3 mt-2">
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  checked={settings().opencodeEnabled}
+                  onChange={(event) => updateBotSetting('opencodeEnabled', event.currentTarget.checked)}
+                />
+                <span class="label-text">
+                  Use opencode for language
+                  <span class="block text-xs opacity-60">
+                    Simple commands like "fill this week" still work without it.
+                  </span>
+                </span>
+              </label>
+
+              <div class="pt-2">
+                <button
+                  class="btn btn-primary btn-sm gap-2"
+                  onClick={saveBotSettings}
+                  disabled={savingBot()}
+                >
+                  <Show when={savingBot()} fallback={<Save size={14} />}>
+                    <span class="loading loading-spinner loading-xs" />
+                  </Show>
+                  Save bot settings
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
 
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
