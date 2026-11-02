@@ -1,6 +1,7 @@
 import { createSignal, onMount, JSX, Show } from 'solid-js';
 import { useNavigate, useLocation, A } from '@solidjs/router';
 import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList, Bot } from 'lucide-solid';
+import { BotPanel } from './components/BotPanel';
 
 export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<{ name: string; email: string } | null>(null);
@@ -207,6 +208,8 @@ export function App(props: { children?: JSX.Element }) {
               </div>
             </div>
           </div>
+
+          <BotPanel />
         </Show>
 
         <Show when={!user() || isAuthPage()}>

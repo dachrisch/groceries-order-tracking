@@ -9,6 +9,7 @@ import { getKnusprSession } from '../../lib/knuspr-auth';
 import { removeItems } from '../../lib/knuspr-cart';
 import { executeWeeklyFill, getBotSettings } from '../../lib/bot/fill';
 import { getProductGroups, invalidateProductGroupCache } from '../../lib/bot/product-groups';
+import { getBotJob, startBotJob } from '../../lib/bot/jobs';
 import { formatZodError } from '../utils';
 import '../utils';
 
@@ -22,6 +23,10 @@ const mergeGroupsSchema = z.object({
 
 const splitGroupSchema = z.object({
   productId: z.union([z.string(), z.number()]).transform(Number),
+});
+
+const messageSchema = z.object({
+  text: z.string().trim().min(1).max(500),
 });
 
 const settingsSchema = z.object({
@@ -43,6 +48,26 @@ function requireKey(req: Request, res: Response): Buffer | null {
     return null;
   }
   return req.derivedKey;
+}
+
+export async function handleBotMessage(req: Request, res: Response) {
+  const parsed = messageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: formatZodError(parsed.error) });
+  }
+
+  try {
+    const job = startBotJob(req.userId, parsed.data.text, req.derivedKey);
+    res.status(202).json({ jobId: job.id, status: job.status });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Could not start job' });
+  }
+}
+
+export async function handleGetJob(req: Request, res: Response) {
+  const job = getBotJob(req.userId, req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
 }
 
 export async function handleFillWeek(req: Request, res: Response) {
