@@ -7,6 +7,9 @@ const botRunItemSchema = new mongoose.Schema({
   reason: { type: String },
   groupKey: { type: String },
   price: { type: Number },
+  /** Set when the item came only from this occasion; used to learn amounts from deliveries. */
+  occasionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Occasion' },
+  servings: { type: Number },
 }, { _id: false });
 
 const botRunSchema = new mongoose.Schema({
@@ -14,12 +17,14 @@ const botRunSchema = new mongoose.Schema({
   intent: {
     type: {
       type: String,
-      enum: ['weekly', 'occasion'],
+      enum: ['weekly', 'occasion', 'plan'],
       required: true,
     },
     occasion: { type: String },
     occasionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Occasion' },
     servings: { type: Number },
+    /** Human summary of a multi-action plan, e.g. "Weekly till Sun + Pizza ×6 (Wed)". */
+    summary: { type: String },
   },
   items: [botRunItemSchema],
   totalPrice: { type: Number, default: 0 },

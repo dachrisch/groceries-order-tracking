@@ -1,0 +1,52 @@
+{
+  "now": "2026-11-02T10:30:00",
+  "note": "Monday 2 Nov 2026. `fast: true` entries must be parsed without the LLM (checked in CI). `fast: false` entries must NOT be guessed by the fast path; they are scored by `npm run bot:eval` against the live LLM.",
+  "cases": [
+    { "text": "fill my inventory for this week", "fast": true, "expected": [{ "type": "weekly" }] },
+    { "text": "weekly", "fast": true, "expected": [{ "type": "weekly" }] },
+    { "text": "pizza for 6", "fast": true, "expected": [{ "type": "occasion", "occasion": "pizza", "servings": 6 }] },
+    { "text": "Pizza für 6", "fast": true, "expected": [{ "type": "occasion", "occasion": "pizza", "servings": 6 }] },
+    {
+      "text": "i have pizza event for 6 at wednesday and needs some food till end of the week",
+      "fast": true,
+      "expected": [
+        { "type": "occasion", "occasion": "pizza", "servings": 6, "date": "2026-11-04" },
+        { "type": "weekly", "until": "2026-11-08" }
+      ]
+    },
+    {
+      "text": "pizza for 6 on friday, groceries until sunday",
+      "fast": true,
+      "expected": [
+        { "type": "occasion", "occasion": "pizza", "servings": 6, "date": "2026-11-06" },
+        { "type": "weekly", "until": "2026-11-08" }
+      ]
+    },
+    {
+      "text": "Pizza für 6 am Mittwoch und Einkauf bis Wochenende",
+      "fast": true,
+      "expected": [
+        { "type": "occasion", "occasion": "pizza", "servings": 6, "date": "2026-11-04" },
+        { "type": "weekly", "until": "2026-11-08" }
+      ]
+    },
+    { "text": "restock the basics till friday", "fast": true, "expected": [{ "type": "weekly", "until": "2026-11-06" }] },
+    { "text": "lasagne party for 8 people tomorrow", "fast": true, "expected": [{ "type": "occasion", "occasion": "lasagne", "servings": 8, "date": "2026-11-03" }] },
+    { "text": "yes", "fast": true, "expected": [{ "type": "confirm" }] },
+    { "text": "no anchovies next time", "fast": true, "expected": [{ "type": "correction", "item": "anchovies" }] },
+    {
+      "text": "we're having friends over saturday, 8 people, thinking lasagne",
+      "fast": false,
+      "expected": [{ "type": "occasion", "occasion": "lasagne", "servings": 8, "date": "2026-11-07" }]
+    },
+    {
+      "text": "my parents visit on thursday for dinner, we'll be 4, I want to cook curry; also the usual stuff for the week",
+      "fast": false,
+      "expected": [
+        { "type": "occasion", "occasion": "curry", "servings": 4, "date": "2026-11-05" },
+        { "type": "weekly" }
+      ]
+    },
+    { "text": "what's the weather tomorrow", "fast": false, "expected": [{ "type": "unknown" }] }
+  ]
+}

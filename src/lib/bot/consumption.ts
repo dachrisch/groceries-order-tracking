@@ -34,6 +34,8 @@ export interface Purchase {
   amount: number;
   /** Base units per pack (g/ml/pieces). */
   packSize: number;
+  /** Unit of packSize; 'piece' when the size could not be parsed. */
+  packUnit?: 'g' | 'ml' | 'piece';
   /** Price per pack. */
   unitPrice: number;
   name: string;
@@ -313,6 +315,7 @@ export async function loadPurchases(userId: string, options: ConsumptionOptions 
         date: new Date(order.orderTimeDate),
         amount: Math.max(1, item.amount ?? 1),
         packSize: parsedSize?.value ?? 1,
+        packUnit: parsedSize?.unit ?? 'piece',
         unitPrice: item.priceComposition?.unit?.amount ?? 0,
         name: item.name,
         image: item.images?.[0],

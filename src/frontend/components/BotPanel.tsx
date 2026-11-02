@@ -7,11 +7,22 @@ interface ChatRun {
   totalPrice: number;
 }
 
+interface ChatDraft {
+  occasionId: string;
+  name: string;
+  servings: number;
+  date?: string;
+  style?: string;
+  items: Array<{ name: string; qty: number }>;
+  missing: string[];
+}
+
 interface ChatMessage {
   role: 'user' | 'bot';
   text: string;
   run?: ChatRun;
   requiresConfirmation?: boolean;
+  drafts?: ChatDraft[];
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,7 +33,7 @@ export function BotPanel() {
   const [messages, setMessages] = createSignal<ChatMessage[]>([
     {
       role: 'bot',
-      text: 'Hi! Ask me to “fill my inventory for this week” or “pizza for 6”.',
+      text: 'Hi! Try “pizza for 6 on Wednesday and food till Sunday”.',
     },
   ]);
   const [busy, setBusy] = createSignal(false);
@@ -66,6 +77,7 @@ export function BotPanel() {
             text: result.reply ?? 'Done.',
             run: result.run,
             requiresConfirmation: result.status === 'requires-confirmation',
+            drafts: result.drafts,
           });
           if (result.run || result.status === 'added') {
             window.dispatchEvent(new CustomEvent('bot-run-complete'));
@@ -167,10 +179,40 @@ export function BotPanel() {
                       )}
                     </Show>
 
+                    <For each={message.drafts ?? []}>
+                      {(draft) => (
+                        <div class="mt-3 pt-3 border-t border-white/20 space-y-1">
+                          <div class="text-xs font-bold">
+                            🍳 {draft.name} ×{draft.servings}
+                            {draft.date ? ` · ${draft.date}` : ''}
+                            {draft.style ? ` · ${draft.style}` : ''}
+                          </div>
+                          <ul class="text-xs space-y-0.5">
+                            <For each={draft.items}>
+                              {(item) => (
+                                <li class="flex justify-between gap-3">
+                                  <span class="truncate">{item.name}</span>
+                                  <span class="font-mono">×{item.qty}</span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                          <Show when={draft.missing.length > 0}>
+                            <p class="text-xs opacity-80">Add yourself: {draft.missing.join(', ')}</p>
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+
                     <Show when={message.requiresConfirmation}>
-                      <button class="btn btn-xs btn-warning mt-2 gap-1" onClick={() => send('yes')} disabled={busy()}>
-                        <Sparkles size={14} /> Confirm
-                      </button>
+                      <div class="flex flex-wrap gap-2 mt-2">
+                        <button class="btn btn-xs btn-warning gap-1" onClick={() => send('yes')} disabled={busy()}>
+                          <Sparkles size={14} /> {message.drafts?.length ? 'Add' : 'Confirm'}
+                        </button>
+                        <Show when={message.drafts?.length}>
+                          <a class="btn btn-xs btn-ghost" href="/bot">Edit on Occasions page</a>
+                        </Show>
+                      </div>
                     </Show>
                   </div>
                 </div>

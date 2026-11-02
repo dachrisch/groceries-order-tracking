@@ -11,11 +11,61 @@ export interface PlannedItem {
   reason: string;
   groupKey: string;
   price: number;
+  occasionId?: string;
+  servings?: number;
+}
+
+/**
+ * Something one action wants in the cart, before cart and price checks. The
+ * weekly fill and every occasion produce candidates; they are merged by
+ * product group so nothing is added twice.
+ */
+export interface FillCandidate {
+  groupKey: string;
+  productIds: number[];
+  /** Preferred product (most bought in the group). */
+  productId: number;
+  name: string;
+  qty: number;
+  reason: string;
+  /** Price to assume when live prices are unavailable. */
+  fallbackPrice: number;
+  /** Set when the candidate comes from exactly one occasion (for learning). */
+  occasionId?: string;
+  servings?: number;
+}
+
+/** Merge candidate lists by group: larger quantity wins, reasons are joined. */
+export function mergeCandidates(lists: FillCandidate[][]): FillCandidate[] {
+  const merged = new Map<string, FillCandidate & { sources: number }>();
+  for (const list of lists) {
+    for (const candidate of list) {
+      const existing = merged.get(candidate.groupKey);
+      if (!existing) {
+        merged.set(candidate.groupKey, { ...candidate, sources: 1 });
+        continue;
+      }
+      const reasons = existing.reason.split('; ');
+      if (!reasons.includes(candidate.reason)) reasons.push(candidate.reason);
+      const bigger = candidate.qty > existing.qty ? candidate : existing;
+      merged.set(candidate.groupKey, {
+        ...bigger,
+        productIds: [...new Set([...existing.productIds, ...candidate.productIds])],
+        qty: Math.max(existing.qty, candidate.qty),
+        reason: reasons.join('; '),
+        fallbackPrice: existing.fallbackPrice || candidate.fallbackPrice,
+        sources: existing.sources + 1,
+      });
+    }
+  }
+  return [...merged.values()].map(({ sources, ...candidate }) =>
+    sources > 1 ? { ...candidate, occasionId: undefined, servings: undefined } : candidate
+  );
 }
 
 export interface FillResult {
   status: 'added' | 'requires-confirmation' | 'nothing-to-add';
-  intent: { type: 'weekly' | 'occasion'; occasion?: string; occasionId?: string; servings?: number };
+  intent: { type: 'weekly' | 'occasion' | 'plan'; occasion?: string; occasionId?: string; servings?: number; summary?: string };
   items: PlannedItem[];
   estimatedTotal: number;
   run?: unknown;
@@ -93,10 +143,14 @@ export interface WeeklyPlan {
   settings: BotSettingsShape;
 }
 
-export async function planWeeklyFill(userId: string, settings?: BotSettingsShape): Promise<WeeklyPlan> {
+export async function planWeeklyFill(
+  userId: string,
+  settings?: BotSettingsShape,
+  options: { horizonDays?: number } = {}
+): Promise<WeeklyPlan> {
   const effectiveSettings = settings ?? (await getBotSettings(userId));
   const { items } = await getWeeklyConsumption(userId, {
-    horizonDays: effectiveSettings.horizonDays,
+    horizonDays: options.horizonDays ?? effectiveSettings.horizonDays,
     deliveryLeadDays: effectiveSettings.deliveryLeadDays,
   });
 
@@ -116,74 +170,70 @@ export async function planWeeklyFill(userId: string, settings?: BotSettingsShape
   };
 }
 
+export function weeklyCandidates(consumption: ConsumptionItem[]): FillCandidate[] {
+  return consumption.map((item) => ({
+    groupKey: item.groupKey,
+    productIds: item.productIds,
+    productId: item.productId,
+    name: item.name,
+    qty: item.qty,
+    reason: item.reason,
+    fallbackPrice: item.avgPrice,
+  }));
+}
+
 /**
- * Execute a weekly fill. Returns `requires-confirmation` instead of adding
- * when the run exceeds the configured guardrails.
+ * The one place that touches the Knuspr cart: skip what is already in it,
+ * pick variants by live price, enforce the guardrails, add, record a BotRun.
  */
-export async function executeWeeklyFill(
+export async function executeCandidates(
   userId: string,
   derivedKey: Buffer | undefined,
+  candidates: FillCandidate[],
+  intent: FillResult['intent'],
+  settings: BotSettingsShape,
   options: { confirm?: boolean } = {}
 ): Promise<FillResult> {
   if (!derivedKey) throw new Error('Session key missing — please re-login');
 
-  const plan = await planWeeklyFill(userId);
-  const settings = plan.settings;
-  const intent: FillResult['intent'] = { type: 'weekly' };
-
-  if (plan.items.length === 0) {
-    return {
-      status: 'nothing-to-add',
-      intent,
-      items: [],
-      estimatedTotal: 0,
-      maxEuro: settings.maxEuro,
-      maxItems: settings.maxItems,
-    };
-  }
+  const empty = (extra: Partial<FillResult> = {}): FillResult => ({
+    status: 'nothing-to-add',
+    intent,
+    items: [],
+    estimatedTotal: 0,
+    maxEuro: settings.maxEuro,
+    maxItems: settings.maxItems,
+    ...extra,
+  });
+  if (candidates.length === 0) return empty();
 
   const session = await getKnusprSession(userId, derivedKey);
   const cart = await getCart(userId, session);
   const inCart = cartQuantityByProduct(cart);
-
-  const allGroupProductIds = plan.consumption.flatMap((item) => item.productIds);
-  const prices = await fetchPrices(session, allGroupProductIds);
+  const prices = await fetchPrices(session, candidates.flatMap((candidate) => candidate.productIds));
 
   const skipped: string[] = [];
   const planned: PlannedItem[] = [];
 
-  for (const item of plan.consumption) {
-    if (item.productIds.some((productId) => inCart.has(productId))) {
-      skipped.push(item.groupLabel || item.name);
+  for (const candidate of candidates) {
+    if (candidate.productIds.some((productId) => inCart.has(productId))) {
+      skipped.push(candidate.name);
       continue;
     }
-
-    const variant = chooseVariant(item.productIds, item.productId, prices);
-    const price = variant.price?.effectivePrice ?? item.avgPrice;
+    const variant = chooseVariant(candidate.productIds, candidate.productId, prices);
     planned.push({
       productId: variant.productId,
-      name: item.name,
-      qty: item.qty,
-      reason: withDealReason(item.reason, variant.reason),
-      groupKey: item.groupKey,
-      price,
+      name: candidate.name,
+      qty: candidate.qty,
+      reason: withDealReason(candidate.reason, variant.reason),
+      groupKey: candidate.groupKey,
+      price: variant.price?.effectivePrice ?? candidate.fallbackPrice,
+      ...(candidate.occasionId ? { occasionId: candidate.occasionId, servings: candidate.servings } : {}),
     });
   }
 
   const estimatedTotal = planned.reduce((sum, item) => sum + item.price * item.qty, 0);
-
-  if (planned.length === 0) {
-    return {
-      status: 'nothing-to-add',
-      intent,
-      items: [],
-      estimatedTotal: 0,
-      cart,
-      skipped,
-      maxEuro: settings.maxEuro,
-      maxItems: settings.maxItems,
-    };
-  }
+  if (planned.length === 0) return empty({ cart, skipped });
 
   if (!options.confirm && (estimatedTotal > settings.maxEuro || planned.length > settings.maxItems)) {
     return {
@@ -235,4 +285,25 @@ export async function executeWeeklyFill(
     maxEuro: settings.maxEuro,
     maxItems: settings.maxItems,
   };
+}
+
+/**
+ * Execute a weekly fill. Returns `requires-confirmation` instead of adding
+ * when the run exceeds the configured guardrails.
+ */
+export async function executeWeeklyFill(
+  userId: string,
+  derivedKey: Buffer | undefined,
+  options: { confirm?: boolean; horizonDays?: number } = {}
+): Promise<FillResult> {
+  if (!derivedKey) throw new Error('Session key missing — please re-login');
+  const plan = await planWeeklyFill(userId, undefined, { horizonDays: options.horizonDays });
+  return executeCandidates(
+    userId,
+    derivedKey,
+    weeklyCandidates(plan.consumption),
+    { type: 'weekly' },
+    plan.settings,
+    { confirm: options.confirm }
+  );
 }

@@ -1,6 +1,6 @@
 import { createSignal, onMount, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Bot as BotIcon, ChevronDown, Layers, Play, RefreshCw, Undo2, AlertCircle } from 'lucide-solid';
+import { Bot as BotIcon, Check, ChefHat, ChevronDown, Layers, Play, RefreshCw, Sparkles, Trash2, Undo2, AlertCircle } from 'lucide-solid';
 
 interface BotRunItem {
   productId: number;
@@ -14,7 +14,7 @@ interface BotRunItem {
 interface BotRun {
   _id: string;
   createdAt: string;
-  intent: { type: 'weekly' | 'occasion'; occasion?: string; servings?: number };
+  intent: { type: 'weekly' | 'occasion' | 'plan'; occasion?: string; servings?: number; summary?: string };
   items: BotRunItem[];
   totalPrice: number;
   status: 'in-cart' | 'undone' | 'delivered' | 'partially-delivered';
@@ -56,6 +56,29 @@ interface Occasion {
   occurrences: number;
   lastSeen?: string;
   sourceOrders: Array<{ orderId: number; productIds: number[] }>;
+  source?: 'detected' | 'recipe' | 'discovered';
+  status?: 'draft' | 'confirmed';
+  style?: 'homemade' | 'ready-made';
+  missing?: string[];
+  evidence?: Array<{ label: string; purchaseCount: number }>;
+}
+
+interface DetectionStats {
+  at?: string;
+  ordersScanned?: number;
+  candidateBaskets?: number;
+  clusters?: number;
+  kept?: number;
+}
+
+const isDraft = (occasion: Occasion) => occasion.status === 'draft';
+/** Recipes store amounts per person; detected occasions have a learned group size. */
+const defaultServings = (occasion: Occasion) => (occasion.source && occasion.source !== 'detected' ? 4 : occasion.basisServings);
+
+function runTitle(run: BotRun): string {
+  if (run.intent.type === 'plan' && run.intent.summary) return run.intent.summary[0].toUpperCase() + run.intent.summary.slice(1);
+  if (run.intent.type === 'weekly') return 'Weekly fill';
+  return `${run.intent.occasion ?? 'Occasion'}${run.intent.servings ? ` for ${run.intent.servings}` : ''}`;
 }
 
 const STATUS_LABELS: Record<BotRun['status'], string> = {
@@ -95,9 +118,12 @@ export function Bot() {
     if (res.ok) setGroups(await res.json());
   };
 
+  const [detection, setDetection] = createSignal<DetectionStats | null>(null);
+
   const loadOccasions = async () => {
-    const res = await fetch('/api/bot/occasions');
+    const [res, diagnostics] = await Promise.all([fetch('/api/bot/occasions'), fetch('/api/bot/occasions/diagnostics')]);
     if (res.ok) setOccasions(await res.json());
+    if (diagnostics.ok) setDetection((await diagnostics.json()).lastDetection ?? null);
   };
 
   const load = async () => {
@@ -199,8 +225,54 @@ export function Bot() {
     }
   };
 
+  const confirmOccasion = async (occasion: Occasion) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bot/occasions/${occasion._id}/confirm`, { method: 'POST' });
+      if (!res.ok) setError((await res.json()).error ?? 'Could not confirm');
+      else {
+        setNotice(`${occasion.name} saved. Asking for it in chat now goes straight into the cart.`);
+        await loadOccasions();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteOccasion = async (occasion: Occasion) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bot/occasions/${occasion._id}`, { method: 'DELETE' });
+      if (!res.ok) setError((await res.json()).error ?? 'Could not delete');
+      else {
+        setNotice(`${occasion.name} removed.`);
+        await loadOccasions();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const discoverRecipes = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/bot/occasions/discover', { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) setError(body.error ?? 'Recipe discovery failed');
+      else {
+        setOccasions(body.occasions);
+        setNotice(body.found > 0 ? `Found ${body.found} recipe(s) your groceries point to.` : 'No new recipes found in your groceries.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const fillOccasion = async (occasion: Occasion) => {
-    const count = servings()[occasion._id] ?? occasion.basisServings;
+    const count = servings()[occasion._id] ?? defaultServings(occasion);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -324,9 +396,7 @@ export function Bot() {
                     </div>
                     <div class="flex-1 min-w-0">
                       <div class="font-black text-lg truncate">
-                        {run.intent.type === 'weekly'
-                          ? 'Weekly fill'
-                          : `${run.intent.occasion ?? 'Occasion'}${run.intent.servings ? ` for ${run.intent.servings}` : ''}`}
+                        {runTitle(run)}
                       </div>
                       <div class="text-sm opacity-75">
                         {new Date(run.createdAt).toLocaleString()} · {run.items.length} items · €{run.totalPrice.toFixed(2)}
@@ -384,101 +454,165 @@ export function Bot() {
       </Show>
 
       <Show when={!loading() && tab() === 'occasions'}>
-        <div class="flex items-center justify-between gap-4">
-          <p class="text-sm opacity-75">
-            Occasions are learned automatically from baskets that the weekly model cannot explain.
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <p class="text-sm opacity-75 max-w-xl">
+            Occasions come from repeated special baskets in your orders. Recipes are built from products you already
+            buy, so the bot knows whether you cook a dish from scratch or buy it ready-made.
           </p>
-          <button class="btn btn-outline btn-sm gap-2" onClick={detectAgain} disabled={busy()}>
-            <RefreshCw size={16} class={busy() ? 'animate-spin' : ''} /> Detect again
-          </button>
+          <div class="flex gap-2">
+            <button class="btn btn-outline btn-sm gap-2" onClick={discoverRecipes} disabled={busy()}>
+              <ChefHat size={16} /> Find recipes
+            </button>
+            <button class="btn btn-outline btn-sm gap-2" onClick={detectAgain} disabled={busy()}>
+              <RefreshCw size={16} class={busy() ? 'animate-spin' : ''} /> Detect again
+            </button>
+          </div>
         </div>
 
-        <Show
-          when={occasions().length > 0}
-          fallback={
-            <div class="card bg-base-100 border border-base-300 p-12 text-center rounded-2xl">
-              <h3 class="text-2xl font-black">No occasions learned yet</h3>
+        <Show when={occasions().filter((occasion) => !isDraft(occasion)).length === 0}>
+          <div class="card bg-base-100 border border-base-300 p-8 text-center rounded-2xl">
+            <h3 class="text-2xl font-black">No occasions learned yet</h3>
+            <Show
+              when={detection()?.at}
+              fallback={<p class="text-base-content/80 mt-2">Detection has not run yet. Sync your orders or press “Detect again”.</p>}
+            >
               <p class="text-base-content/80 mt-2">
-                Sync a few orders with repeat occasion baskets (e.g. three pizza nights) and detect again.
+                Looked at {detection()!.ordersScanned ?? 0} orders: {detection()!.candidateBaskets ?? 0} special baskets,{' '}
+                {detection()!.clusters ?? 0} repeated at least twice, {detection()!.kept ?? 0} kept.
               </p>
-            </div>
-          }
-        >
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <For each={occasions()}>
-              {(occasion) => (
-                <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl">
-                  <div class="card-body p-5">
-                    <div class="flex items-start gap-3">
-                      <div class="text-2xl">🎉</div>
-                      <div class="flex-1 min-w-0">
-                        <h3 class="font-black text-xl truncate">{occasion.name}</h3>
-                        <p class="text-xs opacity-70">
-                          feeds ~{occasion.basisServings} · seen {occasion.occurrences}×
-                          <Show when={occasion.lastSeen}>
-                            {' '}· last {new Date(occasion.lastSeen!).toLocaleDateString()}
-                          </Show>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="mt-3 space-y-1">
-                      <For each={occasion.items}>
-                        {(item) => (
-                          <div class="flex items-center gap-2 text-sm">
-                            <span class={`badge badge-xs ${item.core ? 'badge-primary' : 'badge-ghost'}`}>
-                              {item.core ? 'core' : 'optional'}
-                            </span>
-                            <span class="flex-1 truncate">{item.name}</span>
-                            <span class="font-mono text-xs opacity-70">
-                              {item.qtyPerServing.toFixed(2)} / serving
-                            </span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-
-                    <Show when={occasion.aliases.length > 0}>
-                      <p class="text-xs opacity-60 mt-2">Also called: {occasion.aliases.join(', ')}</p>
-                    </Show>
-
-                    <Show when={occasion.sourceOrders.length > 0}>
-                      <div class="flex flex-wrap gap-1 mt-3">
-                        <For each={occasion.sourceOrders.slice(0, 5)}>
-                          {(source) => (
-                            <A href={`/order/${source.orderId}`} class="badge badge-ghost badge-sm">
-                              #{source.orderId}
-                            </A>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-
-                    <div class="flex items-center gap-2 mt-4 pt-3 border-t border-base-200">
-                      <label class="text-xs font-bold uppercase opacity-60">For</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        class="input input-bordered input-sm w-20"
-                        value={servings()[occasion._id] ?? occasion.basisServings}
-                        onInput={(event) =>
-                          setServings((previous) => ({
-                            ...previous,
-                            [occasion._id]: Number(event.currentTarget.value),
-                          }))
-                        }
-                      />
-                      <button class="btn btn-primary btn-sm gap-2 flex-1" onClick={() => fillOccasion(occasion)} disabled={busy()}>
-                        <Play size={16} /> Fill for {servings()[occasion._id] ?? occasion.basisServings}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </For>
+            </Show>
+            <p class="text-sm opacity-70 mt-2">
+              Ask the bot for a dish (“pizza for 6”) or press “Find recipes”: recipes don't need repeated baskets.
+            </p>
           </div>
         </Show>
+
+        <For each={[
+          { title: 'Drafts and suggested recipes', hint: 'Shown once before they reach the cart.', list: occasions().filter(isDraft) },
+          { title: 'Confirmed', hint: '', list: occasions().filter((occasion) => !isDraft(occasion)) },
+        ]}>
+          {(section) => (
+            <Show when={section.list.length > 0}>
+              <div class="flex items-baseline gap-3">
+                <h3 class="text-lg font-black">{section.title}</h3>
+                <span class="text-xs opacity-60">{section.hint}</span>
+              </div>
+              <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <For each={section.list}>
+                  {(occasion) => (
+                    <div class={`card bg-base-100 border shadow-sm rounded-2xl ${isDraft(occasion) ? 'border-warning/60' : 'border-base-300'}`}>
+                      <div class="card-body p-5">
+                        <div class="flex items-start gap-3">
+                          <div class="text-2xl">{occasion.source && occasion.source !== 'detected' ? '🍳' : '🎉'}</div>
+                          <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <h3 class="font-black text-xl truncate">{occasion.name}</h3>
+                              <Show when={occasion.style}>
+                                <span class="badge badge-sm badge-outline">{occasion.style === 'homemade' ? 'homemade' : 'ready-made'}</span>
+                              </Show>
+                              <Show when={occasion.source === 'discovered'}>
+                                <span class="badge badge-sm badge-info gap-1"><Sparkles size={12} /> suggested</span>
+                              </Show>
+                            </div>
+                            <p class="text-xs opacity-70">
+                              <Show
+                                when={occasion.source && occasion.source !== 'detected'}
+                                fallback={<>feeds ~{occasion.basisServings} · seen {occasion.occurrences}×</>}
+                              >
+                                amounts per person
+                              </Show>
+                              <Show when={occasion.lastSeen}>
+                                {' '}· last {new Date(occasion.lastSeen!).toLocaleDateString()}
+                              </Show>
+                            </p>
+                          </div>
+                        </div>
+
+                        <Show when={(occasion.evidence ?? []).length > 0}>
+                          <p class="text-xs opacity-75 mt-2">
+                            Because you buy: {occasion.evidence!.map((entry) => `${entry.label} (${entry.purchaseCount}×)`).join(', ')}
+                          </p>
+                        </Show>
+
+                        <div class="mt-3 space-y-1">
+                          <For each={occasion.items}>
+                            {(item) => (
+                              <div class="flex items-center gap-2 text-sm">
+                                <span class={`badge badge-xs ${item.core ? 'badge-primary' : 'badge-ghost'}`}>
+                                  {item.core ? 'core' : 'optional'}
+                                </span>
+                                <span class="flex-1 truncate">{item.name}</span>
+                                <span class="font-mono text-xs opacity-70">
+                                  {item.qtyPerServing < 10 ? item.qtyPerServing.toFixed(2) : Math.round(item.qtyPerServing)} / person
+                                </span>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+
+                        <Show when={(occasion.missing ?? []).length > 0}>
+                          <p class="text-xs text-warning mt-2">Not in your history (add yourself): {occasion.missing!.join(', ')}</p>
+                        </Show>
+
+                        <Show when={occasion.aliases.length > 0}>
+                          <p class="text-xs opacity-60 mt-2">Also called: {occasion.aliases.join(', ')}</p>
+                        </Show>
+
+                        <Show when={occasion.sourceOrders.length > 0}>
+                          <div class="flex flex-wrap gap-1 mt-3">
+                            <For each={occasion.sourceOrders.slice(0, 5)}>
+                              {(source) => (
+                                <A href={`/order/${source.orderId}`} class="badge badge-ghost badge-sm">
+                                  #{source.orderId}
+                                </A>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+
+                        <div class="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-base-200">
+                          <label class="text-xs font-bold uppercase opacity-60">For</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            class="input input-bordered input-sm w-20"
+                            value={servings()[occasion._id] ?? defaultServings(occasion)}
+                            onInput={(event) =>
+                              setServings((previous) => ({
+                                ...previous,
+                                [occasion._id]: Number(event.currentTarget.value),
+                              }))
+                            }
+                          />
+                          <button class="btn btn-primary btn-sm gap-2 flex-1" onClick={() => fillOccasion(occasion)} disabled={busy()}>
+                            <Play size={16} /> Fill for {servings()[occasion._id] ?? defaultServings(occasion)}
+                          </button>
+                          <Show when={isDraft(occasion)}>
+                            <button class="btn btn-success btn-sm gap-1" onClick={() => confirmOccasion(occasion)} disabled={busy()}>
+                              <Check size={16} /> Save
+                            </button>
+                          </Show>
+                          <Show when={occasion.source && occasion.source !== 'detected'}>
+                            <button
+                              class="btn btn-ghost btn-sm btn-square"
+                              title={`Delete ${occasion.name}`}
+                              aria-label={`Delete ${occasion.name}`}
+                              onClick={() => deleteOccasion(occasion)}
+                              disabled={busy()}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </Show>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+          )}
+        </For>
       </Show>
 
       <Show when={!loading() && tab() === 'groups'}>
