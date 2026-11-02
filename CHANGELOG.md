@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.11.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.10.1...v1.11.0) (2026-11-02)
+
+
+### Features
+
+* **bot:** understand multi-step requests and learn recipes from your products ([0d05bcd](https://github.com/dachrisch/groceries-order-tracking/commit/0d05bcd7dd62322bb19c675b2e288ad7657af9c8))
+* **bot:** understand multi-step requests and learn recipes from your products ([cf4e717](https://github.com/dachrisch/groceries-order-tracking/commit/cf4e7173736cd021a2bde7a5fb29e75690da83c7))
+
+
+### Bug Fixes
+
+* **deps:** update dependency express-rate-limit to v8.7.3 ([#618](https://github.com/dachrisch/groceries-order-tracking/issues/618)) ([b0f1f8e](https://github.com/dachrisch/groceries-order-tracking/commit/b0f1f8ef8c2208579ff26e3fda28dc8a4b0d0e69))
+* **deps:** update dependency undici to v8 ([0f3c51f](https://github.com/dachrisch/groceries-order-tracking/commit/0f3c51f7d50c3709b32590b54cac3dc1d07077d0))
+* **deps:** update dependency undici to v8 ([c96f74d](https://github.com/dachrisch/groceries-order-tracking/commit/c96f74d295239b6835a4e8ce2e21e88dab3f07ac))
+
 ## [1.10.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.10.0...v1.10.1) (2026-11-02)
 
 
