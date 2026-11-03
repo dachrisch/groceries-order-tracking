@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.11.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.11.1...v1.11.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency oxlint to v1.91.0 ([#623](https://github.com/dachrisch/groceries-order-tracking/issues/623)) ([5667d33](https://github.com/dachrisch/groceries-order-tracking/commit/5667d33940077b0ed81aafce928eac9e19593b52))
+
 ## [1.11.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.11.0...v1.11.1) (2026-11-03)
 
 
