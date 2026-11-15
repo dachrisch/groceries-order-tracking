@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.12.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.11.19...v1.12.0) (2026-11-15)
+
+
+### Features
+
+* **edeka:** in-store EASY Shopper purchases, list matching and share links ([cdf2e30](https://github.com/dachrisch/groceries-order-tracking/commit/cdf2e30759ff4fc5274fd0f5130943d559a3b841))
+* **edeka:** in-store EASY Shopper purchases, list matching and share links ([43c75de](https://github.com/dachrisch/groceries-order-tracking/commit/43c75deb23cdf05db048bed0c416c5b98fd62881))
+
+
+### Bug Fixes
+
+* **edeka:** make receipt timestamps timezone-independent ([23b030f](https://github.com/dachrisch/groceries-order-tracking/commit/23b030f0f2ee581ba07af4901f4a99bfbbc999b4))
+* **edeka:** single-pass XML entity decoding in the UI dump parser ([76495a3](https://github.com/dachrisch/groceries-order-tracking/commit/76495a3b2c40af07a6f446a269e6a4bf54fdd0af))
+
 ## [1.11.19](https://github.com/dachrisch/groceries-order-tracking/compare/v1.11.18...v1.11.19) (2026-11-14)
 
 
