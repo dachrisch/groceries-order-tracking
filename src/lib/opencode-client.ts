@@ -98,6 +98,12 @@ const QUOTA_ERROR = /\b429\b|FreeUsageLimitError|rate limit|quota/i;
 // A hung generation on the same payload rarely recovers, so a timeout fails over to
 // the next model instead of spending two more attempts on the one that hung.
 const TIMEOUT_ERROR = /timed out/i;
+/**
+ * A reply that parsed but is not an answer: the model read this exact prompt and gave
+ * nothing usable, and the same prompt on the same image cannot produce a different
+ * answer. Kept distinct from a transport failure, which may well be transient.
+ */
+const NOT_AN_ANSWER = 'opencode reply was not an answer';
 
 let lastGoodModels: RegistryModel[] | null = null;
 let lastGoodAtMs = 0;
@@ -502,7 +508,7 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
         // attempt and must not be reported as the model that answered.
         const parsed = JSON.parse(extractFirstJsonObject(replyText)) as T;
         if (options.accept && !options.accept(parsed)) {
-          throw new Error('opencode reply was not an answer');
+          throw new Error(NOT_AN_ANSWER);
         }
         if (model.paid) console.warn(`[opencode] paid fallback used: ${modelKey(model)}`);
         options.onModelUsed?.(model);
@@ -519,7 +525,10 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
           exhaustedUntil.set(modelKey(model), Date.now() + EXHAUSTED_COOLDOWN_MS);
           break;
         }
-        if (TIMEOUT_ERROR.test(message)) {
+        // A timeout or a reply this caller will not accept is about this model on this
+        // payload; retrying it cannot change the answer. Transport errors keep their
+        // retries, because a 500 or a truncated reply can be transient.
+        if (TIMEOUT_ERROR.test(message) || message === NOT_AN_ANSWER) {
           break;
         }
         if (attempt < attempts) {

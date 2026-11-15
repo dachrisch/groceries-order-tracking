@@ -613,7 +613,7 @@ describe('image prompts', () => {
   ];
 
   it('fails over to the next model when a reply is not an answer', async () => {
-    twoModels('{"lines":[]}');
+    const created = twoModels('{"lines":[]}');
 
     const used: string[] = [];
     const result = await runPrompt<{ lines: unknown[] }>('x', {
@@ -625,6 +625,9 @@ describe('image prompts', () => {
     expect(result).toEqual({ lines: [{ text: 'Milch' }] });
     // The model that answered with nothing must never be reported as the answer.
     expect(used).toEqual(['free-b']);
+    // A semantic rejection is not retried: one attempt for the model that had no
+    // answer, then the next model — free models still get three tries for transport errors.
+    expect(created).toEqual(['free-a', 'free-b']);
   });
 
   it('moves to the next model on a timeout instead of retrying the same one', async () => {
