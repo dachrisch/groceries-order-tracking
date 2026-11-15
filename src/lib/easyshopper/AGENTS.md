@@ -14,7 +14,8 @@ shape comes from the shipped app's own bytecode.
 | `client.ts` | REST client: `signup` → `login` (Basic `secret:deviceId`) → bearer; legal acceptance; `/v6/searchMeta` body builder; v7 list reads, `createLink`, and `addOrUpdate` upserts. |
 | `match.ts` | Deterministic line → product matching (token coverage + size compatibility). No LLM, no I/O. |
 | `list.ts` | `planShoppingList` (search per line, match, keep unmatched as free text) and `rerankWithHistory` (prefer what the user actually bought). |
-| `ocr.ts` | tesseract over a photo of a handwritten list. Local, no network. |
+| `ocr.ts` | tesseract over a photo of a handwritten list. Local, no network. Being replaced by `extract.ts`. |
+| `extract.ts` | `extractListLines`: one opencode vision call for a photographed list, free models first and the curated paid tier only as a fallback. The reply is validated into `ListLine`s; it never picks products. |
 | `insights.ts` | Deterministic spend/units/product aggregates: store-name merging, deposit returns kept separate, POS summary lines excluded. |
 | `capture-parse.ts` | Pure parsers for the purchase screens (money, rows, reconciliation) with unit tests. |
 
@@ -30,10 +31,11 @@ shape comes from the shipped app's own bytecode.
    free-text row. Never fabricate a product id or borrow one from another store.
 4. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
    store is meaningless.
-5. **The OCR exception is explicit.** `AGENTS.md` says opencode gets text only; a photo
-   of handwriting cannot be text. `ocr.ts` runs locally and returns lines; the LLM, if
-   ever wired in, may only clean those lines — never see the catalogue, never pick
-   products. `match.ts` stays deterministic.
+5. **The photo exception is explicit.** `AGENTS.md` says opencode gets text only; a photo
+   of handwriting cannot be text. A photographed list goes to a vision model
+   (`extract.ts`, free first, paid only as a fallback) that may only return list lines —
+   never the catalogue, never a product choice. The older local tesseract path (`ocr.ts`)
+   did the same job offline; `match.ts` stays deterministic either way.
 
 ## Verified against production (2026-11-14)
 
