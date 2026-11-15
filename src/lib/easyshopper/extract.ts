@@ -15,8 +15,9 @@ const MAX_LINES = 60;
 const MAX_LINE_LENGTH = 80;
 /** One ceiling for any quantity, from either path: a misread number must not become an amount. */
 const MAX_TEXT_QUANTITY = 99;
-/** What the shopper sees when no model could read the photo; Task 3 puts this in `job.error`. */
-const NO_READABLE_LIST = 'the photo contained no readable shopping list';
+/** What the shopper sees when no model could read the photo; the job stores exactly
+ * this string, so the two modules must share one constant rather than two literals. */
+export const NO_READABLE_LIST = 'the photo contained no readable shopping list';
 
 /**
  * Per attempt, not per call: `runPrompt` gives each free model three attempts and each

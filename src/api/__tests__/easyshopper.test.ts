@@ -3,10 +3,16 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 
+// Hoisted so the mock factory can hand out the same spies the tests configure.
+const opencodeStub = vi.hoisted(() => ({
+  runPrompt: vi.fn(),
+  isOpencodeConfigured: vi.fn(() => true),
+}));
+
 vi.mock('../../lib/opencode-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/opencode-client')>()),
-  runPrompt: vi.fn(),
-  isOpencodeConfigured: () => true,
+  runPrompt: opencodeStub.runPrompt,
+  isOpencodeConfigured: opencodeStub.isOpencodeConfigured,
 }));
 
 import request from 'supertest';
@@ -14,7 +20,8 @@ import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf } from './helpers';
 import PurchaseSession from '../../models/PurchaseSession';
 import { findListForStore } from '../controllers/easyshopper.controller';
-import { runPrompt } from '../../lib/opencode-client';
+import { isOpencodeConfigured, NOT_AN_ANSWER, runPrompt } from '../../lib/opencode-client';
+import { __resetExtractJobsForTests } from '../../lib/easyshopper/extract-jobs';
 
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
@@ -212,17 +219,36 @@ describe('EASY Shopper photo intake', () => {
     await registerUser();
     cookies = await loginUser();
     vi.mocked(runPrompt).mockReset();
+    vi.mocked(isOpencodeConfigured).mockReturnValue(true);
+    // The registry is process-wide and these tests share it.
+    __resetExtractJobsForTests();
   });
+
+  /** A photo big enough to clear the schema's 64-char floor. */
+  const photo = `data:image/jpeg;base64,${'A'.repeat(200)}`;
+
+  function startExtract(body: unknown = { imageBase64: photo }, csrfCookies: string[] = [], token = '') {
+    return request(app)
+      .post('/api/easyshopper/list/extract')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(body as object);
+  }
 
   /** Poll a photo job the way the UI does, so a hung job fails the test instead of hanging. */
   async function pollJob(jobId: string, settleOn: 'done' | 'error') {
-    let body: { status: string; lines: unknown[]; model?: string | null; paid?: boolean; error?: string | null } = {
-      status: 'pending',
-      lines: [],
-    };
+    let body: {
+      status: string;
+      lines: unknown[] | null;
+      model?: string | null;
+      paid?: boolean | null;
+      error?: string | null;
+    } = { status: 'pending', lines: null };
     for (let i = 0; i < 50 && body.status !== settleOn; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 20));
       const poll = await request(app).get(`/api/easyshopper/list/extract/${jobId}`).set('Cookie', cookies);
+      // A broken poll loop must not look like a slow model.
+      expect(poll.status).toBe(200);
       body = poll.body;
     }
     return body;
@@ -235,11 +261,7 @@ describe('EASY Shopper photo intake', () => {
       return { lines: [{ text: '2x Milch 1,5', quantity: 2 }, { text: 'Brot', quantity: 1 }] };
     });
 
-    const started = await request(app)
-      .post('/api/easyshopper/list/extract')
-      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
-      .set('x-csrf-token', token)
-      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+    const started = await startExtract({ imageBase64: photo }, csrfCookies, token);
 
     expect(started.status).toBe(202);
     expect(started.body.jobId).toBeTruthy();
@@ -263,12 +285,9 @@ describe('EASY Shopper photo intake', () => {
       return { lines: [{ text: 'Butter', quantity: 1 }] };
     });
 
-    const started = await request(app)
-      .post('/api/easyshopper/list/extract')
-      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
-      .set('x-csrf-token', token)
-      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+    const started = await startExtract({ imageBase64: photo }, csrfCookies, token);
 
+    expect(started.status).toBe(202);
     const body = await pollJob(started.body.jobId, 'done');
 
     expect(body.status).toBe('done');
@@ -276,30 +295,71 @@ describe('EASY Shopper photo intake', () => {
     expect(body.paid).toBe(false);
   });
 
-  it('reports why a photo could not be read', async () => {
+  it('says why an unreadable photo could not be read', async () => {
     const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
-    vi.mocked(runPrompt).mockRejectedValueOnce(new Error('no vision-capable opencode model is available'));
+    vi.mocked(runPrompt).mockRejectedValueOnce(new Error(NOT_AN_ANSWER));
 
-    const started = await request(app)
-      .post('/api/easyshopper/list/extract')
-      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
-      .set('x-csrf-token', token)
-      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+    const started = await startExtract({ imageBase64: photo }, csrfCookies, token);
 
+    expect(started.status).toBe(202);
     const body = await pollJob(started.body.jobId, 'error');
 
     expect(body.status).toBe('error');
-    expect(body.error).toMatch(/vision-capable/);
+    expect(body.error).toBe('the photo contained no readable shopping list');
+  });
+
+  it('does not forward a raw provider error to the shopper', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockRejectedValueOnce(new Error('opencode generation failed: 402 payment required'));
+
+    const started = await startExtract({ imageBase64: photo }, csrfCookies, token);
+
+    expect(started.status).toBe(202);
+    const body = await pollJob(started.body.jobId, 'error');
+
+    expect(body.status).toBe('error');
+    expect(body.error).toBe('the photo could not be read — try again or type the list');
+    expect(body.error).not.toMatch(/402|opencode/);
+  });
+
+  it('closes the door when a read is already running', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockImplementationOnce(() => new Promise(() => {}));
+
+    const first = await startExtract({ imageBase64: photo }, csrfCookies, token);
+    expect(first.status).toBe(202);
+
+    const second = await startExtract({ imageBase64: photo }, csrfCookies, token);
+    expect(second.status).toBe(429);
+    expect(second.body.error).toMatch(/already being read/);
+  });
+
+  it('refuses a photo when opencode is not configured', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(isOpencodeConfigured).mockReturnValueOnce(false);
+
+    const res = await startExtract({ imageBase64: photo }, csrfCookies, token);
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/opencode/);
+  });
+
+  it('rejects an oversized photo with a readable message, before the body limit', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+
+    // 2 MB of base64 still fits express.json({limit:'2mb'}); the schema ceiling is lower,
+    // so the shopper gets a field message rather than a bare 413 from the parser.
+    const res = await startExtract({ imageBase64: 'A'.repeat(2_000_001) }, csrfCookies, token);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/imageBase64/);
   });
 
   it("does not return another user's extraction", async () => {
     const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
     vi.mocked(runPrompt).mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
-    const started = await request(app)
-      .post('/api/easyshopper/list/extract')
-      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
-      .set('x-csrf-token', token)
-      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+    const started = await startExtract({ imageBase64: photo }, csrfCookies, token);
+    expect(started.status).toBe(202);
 
     const other = { name: 'Bob', email: 'bob@example.com', password: 'secret123' };
     await registerUser(other);
@@ -307,7 +367,12 @@ describe('EASY Shopper photo intake', () => {
     const poll = await request(app)
       .get(`/api/easyshopper/list/extract/${started.body.jobId}`)
       .set('Cookie', otherCookies);
-
     expect(poll.status).toBe(404);
+
+    // Positive control: the id exists, the 404 is about whose job it is.
+    const owner = await request(app)
+      .get(`/api/easyshopper/list/extract/${started.body.jobId}`)
+      .set('Cookie', cookies);
+    expect(owner.status).toBe(200);
   });
 });

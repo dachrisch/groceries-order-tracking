@@ -4,23 +4,46 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../easyshopper/extract', () => ({ extractListLines: vi.fn() }));
+vi.mock('../easyshopper/extract', async (importOriginal) => ({
+  // Partial: `NO_READABLE_LIST` must be the real string the registry compares against.
+  ...(await importOriginal<typeof import('../easyshopper/extract')>()),
+  extractListLines: vi.fn(),
+}));
 
-import { extractListLines } from '../easyshopper/extract';
-import { getExtractJob, startExtractJob } from '../easyshopper/extract-jobs';
+import { extractListLines, NO_READABLE_LIST } from '../easyshopper/extract';
+import {
+  __resetExtractJobsForTests,
+  getExtractJob,
+  startExtractJob,
+  type ExtractJob,
+} from '../easyshopper/extract-jobs';
 
 const mockExtract = vi.mocked(extractListLines);
 
-beforeEach(() => mockExtract.mockReset());
+beforeEach(() => {
+  mockExtract.mockReset();
+  __resetExtractJobsForTests();
+  // The registry logs the detail it refuses to show the shopper; keep test output clean.
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+});
 
 /** The job body runs detached; wait for the status to settle instead of guessing a delay. */
-async function settle(id: string, userId = 'alice') {
+async function settle(id: string, userId = 'alice'): Promise<ExtractJob> {
   await vi.waitFor(() => {
     expect(['done', 'error']).toContain(getExtractJob(userId, id)?.status);
   });
   const job = getExtractJob(userId, id);
   if (!job) throw new Error('job vanished');
   return job;
+}
+
+/** A promise this test controls, so a job can be inspected while it is genuinely running. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 describe('startExtractJob', () => {
@@ -35,60 +58,162 @@ describe('startExtractJob', () => {
     });
 
     const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
-    // The worker body starts synchronously, so it may already be past 'pending'.
-    expect(['pending', 'running']).toContain(started.status);
-    expect(started.id).toBeTruthy();
-    expect(started.userId).toBe('alice');
+    expect(started).not.toBeNull();
+    const job = started as ExtractJob;
 
-    const job = await settle(started.id);
+    const settled = await settle(job.id);
 
-    expect(job.status).toBe('done');
-    expect(job.lines).toEqual([
+    expect(settled.status).toBe('done');
+    expect(settled.lines).toEqual([
       { text: 'Milch 1,5', quantity: 2 },
       { text: 'Brot', quantity: 1 },
     ]);
-    expect(job.model).toBe('opencode-go:gpt-6-luna');
-    expect(job.paid).toBe(true);
-    expect(job.error).toBeUndefined();
-    expect(job.finishedAt).toEqual(expect.any(Number));
+    expect(settled.model).toBe('opencode-go:gpt-6-luna');
+    expect(settled.paid).toBe(true);
+    expect(settled.error).toBeUndefined();
+    expect(settled.finishedAt).toEqual(expect.any(Number));
     // The photo itself is passed straight through and never kept.
-    expect(job).not.toHaveProperty('imageBase64');
+    expect(settled).not.toHaveProperty('imageBase64');
     expect(mockExtract).toHaveBeenCalledWith('data:image/jpeg;base64,AAAA');
   });
 
-  it('keeps the failure message and no lines when the photo cannot be read', async () => {
-    mockExtract.mockRejectedValueOnce(new Error('the photo contained no readable shopping list'));
+  it('keeps the shopper-facing message for an unreadable photo', async () => {
+    mockExtract.mockRejectedValueOnce(new Error(NO_READABLE_LIST));
 
-    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
-    const job = await settle(started.id);
+    const job = (await settle(startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!.id)) as ExtractJob;
 
     expect(job.status).toBe('error');
-    expect(job.error).toBe('the photo contained no readable shopping list');
+    expect(job.error).toBe(NO_READABLE_LIST);
     expect(job.lines).toBeUndefined();
     expect(job.model).toBeUndefined();
+  });
+
+  it('does not forward a raw provider error to the shopper', async () => {
+    const consoleError = vi.spyOn(console, 'error');
+    mockExtract.mockRejectedValueOnce(
+      new Error('opencode generation failed: 402 payment required for opencode-go:gpt-6-luna')
+    );
+
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    const job = await settle(started!.id);
+
+    expect(job.error).toBe('the photo could not be read — try again or type the list');
+    expect(job.error).not.toMatch(/402|opencode-go/);
+    // The detail is not lost, only kept server-side.
+    expect(consoleError).toHaveBeenCalledWith(
+      '[easyshopper] photo read failed:',
+      'opencode generation failed: 402 payment required for opencode-go:gpt-6-luna'
+    );
+  });
+
+  it('turns a non-Error throw into the generic message, not "[object Object]"', async () => {
+    mockExtract.mockRejectedValueOnce({ status: 500, body: 'internal' });
+
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    const job = await settle(started!.id);
+
+    expect(job.status).toBe('error');
+    expect(job.error).toBe('the photo could not be read — try again or type the list');
+  });
+
+  it('gives up at the deadline instead of waiting for a chain that may run for half an hour', async () => {
+    // The real chain can spend ~36 min on model × attempt × timeout; the UI waits ~3.
+    mockExtract.mockReturnValueOnce(new Promise(() => {}));
+
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA', { deadlineMs: 20 });
+    expect(started).not.toBeNull();
+
+    const job = await settle(started!.id);
+
+    expect(job.status).toBe('error');
+    expect(job.error).toBe('reading the photo took too long — type the list instead');
+    expect(job.lines).toBeUndefined();
+    // Settled, so the shopper may try again.
+    expect(job.finishedAt).toEqual(expect.any(Number));
+  });
+
+  it('allows only one running read per user', async () => {
+    const pending = deferred<{ lines: { text: string; quantity: number }[] }>();
+    mockExtract.mockReturnValueOnce(pending.promise);
+
+    const first = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    expect(first).not.toBeNull();
+    // A second chain would be a second paid call, and the poller could not see it.
+    expect(startExtractJob('alice', 'data:image/jpeg;base64,AAAA')).toBeNull();
+
+    // A different user is not blocked by alice's read.
+    mockExtract.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+    const bob = startExtractJob('bob', 'data:image/jpeg;base64,AAAA');
+    expect(bob).not.toBeNull();
+
+    pending.resolve({ lines: [{ text: 'Brot', quantity: 1 }] });
+    expect((await settle(first!.id)).status).toBe('done');
+    await settle(bob!.id, 'bob');
+
+    // Settled: alice may read another photo.
+    mockExtract.mockResolvedValueOnce({ lines: [{ text: 'Milch', quantity: 1 }] });
+    expect(startExtractJob('alice', 'data:image/jpeg;base64,AAAA')).not.toBeNull();
   });
 
   it('is invisible to another user', () => {
     mockExtract.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
 
-    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
 
     expect(getExtractJob('alice', started.id)).not.toBeNull();
     expect(getExtractJob('bob', started.id)).toBeNull();
     expect(getExtractJob('alice', 'abc123')).toBeNull();
   });
 
-  it('evicts the oldest job once a user has more than five', () => {
+  it('evicts only a settled job once a user has more than five', async () => {
     mockExtract.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
 
-    const ids = Array.from({ length: 6 }, () => startExtractJob('alice', 'data:image/jpeg;base64,AAAA').id);
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+      expect(started).not.toBeNull();
+      ids.push(started!.id);
+      await settle(started!.id);
+    }
+    // Nothing is evicted while the registry is at the cap.
+    for (const id of ids) expect(getExtractJob('alice', id)).not.toBeNull();
+
+    const sixth = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+    await settle(sixth.id);
 
     expect(getExtractJob('alice', ids[0])).toBeNull();
     for (const id of ids.slice(1)) expect(getExtractJob('alice', id)).not.toBeNull();
+    expect(getExtractJob('alice', sixth.id)).not.toBeNull();
 
     // Another user's registry is untouched by alice's churn.
-    const bob = startExtractJob('bob', 'data:image/jpeg;base64,AAAA');
+    const bob = startExtractJob('bob', 'data:image/jpeg;base64,AAAA')!;
     for (let i = 0; i < 5; i += 1) startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
     expect(getExtractJob('bob', bob.id)).not.toBeNull();
+  });
+
+  it('never evicts a job that is still running', async () => {
+    mockExtract.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+      ids.push(started.id);
+      await settle(started.id);
+    }
+
+    const running = deferred<{ lines: { text: string; quantity: number }[] }>();
+    mockExtract.mockReturnValueOnce(running.promise);
+    // Four settled jobs are at the cap, so the fifth slot holds the live one.
+    const live = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    if (live === null) {
+      // At the cap with five settled jobs the new read is refused only when one runs;
+      // here nothing runs yet, so it must start.
+      throw new Error('a settled registry at the cap must still accept a new read');
+    }
+    // The cap is enforced by evicting a settled job, never the live one.
+    expect(getExtractJob('alice', live.id)).not.toBeNull();
+    expect(ids.filter((id) => getExtractJob('alice', id) !== null)).toHaveLength(4);
+
+    running.resolve({ lines: [{ text: 'Milch', quantity: 1 }] });
+    expect((await settle(live.id)).status).toBe('done');
   });
 });

@@ -192,7 +192,10 @@ async function ensureSession(
 }
 
 const planSchema = z.object({
-  lines: z.array(z.string().min(1)).min(1),
+  // Cap the typed path to what a photo may yield (60 lines, 80-char lines in
+  // `extract.ts`, so 200 here is generous): a thousand lines would become a thousand
+  // store searches.
+  lines: z.array(z.string().min(1).max(200)).min(1).max(60),
   storeGuid: z.string().optional(),
   attributes: z.array(z.string()).optional(),
 });
@@ -217,6 +220,10 @@ export async function handleExtractList(req: Request, res: Response) {
   }
 
   const job = startExtractJob(req.userId, parsed.data.imageBase64);
+  if (!job) {
+    // One read per user, so a second chain cannot burn a second model call.
+    return res.status(429).json({ error: 'a photo is already being read — wait for it to finish' });
+  }
   res.status(202).json({ jobId: job.id });
 }
 
@@ -224,12 +231,13 @@ export async function handleExtractList(req: Request, res: Response) {
 export async function handleExtractStatus(req: Request, res: Response) {
   const { id } = req.params;
   const job = typeof id === 'string' ? getExtractJob(req.userId, id) : null;
-  if (!job) return res.status(404).json({ error: 'unknown extraction' });
+  if (!job) return res.status(404).json({ error: 'that photo read was lost — read the photo again' });
   res.json({
     status: job.status,
-    lines: job.lines ?? [],
+    // Nothing is known before the answer: report `null`, not "no lines" and not "free".
+    lines: job.lines ?? null,
     model: job.model ?? null,
-    paid: job.paid === true,
+    paid: job.paid ?? null,
     error: job.error ?? null,
   });
 }
