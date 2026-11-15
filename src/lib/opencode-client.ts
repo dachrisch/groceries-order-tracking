@@ -422,9 +422,13 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
     // the chain already names is not bought a second time. The registry is used to
     // skip a curated name that was deprecated or went free — never to widen the
     // list, because a registry `image` capability does not prove delivery.
-    const curated = PAID_VISION_PREFERENCE.filter(
-      (m) => servable(m) && (!registry || (known(m) !== undefined && !isFree(known(m))))
-    );
+    const curated = PAID_VISION_PREFERENCE.filter((m) => {
+      if (!servable(m)) return false;
+      if (!registry) return true;
+      // Narrowed in one place: two separate `known(m)` calls do not share narrowing.
+      const entry = known(m);
+      return entry !== undefined && !isFree(entry);
+    });
     if (curated.length === 0) {
       console.warn('[opencode] paid vision fallback was requested but no curated model is servable, staying free-only');
     }

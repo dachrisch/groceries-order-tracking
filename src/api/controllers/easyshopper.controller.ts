@@ -6,7 +6,8 @@ import PurchaseSession from '../../models/PurchaseSession';
 import { decrypt, encrypt } from '../../lib/crypto';
 import { formatZodError } from '../utils';
 import { EasyShopperClient, type EasyShopperCredentials, type EasyShopperSession } from '../../lib/easyshopper/client';
-import { ocrImageBuffer, isTesseractAvailable } from '../../lib/easyshopper/ocr';
+import { isOpencodeConfigured } from '../../lib/opencode-client';
+import { getExtractJob, startExtractJob } from '../../lib/easyshopper/extract-jobs';
 import { planShoppingList, rerankWithHistory } from '../../lib/easyshopper/list';
 import { toCandidate, type MatchCandidate } from '../../lib/easyshopper/match';
 import { summarizePurchases } from '../../lib/easyshopper/insights';
@@ -191,38 +192,57 @@ async function ensureSession(
 }
 
 const planSchema = z.object({
-  lines: z.array(z.string()).optional(),
-  /** Base64 image of the handwritten list; tesseract reads it locally. */
-  imageBase64: z.string().optional(),
+  lines: z.array(z.string().min(1)).min(1),
   storeGuid: z.string().optional(),
   attributes: z.array(z.string()).optional(),
 });
 
+/** Trim the typed lines; the photo is a separate, asynchronous step. */
 function linesFromRequest(body: z.infer<typeof planSchema>): string[] {
-  const lines = [...(body.lines ?? [])];
-  if (body.imageBase64) {
-    if (!isTesseractAvailable()) {
-      throw new Error('tesseract is not installed on the server; send text lines instead');
-    }
-    const cleaned = body.imageBase64.replace(/^data:[^;]+;base64,/, '');
-    lines.push(...ocrImageBuffer(Buffer.from(cleaned, 'base64')));
-  }
-  return lines.map((line) => line.trim()).filter(Boolean);
+  return body.lines.map((line) => line.trim()).filter(Boolean);
 }
 
-/** POST /api/easyshopper/list/plan — OCR + search + match, no writes. */
+const extractSchema = z.object({
+  // The real ceiling is express.json({limit:'2mb'}) in app.ts; keep the schema below it
+  // so an oversized photo fails here with a readable message instead of a bare 413.
+  imageBase64: z.string().min(64).max(2_000_000),
+});
+
+/** POST /api/easyshopper/list/extract — opencode reads the photo; returns a job id. */
+export async function handleExtractList(req: Request, res: Response) {
+  const parsed = extractSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
+  if (!isOpencodeConfigured()) {
+    return res.status(503).json({ error: 'reading a photo needs opencode (OPENCODE_BASE_URL / OPENCODE_API_KEY)' });
+  }
+
+  const job = startExtractJob(req.userId, parsed.data.imageBase64);
+  res.status(202).json({ jobId: job.id });
+}
+
+/** GET /api/easyshopper/list/extract/:id — poll one photo read. */
+export async function handleExtractStatus(req: Request, res: Response) {
+  const { id } = req.params;
+  const job = typeof id === 'string' ? getExtractJob(req.userId, id) : null;
+  if (!job) return res.status(404).json({ error: 'unknown extraction' });
+  res.json({
+    status: job.status,
+    lines: job.lines ?? [],
+    model: job.model ?? null,
+    paid: job.paid === true,
+    error: job.error ?? null,
+  });
+}
+
+/** POST /api/easyshopper/list/plan — search + (opencode) match, no writes. */
 export async function handlePlanList(req: Request, res: Response) {
   const key = req.derivedKey;
   if (!key) return res.status(401).json({ error: 'Session key missing — please log in again' });
   const parsed = planSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
 
-  let lines: string[];
-  try {
-    lines = linesFromRequest(parsed.data);
-  } catch (err: unknown) {
-    return res.status(400).json({ error: err instanceof Error ? err.message : 'could not read the list' });
-  }
+  const lines = linesFromRequest(parsed.data);
+  // Typed lines are thin: a body of nothing but blanks must still be refused.
   if (lines.length === 0) return res.status(400).json({ error: 'no lines to plan' });
 
   try {
@@ -271,12 +291,8 @@ export async function handleCreateList(req: Request, res: Response) {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
 
-  let lines: string[];
-  try {
-    lines = linesFromRequest(parsed.data);
-  } catch (err: unknown) {
-    return res.status(400).json({ error: err instanceof Error ? err.message : 'could not read the list' });
-  }
+  const lines = linesFromRequest(parsed.data);
+  // Typed lines are thin: a body of nothing but blanks must still be refused.
   if (lines.length === 0) return res.status(400).json({ error: 'no lines to plan' });
 
   try {

@@ -1,12 +1,20 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+
+vi.mock('../../lib/opencode-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/opencode-client')>()),
+  runPrompt: vi.fn(),
+  isOpencodeConfigured: () => true,
+}));
+
 import request from 'supertest';
 import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf } from './helpers';
 import PurchaseSession from '../../models/PurchaseSession';
 import { findListForStore } from '../controllers/easyshopper.controller';
+import { runPrompt } from '../../lib/opencode-client';
 
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
@@ -193,5 +201,113 @@ describe.runIf(existsSync(REAL_CAPTURE))('EASY Shopper import of a real capture'
     // Deposits are money back, never products.
     expect(insights.body.topProducts.map((product: { name: string }) => product.name)).not.toContain('Leergut');
     expect(insights.body.totals.creditReturned).toBeLessThan(0);
+  });
+});
+
+describe('EASY Shopper photo intake', () => {
+  let cookies: string;
+
+  beforeEach(async () => {
+    await clearDB();
+    await registerUser();
+    cookies = await loginUser();
+    vi.mocked(runPrompt).mockReset();
+  });
+
+  /** Poll a photo job the way the UI does, so a hung job fails the test instead of hanging. */
+  async function pollJob(jobId: string, settleOn: 'done' | 'error') {
+    let body: { status: string; lines: unknown[]; model?: string | null; paid?: boolean; error?: string | null } = {
+      status: 'pending',
+      lines: [],
+    };
+    for (let i = 0; i < 50 && body.status !== settleOn; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const poll = await request(app).get(`/api/easyshopper/list/extract/${jobId}`).set('Cookie', cookies);
+      body = poll.body;
+    }
+    return body;
+  }
+
+  it('extracts list lines through opencode and exposes them on the job', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockImplementationOnce(async (_prompt, options) => {
+      options?.onModelUsed?.({ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true });
+      return { lines: [{ text: '2x Milch 1,5', quantity: 2 }, { text: 'Brot', quantity: 1 }] };
+    });
+
+    const started = await request(app)
+      .post('/api/easyshopper/list/extract')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+
+    expect(started.status).toBe(202);
+    expect(started.body.jobId).toBeTruthy();
+
+    const body = await pollJob(started.body.jobId, 'done');
+
+    expect(body.status).toBe('done');
+    expect(body.lines).toEqual([
+      { text: 'Milch 1,5', quantity: 2 },
+      { text: 'Brot', quantity: 1 },
+    ]);
+    // Visible, so a paid fallback cannot go unnoticed.
+    expect(body.model).toBe('opencode-go:gpt-6-luna');
+    expect(body.paid).toBe(true);
+  });
+
+  it('marks a free answer as unpaid', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockImplementationOnce(async (_prompt, options) => {
+      options?.onModelUsed?.({ id: 'qwen-vl-ocr', providerID: 'opencode', paid: false });
+      return { lines: [{ text: 'Butter', quantity: 1 }] };
+    });
+
+    const started = await request(app)
+      .post('/api/easyshopper/list/extract')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+
+    const body = await pollJob(started.body.jobId, 'done');
+
+    expect(body.status).toBe('done');
+    expect(body.model).toBe('opencode:qwen-vl-ocr');
+    expect(body.paid).toBe(false);
+  });
+
+  it('reports why a photo could not be read', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockRejectedValueOnce(new Error('no vision-capable opencode model is available'));
+
+    const started = await request(app)
+      .post('/api/easyshopper/list/extract')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+
+    const body = await pollJob(started.body.jobId, 'error');
+
+    expect(body.status).toBe('error');
+    expect(body.error).toMatch(/vision-capable/);
+  });
+
+  it("does not return another user's extraction", async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    vi.mocked(runPrompt).mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+    const started = await request(app)
+      .post('/api/easyshopper/list/extract')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}` });
+
+    const other = { name: 'Bob', email: 'bob@example.com', password: 'secret123' };
+    await registerUser(other);
+    const otherCookies = await loginUser({ email: other.email, password: other.password });
+    const poll = await request(app)
+      .get(`/api/easyshopper/list/extract/${started.body.jobId}`)
+      .set('Cookie', otherCookies);
+
+    expect(poll.status).toBe(404);
   });
 });

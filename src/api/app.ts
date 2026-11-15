@@ -20,6 +20,8 @@ import {
   handleSyncStatus,
   handleShareList,
   handleGetInsights,
+  handleExtractList,
+  handleExtractStatus,
 } from './controllers/easyshopper.controller';
 import {
   handleBotMessage,
@@ -150,6 +152,9 @@ app.get('/api/easyshopper/purchases', auth, handleGetPurchases);
 app.get('/api/easyshopper/insights', auth, handleGetInsights);
 app.post('/api/easyshopper/list/plan', auth, handlePlanList);
 app.post('/api/easyshopper/list/create', auth, handleCreateList);
+// A vision call takes 10–40 s, so the photo is a job: 202 + a poll id, never a held request.
+app.post('/api/easyshopper/list/extract', auth, handleExtractList);
+app.get('/api/easyshopper/list/extract/:id', auth, handleExtractStatus);
 app.post('/api/easyshopper/list/share', auth, handleShareList);
 app.post('/api/easyshopper/sync/request', auth, handleRequestSync);
 app.get('/api/easyshopper/sync/status', auth, handleSyncStatus);
