@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
 import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert } from 'lucide-solid';
 import QRCode from 'qrcode';
 
@@ -55,9 +55,8 @@ interface Insights {
   topProducts: Array<{ brand: string | null; name: string; units: number; spend: number; trips: number; lastBoughtAt: string }>;
 }
 
-/** Downscale a photo before upload: a 2 MB JSON body will not take a 12 MP original. */
-async function toBase64Jpeg(file: File, maxEdge = 1600, quality = 0.8): Promise<string> {
-  const bitmap = await createImageBitmap(file);
+/** Draw an already-decoded photo onto a canvas and return a JPEG data URL. */
+function toBase64Jpeg(bitmap: ImageBitmap, maxEdge = 1600, quality = 0.8): string {
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale);
@@ -79,10 +78,15 @@ const IMAGE_ATTEMPTS = [
 
 /** Encode until the data URL fits the backend's schema, then fail in words it can show. */
 async function prepareImage(file: File): Promise<string> {
-  let dataUrl = '';
-  for (const attempt of IMAGE_ATTEMPTS) {
-    dataUrl = await toBase64Jpeg(file, attempt.edge, attempt.quality);
-    if (dataUrl.length <= MAX_IMAGE_CHARS) return dataUrl;
+  // Decode once and reuse the bitmap: a 12 MP decode is expensive, and it is ours to release.
+  const bitmap = await createImageBitmap(file);
+  try {
+    for (const attempt of IMAGE_ATTEMPTS) {
+      const dataUrl = toBase64Jpeg(bitmap, attempt.edge, attempt.quality);
+      if (dataUrl.length <= MAX_IMAGE_CHARS) return dataUrl;
+    }
+  } finally {
+    bitmap.close();
   }
   throw new Error('that photo is too large to read — take a closer shot or type the list');
 }
@@ -96,6 +100,8 @@ const POST_TIMEOUT_MS = 45_000;
 const EXTRACT_POST_TIMEOUT_MS = 20_000;
 /** Well under the server's 120 s deadline, so the shopper learns first. */
 const EXTRACT_POLL_BUDGET_MS = 110_000;
+/** One hung poll must not eat the whole budget; the loop's deadline stays the ceiling. */
+const EXTRACT_POLL_TIMEOUT_MS = 10_000;
 /** 1 s, growing ×1.5 up to 5 s: ~27 polls, not the 90 a fixed 2 s would spend against
  * the 100 requests / 15 min limiter. */
 const EXTRACT_POLL_START_MS = 1000;
@@ -136,7 +142,11 @@ async function postJson<T>(
 
 /** The shopper's half of every refusal: the backend's own text when it has one. */
 function replyMessage(status: number, data: ApiReply, fallback: string): string {
-  if (status === 429) return 'a photo is already being read — wait a moment';
+  // Two different 429s exist: the per-user "a photo is already being read" refusal carries
+  // an `error`, while the app-wide limiter answers 429 in plain text with no body. Only the
+  // former is about a running read; blaming it for a rate limit would send the shopper
+  // hunting for a job that does not exist.
+  if (status === 429) return data.error ?? 'too many requests — wait a minute and try again';
   return data.error ?? fallback;
 }
 
@@ -155,6 +165,13 @@ export function InStore() {
   const [syncStatus, setSyncStatus] = createSignal<SyncStatus | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<string | null>(null);
 
+  /**
+   * Which photo and which read the UI currently cares about. Every pick and every read
+   * bumps it; a settled or finishing step that no longer owns the number stops instead of
+   * writing over newer state — a stale read must never clear the photo picked after it.
+   */
+  let photoGeneration = 0;
+
   /** Add the read lines to whatever the shopper already typed, without duplicating any. */
   const appendLines = (extracted: Array<{ text: string; quantity: number }>) => {
     const existing = lines()
@@ -162,9 +179,18 @@ export function InStore() {
       .map((line) => line.trim())
       .filter(Boolean);
     const formatted = extracted.map((line) => (line.quantity > 1 ? `${line.quantity}x ${line.text}` : line.text));
-    const merged = [...existing, ...formatted.filter((line) => !existing.includes(line))];
+    // Both sides: a photo that lists an item twice must not append it twice either.
+    const merged = [...existing];
+    for (const line of formatted) {
+      if (!merged.includes(line)) merged.push(line);
+    }
     setLines(merged.join('\n'));
   };
+
+  onCleanup(() => {
+    // Navigating away ends a running poll loop instead of letting it spend its budget.
+    photoGeneration += 1;
+  });
 
   const loadPurchases = async () => {
     try {
@@ -243,6 +269,7 @@ export function InStore() {
   const readPhoto = async () => {
     const image = imageBase64();
     if (!image) return;
+    const generation = ++photoGeneration;
     setBusy('extract');
     setError(null);
     try {
@@ -250,6 +277,8 @@ export function InStore() {
         timeoutMs: EXTRACT_POST_TIMEOUT_MS,
         timeoutMessage: 'the photo upload took too long — try again',
       });
+      // A newer pick or read owns the UI now; this one must not touch it.
+      if (generation !== photoGeneration) return;
       if (!started.ok) {
         // 400 only happens for a photo we already shrank or an unreadable payload, so the
         // zod detail would be noise; 429 and 503 say something the shopper can act on.
@@ -265,9 +294,16 @@ export function InStore() {
       let wait = EXTRACT_POLL_START_MS;
       while (Date.now() - began < EXTRACT_POLL_BUDGET_MS) {
         await sleep(wait);
+        if (generation !== photoGeneration) return;
         wait = Math.min(EXTRACT_POLL_MAX_MS, Math.round(wait * EXTRACT_POLL_GROWTH));
 
-        const poll = await fetch(`/api/easyshopper/list/extract/${jobId}`);
+        const poll = await fetch(`/api/easyshopper/list/extract/${jobId}`, {
+          // A poll that hangs is retried by the loop; the budget below is the real ceiling.
+          signal: AbortSignal.timeout(EXTRACT_POLL_TIMEOUT_MS),
+        }).catch(() => null);
+        if (generation !== photoGeneration) return;
+        if (!poll) continue;
+
         const data = (await poll.json().catch(() => ({}))) as ExtractStatus & ApiReply;
         // A 404 already says what to do ("that photo read was lost — read the photo
         // again"); passing it through verbatim is the point.
@@ -280,17 +316,22 @@ export function InStore() {
           setReadPaid(data.paid === true);
           setImageBase64(null);
           setImageName(null);
-          // The matches below were computed from the old lines.
+          // The matches and the share card were built from the old lines.
           setPlan(null);
+          setShareLink(null);
+          setQr(null);
+          setExpiresAt(null);
           return;
         }
         if (data.status === 'error') throw new Error(data.error ?? 'could not read the photo');
       }
       throw new Error('reading the photo took too long — type the list instead');
     } catch (err) {
+      if (generation !== photoGeneration) return;
       setError(err instanceof Error ? err.message : 'could not read the photo');
     } finally {
-      setBusy(null);
+      // A superseding pick already released the button; a stale read must not grab it back.
+      if (generation === photoGeneration) setBusy(null);
     }
   };
 
@@ -316,7 +357,8 @@ export function InStore() {
     try {
       const { ok, data } = await postJson<{ plan: Plan; shareLink?: string | null; added: number }>(
         '/api/easyshopper/list/create',
-        body()
+        body(),
+        { timeoutMessage: 'creating the list took too long — try again' }
       );
       if (!ok) throw new Error(data.error ?? 'list creation failed');
       setPlan(data.plan);
@@ -336,13 +378,20 @@ export function InStore() {
     if (!file) return;
     // Reset the input so picking the same file again still fires a change event.
     input.value = '';
+    const generation = ++photoGeneration;
+    // This pick supersedes any read still in flight, including its busy flag.
+    setBusy(null);
     setError(null);
     setReadBy(null);
     setReadPaid(false);
     setImageName(file.name);
     try {
-      setImageBase64(await prepareImage(file));
+      const prepared = await prepareImage(file);
+      // A later pick won the race: its photo is the one to keep.
+      if (generation !== photoGeneration) return;
+      setImageBase64(prepared);
     } catch (err) {
+      if (generation !== photoGeneration) return;
       setImageBase64(null);
       setImageName(null);
       setError(err instanceof Error ? err.message : 'that photo could not be read');
@@ -517,7 +566,7 @@ export function InStore() {
             <label class="btn btn-outline btn-sm gap-2">
               <ImageUp class="w-4 h-4" />
               Photo
-              <input type="file" accept="image/*" class="hidden" onChange={onFile} />
+              <input type="file" accept="image/*" class="hidden" disabled={busy() !== null} onChange={onFile} />
             </label>
             <Show when={imageName()}>
               <span class="badge badge-ghost">{imageName()}</span>
@@ -590,7 +639,7 @@ export function InStore() {
                       <th>List line</th>
                       <th>Product</th>
                       <th class="text-right">Price</th>
-                      <th class="text-right">Score</th>
+                      <th class="text-right">Matched by</th>
                     </tr>
                   </thead>
                   <tbody>
