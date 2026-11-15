@@ -630,6 +630,29 @@ describe('image prompts', () => {
     expect(created).toEqual(['free-a', 'free-b']);
   });
 
+  it('logs a paid attempt that was rejected, without crediting it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch
+      .mockResolvedValueOnce(response({ data: { id: 'ses_p' } }))
+      .mockResolvedValueOnce(response({ data: { id: 'msg_1' } }))
+      .mockResolvedValueOnce(
+        response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: '{"lines":[]}' }] }] })
+      );
+
+    const used: string[] = [];
+    await expect(
+      runPrompt('x', {
+        models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+        accept: (raw) => ((raw as { lines?: unknown[] }).lines ?? []).length > 0,
+        onModelUsed: (model) => used.push(model.id),
+      })
+    ).rejects.toThrow(/not an answer/);
+
+    // The spend is visible, but the model did no useful work, so it is not the answer.
+    expect(used).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('paid attempt rejected: opencode-go:gpt-6-luna'));
+  });
+
   it('moves to the next model on a timeout instead of retrying the same one', async () => {
     // timeoutMs 0 makes the poll give up immediately, without sleeping.
     const created = twoModels('{"lines":[{"text":"Milch"}]}');

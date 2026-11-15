@@ -3,11 +3,14 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../opencode-client', () => ({
-  runPrompt: vi.fn(),
-}));
+vi.mock('../opencode-client', async (importOriginal) => {
+  // Partial mock: `runPrompt` is stubbed, but the real constants stay in sync with
+  // the module whose behaviour `extract.ts` maps.
+  const actual = await importOriginal<typeof import('../opencode-client')>();
+  return { ...actual, runPrompt: vi.fn() };
+});
 
-import { runPrompt } from '../opencode-client';
+import { NOT_AN_ANSWER, runPrompt } from '../opencode-client';
 import { extractListLines, normalizeExtractedLines } from '../easyshopper/extract';
 
 const mockRunPrompt = vi.mocked(runPrompt);
@@ -37,7 +40,7 @@ describe('normalizeExtractedLines', () => {
 
   it('drops junk, empties and non-list noise', () => {
     const lines = normalizeExtractedLines({
-      lines: ['', '   ', '---', '12', '[]', '2x', { text: 'Eier', quantity: 4 }],
+      lines: ['', '   ', '---', '12', '[]', '2x', { text: 'x'.repeat(200) }, { text: 'Eier', quantity: 4 }],
     });
     expect(lines).toEqual([{ text: 'Eier', quantity: 4 }]);
   });
@@ -85,8 +88,25 @@ describe('normalizeExtractedLines', () => {
     ]);
   });
 
-  it('lets a quantity written in the text exceed the model field, up to 99', () => {
-    // A crate of 24 is real; 99 is the sanity ceiling so a misread cannot reach the cart.
+  it('takes a quantity the model moved into its own field, up to the ceiling', () => {
+    // Models move the written number into the field and strip it from the text; there is
+    // one ceiling, so 21 and 24 survive instead of falling back to 1.
+    expect(
+      normalizeExtractedLines({
+        lines: [
+          { text: 'Bier', quantity: 24 },
+          { text: 'Wasser', quantity: 21 },
+          { text: 'Brot', quantity: 99 },
+        ],
+      })
+    ).toEqual([
+      { text: 'Bier', quantity: 24 },
+      { text: 'Wasser', quantity: 21 },
+      { text: 'Brot', quantity: 99 },
+    ]);
+  });
+
+  it('lets a quantity written in the text reach the ceiling but not past it', () => {
     expect(normalizeExtractedLines({ lines: [{ text: '24x Bier' }, { text: '999x Eier' }] })).toEqual([
       { text: 'Bier', quantity: 24 },
       { text: 'Eier', quantity: 99 },
@@ -218,6 +238,12 @@ describe('extractListLines', () => {
   });
 
   it('rejects a photo without a readable list', async () => {
+    mockRunPrompt.mockRejectedValueOnce(new Error(NOT_AN_ANSWER));
+    await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/no readable/i);
+  });
+
+  it('still refuses an empty reply if the client ever returns one', async () => {
+    // `accept` should make this unreachable; the post-check stays as a defensive guard.
     mockRunPrompt.mockResolvedValueOnce({ lines: [] });
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/no readable/i);
   });

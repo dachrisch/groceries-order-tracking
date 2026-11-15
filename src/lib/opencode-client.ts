@@ -101,9 +101,10 @@ const TIMEOUT_ERROR = /timed out/i;
 /**
  * A reply that parsed but is not an answer: the model read this exact prompt and gave
  * nothing usable, and the same prompt on the same image cannot produce a different
- * answer. Kept distinct from a transport failure, which may well be transient.
+ * answer. Kept distinct from a transport failure, which may well be transient. Exported
+ * because a caller must map it to wording its own user can act on.
  */
-const NOT_AN_ANSWER = 'opencode reply was not an answer';
+export const NOT_AN_ANSWER = 'opencode reply was not an answer';
 
 let lastGoodModels: RegistryModel[] | null = null;
 let lastGoodAtMs = 0;
@@ -476,7 +477,9 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
  * A paid fallback model gets a single attempt. A reply that does not parse, or that
- * `accept` rejects, is a failed attempt: it is never reported as the answer.
+ * `accept` rejects, is a failed attempt: it is never reported as the answer. A timeout
+ * is non-retryable for every caller — intent, occasions and the bot included — because
+ * a call that hung on one payload rarely answers on a retry, so the chain moves on.
  */
 export async function runPrompt<T = unknown>(prompt: string, options: RunPromptOptions = {}): Promise<T> {
   const config = getOpencodeConfig();
@@ -508,6 +511,9 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
         // attempt and must not be reported as the model that answered.
         const parsed = JSON.parse(extractFirstJsonObject(replyText)) as T;
         if (options.accept && !options.accept(parsed)) {
+          // A paid read that failed is still worth seeing in the log; the success warn
+          // stays below, and neither fires `onModelUsed` for a rejected model.
+          if (model.paid) console.warn(`[opencode] paid attempt rejected: ${modelKey(model)}`);
           throw new Error(NOT_AN_ANSWER);
         }
         if (model.paid) console.warn(`[opencode] paid fallback used: ${modelKey(model)}`);
