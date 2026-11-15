@@ -13,7 +13,9 @@
  *
  * Credentials are the groceries account's own; nothing extra to provision.
  */
+import { readFileSync } from 'node:fs';
 import { capture } from './easyshopper-capture';
+import type { CapturedSession } from '../src/lib/easyshopper/capture-parse';
 
 interface SyncStatus {
   requestedAt: string | null;
@@ -26,9 +28,13 @@ interface Args {
   server: string;
   email: string;
   password: string;
+  /** Session JWT from the browser's `token` cookie; avoids handling a password. */
+  token: string;
   intervalSeconds: number;
   once: boolean;
   serial?: string;
+  /** Upload an existing capture instead of reading the phone again. */
+  fromFile?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -36,6 +42,7 @@ function parseArgs(argv: string[]): Args {
     server: process.env.GROCERIES_URL ?? 'http://localhost:3000',
     email: process.env.GROCERIES_EMAIL ?? '',
     password: process.env.GROCERIES_PASSWORD ?? '',
+    token: process.env.GROCERIES_TOKEN ?? '',
     intervalSeconds: 60,
     once: false,
   };
@@ -45,8 +52,10 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--server') args.server = argv[++i];
     else if (arg === '--email') args.email = argv[++i];
     else if (arg === '--password') args.password = argv[++i];
+    else if (arg === '--token') args.token = argv[++i];
     else if (arg === '--interval') args.intervalSeconds = Number(argv[++i]);
     else if (arg === '--serial') args.serial = argv[++i];
+    else if (arg === '--from-file') args.fromFile = argv[++i];
     else if (arg === '--help' || arg === '-h') {
       process.stdout.write(`
 EASY Shopper sync worker
@@ -54,14 +63,19 @@ EASY Shopper sync worker
   --once                run a single pass and exit
   --interval <seconds>  poll interval in loop mode (default 60)
   --server <url>        groceries backend (default $GROCERIES_URL or http://localhost:3000)
+  --token <jwt>         session token from the browser 'token' cookie (no password)
   --email / --password  groceries login (default $GROCERIES_EMAIL / $GROCERIES_PASSWORD)
   --serial <host:port>  adb serial for the phone
+  --from-file <path>    upload a capture already on disk (no phone needed), e.g.
+                        ~/.local/share/groceries/easyshopper/purchases.json
 `);
       process.exit(0);
     }
   }
-  if (!args.email || !args.password) {
-    throw new Error('groceries credentials are required (--email/--password or GROCERIES_EMAIL/GROCERIES_PASSWORD)');
+  if (!args.token && (!args.email || !args.password)) {
+    throw new Error(
+      'authenticate with --token <jwt> or --email/--password (or GROCERIES_TOKEN / GROCERIES_EMAIL+GROCERIES_PASSWORD)'
+    );
   }
   return args;
 }
@@ -80,6 +94,14 @@ class Backend {
 
   constructor(server: string) {
     this.server = server.replace(/\/+$/, '');
+  }
+
+  /** Reuse a browser session: the API only needs the `token` cookie plus CSRF. */
+  async useToken(token: string): Promise<void> {
+    this.cookies = `token=${token}`;
+    const res = await fetch(`${this.server}/api/session`, { headers: { Cookie: this.cookies } });
+    if (!res.ok) throw new Error(`session token rejected (${res.status}) — copy a fresh one from the browser`);
+    await this.refreshCsrf();
   }
 
   async login(email: string, password: string): Promise<void> {
@@ -121,12 +143,25 @@ class Backend {
   }
 }
 
+function readCapture(path: string): CapturedSession[] {
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as { sessions?: CapturedSession[] };
+  const sessions = (parsed.sessions ?? []).filter((session) => session.items?.length > 0);
+  if (sessions.length === 0) throw new Error(`no captured sessions in ${path}`);
+  return sessions;
+}
+
 async function runPass(backend: Backend, args: Args): Promise<boolean> {
   const status = await backend.status();
   if (!status.requestedAt) return false;
 
-  process.stdout.write(`sync requested at ${status.requestedAt} — reading the phone…\n`);
-  const sessions = await capture({ serial: args.serial ?? null });
+  const sessions = args.fromFile
+    ? readCapture(args.fromFile)
+    : await capture({ serial: args.serial ?? null });
+  process.stdout.write(
+    args.fromFile
+      ? `sync requested at ${status.requestedAt} — uploading ${sessions.length} sessions from ${args.fromFile}\n`
+      : `sync requested at ${status.requestedAt} — reading the phone…\n`
+  );
   const result = await backend.upload(
     sessions.map((session) => ({
       key: session.key,
@@ -150,7 +185,8 @@ async function runPass(backend: Backend, args: Args): Promise<boolean> {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const backend = new Backend(args.server);
-  await backend.login(args.email, args.password);
+  if (args.token) await backend.useToken(args.token);
+  else await backend.login(args.email, args.password);
   process.stdout.write(`sync worker ready for ${args.server}\n`);
 
   if (args.once) {
