@@ -44,6 +44,7 @@ afterEach(() => {
   delete process.env.OPENCODE_BASE_URL;
   delete process.env.OPENCODE_API_KEY;
   delete process.env.OPENCODE_ALLOW_INSECURE_TLS;
+  vi.restoreAllMocks();
 });
 
 describe('runPrompt', () => {
@@ -212,6 +213,15 @@ const free = (id: string, extra: Partial<RegistryModel> = {}): RegistryModel => 
   ...extra,
 });
 
+/** Wire shape of a GET /api/model entry: cost and input modalities in one line. */
+const capable = (id: string, input: string[], cost = 0, providerID = 'opencode') => ({
+  id,
+  providerID,
+  status: 'active',
+  cost: [{ input: cost, output: cost }],
+  capabilities: { input },
+});
+
 function routed(registry: unknown, opts: { registryStatus?: number; promptStatus?: Record<string, number> } = {}) {
   const created: string[] = [];
   mockFetch.mockImplementation(async (url: unknown, init?: unknown) => {
@@ -336,13 +346,8 @@ describe('image prompts', () => {
   });
 
   it('keeps text-only models out of a vision chain', async () => {
-    mockFetch.mockResolvedValueOnce(
-      response({
-        data: [
-          { id: 'texto', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text'] } },
-          { id: 'seer', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
-        ],
-      })
+    mockFetch.mockResolvedValue(
+      response({ data: [capable('texto', ['text']), capable('seer', ['text', 'image'])] })
     );
 
     await expect(getModelChain({ require: 'image' })).resolves.toEqual([{ id: 'seer', providerID: 'opencode' }]);
@@ -415,15 +420,169 @@ describe('image prompts', () => {
     process.env.OPENCODE_VISION_PAID = 'off';
     mockFetch.mockResolvedValueOnce(
       response({
-        data: [
-          { id: 'mimo-v2.6-flash-free', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
-          { id: 'gpt-6-luna', providerID: 'opencode-go', status: 'active', cost: [{ input: 0.1, output: 0.5 }], capabilities: { input: ['text', 'image'] } },
-        ],
+        data: [capable('mimo-v2.6-flash-free', ['text', 'image']), capable('gpt-6-luna', ['text', 'image'], 0.1, 'opencode-go')],
       })
     );
 
     await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
       { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
     ]);
+  });
+
+  it('reads OPENCODE_VISION_PAID the way an operator writes it', async () => {
+    process.env.OPENCODE_VISION_PAID = '0';
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [capable('mimo-v2.6-flash-free', ['text', 'image']), capable('gpt-6-luna', ['text', 'image'], 0.1, 'opencode-go')],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
+    ]);
+  });
+
+  it('never adds the paid tier to a text chain', async () => {
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [capable('texto', ['text']), capable('gpt-6-luna', ['text', 'image'], 0.1, 'opencode-go')],
+      })
+    );
+
+    await expect(getModelChain({ allowPaid: true })).resolves.toEqual([{ id: 'texto', providerID: 'opencode' }]);
+  });
+
+  it('falls back to the pinned free vision list, then the curated paid tier', async () => {
+    mockFetch.mockResolvedValueOnce(response({}, false, 500));
+
+    const chain = await getModelChain({ require: 'image', allowPaid: true });
+
+    expect(chain[0]).toEqual({ id: 'mimo-v2.6-flash-free', providerID: 'opencode' });
+    // The text preference list would pin big-pickle, which cannot see a photo.
+    expect(chain.map((m) => m.id)).not.toContain('big-pickle');
+    const firstPaid = chain.findIndex((m) => m.paid);
+    expect(chain.slice(0, firstPaid).every((m) => m.providerID === 'opencode')).toBe(true);
+    expect(chain.slice(firstPaid).map((m) => m.id)).toEqual(['gpt-6-luna', 'qwen/qwen3.7-flash', 'qwen-vl-ocr']);
+  });
+
+  it('excludes a model without capabilities from a vision chain but keeps it for text', async () => {
+    mockFetch.mockResolvedValue(
+      response({
+        data: [
+          { id: 'no-caps', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }] },
+          capable('seer', ['text', 'image']),
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([{ id: 'seer', providerID: 'opencode' }]);
+    await expect(getModelChain()).resolves.toEqual([
+      { id: 'no-caps', providerID: 'opencode' },
+      { id: 'seer', providerID: 'opencode' },
+    ]);
+  });
+
+  it('keeps a pinned paid model in the chain once and gives it one attempt', async () => {
+    process.env.OPENCODE_VISION_MODELS = 'opencode-go:gpt-6-luna';
+    const created: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith('/api/model')) return response({ data: [capable('gpt-6-luna', ['text', 'image'], 0.1, 'opencode-go')] });
+      if (u.endsWith('/api/session')) {
+        created.push('gpt-6-luna');
+        return response({ data: { id: 'ses_p' } });
+      }
+      if (u.endsWith('/prompt')) return response({}, false, 500);
+      return response({});
+    });
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+    ]);
+
+    await expect(runPrompt('x', { require: 'image', allowPaid: true })).rejects.toThrow(/prompt failed/);
+    expect(created).toHaveLength(1);
+  });
+
+  it('still uses a pinned vision model when the paid tier is switched off', async () => {
+    process.env.OPENCODE_VISION_PAID = 'off';
+    process.env.OPENCODE_VISION_MODELS = 'opencode-go:gpt-6-luna';
+    mockFetch.mockResolvedValueOnce(
+      response({ data: [capable('gpt-6-luna', ['text', 'image'], 0.1, 'opencode-go')] })
+    );
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+    ]);
+  });
+
+  it('does not buy a pinned paid model twice when discovery is down', async () => {
+    process.env.OPENCODE_VISION_MODELS = 'opencode-go:gpt-6-luna';
+    mockFetch.mockResolvedValueOnce(response({}, false, 500));
+
+    const chain = await getModelChain({ require: 'image', allowPaid: true });
+
+    expect(chain[0]).toEqual({ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true });
+    expect(chain.map((m) => m.id)).toEqual(['gpt-6-luna', 'qwen/qwen3.7-flash', 'qwen-vl-ocr']);
+  });
+
+  it('reports the answering model once, after the reply parsed', async () => {
+    mockFetch
+      .mockResolvedValueOnce(response({ data: { id: 'ses_1' } }))
+      .mockResolvedValueOnce(response({ data: { id: 'msg_1' } }))
+      .mockResolvedValueOnce(
+        response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'yes: {"ok":true}' }] }] })
+      );
+
+    const used: string[] = [];
+    await runPrompt('x', { ...M, onModelUsed: (model) => used.push(model.id) });
+    expect(used).toEqual(['m1']);
+  });
+
+  it('logs a paid model that answered, so a fallback is never silent', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch
+      .mockResolvedValueOnce(response({ data: { id: 'ses_1' } }))
+      .mockResolvedValueOnce(response({ data: { id: 'msg_1' } }))
+      .mockResolvedValueOnce(
+        response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: '{"ok":true}' }] }] })
+      );
+
+    const used: string[] = [];
+    await runPrompt('x', {
+      models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+      onModelUsed: (model) => used.push(model.id),
+    });
+
+    expect(used).toEqual(['gpt-6-luna']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('paid fallback used: opencode-go:gpt-6-luna'));
+  });
+
+  it('warns when the paid tier was requested but the registry serves none of it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch.mockResolvedValueOnce(response({ data: [capable('mimo-v2.6-flash-free', ['text', 'image'])] }));
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('staying free-only'));
+  });
+
+  it('does not report a model that answered with prose instead of JSON', async () => {
+    mockFetch
+      .mockResolvedValueOnce(response({ data: { id: 'ses_1' } }))
+      .mockResolvedValueOnce(response({ data: { id: 'msg_1' } }))
+      .mockResolvedValueOnce(
+        response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'no json here, sorry' }] }] })
+      );
+
+    const used: string[] = [];
+    await expect(
+      runPrompt('x', {
+        models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+        onModelUsed: (model) => used.push(model.id),
+      })
+    ).rejects.toThrow(/did not contain JSON/);
+    expect(used).toEqual([]);
   });
 });

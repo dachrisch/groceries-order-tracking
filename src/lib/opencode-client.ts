@@ -29,7 +29,11 @@ const RETRY_DELAY_MS = 1000;
 export interface ModelRef {
   id: string;
   providerID: string;
-  /** Registry-derived: this model bills tokens. */
+  /**
+   * This model bills tokens: a registry entry that is not cost 0, a curated paid
+   * fallback, or a pin for one. A paid model gets a single attempt and is logged
+   * when it answers. Callers that pass `models` themselves own this tagging.
+   */
   paid?: boolean;
 }
 
@@ -75,6 +79,10 @@ const VISION_PREFERENCE = [
  * capability is NOT proof the image arrives (gemini-2.5-flash-lite and
  * gemma-3-27b-it answered happily without ever seeing it). Keep the list short, and
  * re-probe before adding or reordering an entry.
+ *
+ * Worst case, by design: only a quota error sets a cooldown, so while the free tier
+ * is out (provider errors, not 429s) every upload re-buys this whole list — one
+ * attempt each, unbounded per day. A spend counter is deliberately out of scope.
  */
 const PAID_VISION_PREFERENCE: ModelRef[] = [
   { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
@@ -131,7 +139,11 @@ interface OpencodeMessage {
   error?: { message: string };
 }
 
-/** A prompt attachment; an inline image needs a vision-capable model. */
+/**
+ * A prompt attachment; an inline image needs a vision-capable model. `uri` is
+ * posted verbatim: it must already be a downscaled, approved image, because this
+ * layer validates neither size nor content type.
+ */
 export interface PromptFile {
   uri: string;
   name?: string;
@@ -140,6 +152,7 @@ export interface PromptFile {
 }
 
 export interface RunPromptOptions {
+  /** Explicit chain, used as given — the caller owns its `paid` tagging. */
   models?: ModelRef[];
   timeoutMs?: number;
   /** Attachments posted with the prompt. */
@@ -311,6 +324,9 @@ function preferenceChain(models: string[]): ModelRef[] {
   return models.map((id) => ({ id, providerID: 'opencode' }));
 }
 
+// Curated ids are known to bill tokens even when discovery is down.
+const PAID_VISION_KEYS = new Set(PAID_VISION_PREFERENCE.map(modelKey));
+
 export interface ModelChainOptions {
   require?: 'image';
   /** Append the verified paid vision tier after every free model. Default false. */
@@ -327,8 +343,11 @@ export interface ModelChainOptions {
  * OPENCODE_MODELS entry, because a text-only model cannot read a photo at all.
  * `allowPaid` appends the curated paid vision tier after every free model; only
  * photo intake asks for it, so every other call stays cost 0. Photo calls read
- * OPENCODE_VISION_MODELS instead of OPENCODE_MODELS, and OPENCODE_VISION_PAID=off
- * removes the paid tier for ops.
+ * OPENCODE_VISION_MODELS instead of OPENCODE_MODELS.
+ *
+ * OPENCODE_VISION_PAID=off|false|0|no drops the curated tier only: an explicit pin
+ * is still used, and still gets its single attempt, because a pin is a deliberate
+ * operator choice. Remove the pin to stop buying that model.
  */
 export async function getModelChain(options: ModelChainOptions = {}): Promise<ModelRef[]> {
   const config = getOpencodeConfig();
@@ -344,8 +363,9 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
   const visionOk = (m: ModelRef) => !needsVision || !registry || isVision(known(m) ?? m);
   const servable = (m: ModelRef) => (!usable || usable.has(modelKey(m))) && visionOk(m);
   // Free is the default; the paid tier is opt-in per call and can be killed by ops.
-  const paidEnabled =
-    needsVision && options.allowPaid === true && (process.env.OPENCODE_VISION_PAID ?? 'on') !== 'off';
+  // Accept the spellings an operator actually types, not just "off".
+  const paidKillSwitch = /^(off|false|0|no)$/i.test((process.env.OPENCODE_VISION_PAID ?? '').trim());
+  const paidEnabled = needsVision && options.allowPaid === true && !paidKillSwitch;
 
   // Vision has its own override so a pinned text model can never hijack a photo call.
   const override = (process.env[needsVision ? 'OPENCODE_VISION_MODELS' : 'OPENCODE_MODELS'] ?? '')
@@ -353,9 +373,17 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
     .map(parseModelKey)
     .filter((m): m is ModelRef => m !== null);
 
+  // A pin carries its own billing marker; untagged, a paid pin would be retried
+  // three times and logged as free.
+  const billable = (m: ModelRef): ModelRef => {
+    const entry = known(m);
+    const paid = PAID_VISION_KEYS.has(modelKey(m)) || (entry !== undefined && !isFree(entry));
+    return paid ? { ...m, paid: true } : m;
+  };
+
   let chain: ModelRef[];
   if (override.length > 0) {
-    chain = override.filter(servable);
+    chain = override.filter(servable).map(billable);
   } else if (registry) {
     const preferences = needsVision ? VISION_PREFERENCE : FREE_PREFERENCE;
     chain = registry
@@ -373,19 +401,36 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
   let result = available.length > 0 ? available : chain;
 
   if (paidEnabled) {
-    // The curated tier never replaces the free one, it only follows it. The registry
-    // is used to skip a curated name that was deprecated or went free — never to
-    // widen the list, because a registry `image` capability does not prove delivery.
-    const paid = PAID_VISION_PREFERENCE.filter((m) => {
-      const entry = known(m);
-      return servable(m) && (!registry || (entry !== undefined && isUsable(entry) && !isFree(entry)));
-    });
-    result = [...result, ...paid.filter((m) => (exhaustedUntil.get(modelKey(m)) ?? 0) <= now)];
+    // The curated tier never replaces the free one, it only follows it, and a model
+    // the chain already names is not bought a second time. The registry is used to
+    // skip a curated name that was deprecated or went free — never to widen the
+    // list, because a registry `image` capability does not prove delivery.
+    const curated = PAID_VISION_PREFERENCE.filter(
+      (m) => servable(m) && (!registry || (known(m) !== undefined && !isFree(known(m))))
+    );
+    if (curated.length === 0) {
+      console.warn('[opencode] paid vision fallback was requested but no curated model is servable, staying free-only');
+    }
+    const seen = new Set(result.map(modelKey));
+    result = [
+      ...result,
+      ...curated.filter(
+        (m) => !seen.has(modelKey(m)) && (exhaustedUntil.get(modelKey(m)) ?? 0) <= now
+      ),
+    ];
   }
 
   if (needsVision && result.length === 0) {
+    // Name the real blocker: a bad pin needs a different fix from a registry that
+    // offers no vision model at all.
+    const reason =
+      override.length > 0
+        ? `OPENCODE_VISION_MODELS pins ${override.map(modelKey).join(', ')}, which the registry cannot serve for images`
+        : 'GET /api/model lists no active cost-0 model with image input';
     throw new Error(
-      'no vision-capable opencode model is available (GET /api/model lists none active at cost 0 with image input, and no paid fallback answered)'
+      `no vision-capable opencode model is available (${reason}${
+        paidEnabled ? '; the curated paid tier is unavailable too' : ''
+      })`
     );
   }
   return result;
@@ -441,8 +486,12 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
         sessionId = await createSession(config, model);
         await sendPrompt(config, sessionId, prompt, options.files);
         const replyText = await pollForReply(config, sessionId, timeoutMs);
+        // Only a parsed reply counts as an answer: prose that fails to parse is a
+        // failed attempt, and must not be reported as the model that answered.
+        const parsed = JSON.parse(extractFirstJsonObject(replyText)) as T;
+        if (model.paid) console.warn(`[opencode] paid fallback used: ${modelKey(model)}`);
         options.onModelUsed?.(model);
-        return JSON.parse(extractFirstJsonObject(replyText)) as T;
+        return parsed;
       } catch (error) {
         if (sessionId) {
           await discardSession(config, sessionId);
