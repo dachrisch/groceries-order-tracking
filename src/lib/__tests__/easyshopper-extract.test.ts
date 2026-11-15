@@ -31,9 +31,17 @@ describe('normalizeExtractedLines', () => {
 
   it('drops junk, empties and non-list noise', () => {
     const lines = normalizeExtractedLines({
-      lines: ['', '   ', '---', '12', '[]', { text: 'x'.repeat(200) }, { text: 'Butter', quantity: 0 }, { text: 'Eier', quantity: 4 }],
+      lines: ['', '   ', '---', '12', '[]', { text: 'x'.repeat(200) }, { text: 'Eier', quantity: 4 }],
     });
     expect(lines).toEqual([{ text: 'Eier', quantity: 4 }]);
+  });
+
+  it('keeps a line whose quantity reads as zero: a missing item is not correctable', () => {
+    // An extra line is visible in the editable textarea and one keystroke to delete;
+    // a dropped line is invisible and costs the shopper a trip to the shop.
+    expect(normalizeExtractedLines({ lines: [{ text: 'Butter', quantity: 0 }] })).toEqual([
+      { text: 'Butter', quantity: 1 },
+    ]);
   });
 
   it('survives a reply that is not the shape we asked for', () => {

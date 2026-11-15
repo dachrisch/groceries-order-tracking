@@ -45,16 +45,15 @@ export function normalizeExtractedLines(raw: unknown): ListLine[] {
     if (text.length < 2 || text.length > MAX_LINE_LENGTH) continue;
     if (!/[A-Za-zÄÖÜäöüß]/.test(text)) continue;
 
-    // A stated zero is the model saying "crossed out, not wanted"; resurrecting it
-    // as quantity 1 would put a struck-through item back on the list.
-    const quantity = value?.quantity;
-    if (quantity === 0) continue;
-
     const parsed = parseListLine(text);
     if (!parsed) continue;
 
     // Some models leave the "2x" in the text and still answer quantity 1; taking the
-    // larger of the two keeps the quantity in both directions.
+    // larger of the two keeps the quantity in both directions. A zero, a negative or a
+    // non-integer means "quantity not stated", never "drop the item": an extra line
+    // shows up in the editable textarea and is one keystroke to delete, while a line
+    // dropped here is invisible and costs the shopper a trip to the shop.
+    const quantity = value?.quantity;
     const stated =
       Number.isInteger(quantity) && (quantity as number) >= 1 && (quantity as number) <= MAX_QUANTITY
         ? (quantity as number)
