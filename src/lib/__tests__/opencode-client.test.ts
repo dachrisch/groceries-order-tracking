@@ -288,6 +288,14 @@ describe('model discovery', () => {
     await expect(runPrompt('x')).rejects.toThrow(/no free opencode model/);
   });
 
+  it('slices the discovered chain to maxModels', async () => {
+    // Three free models are advertised, but a latency-sensitive caller only gets the
+    // first one: every model beyond the cap must never get a session.
+    const created = routed({ data: [free('reg-a'), free('reg-b'), free('reg-c')] });
+    await expect(runPrompt('x', { maxModels: 1, timeoutMs: 0 })).rejects.toThrow(/timed out/);
+    expect(created).toEqual(['reg-a']);
+  });
+
   it('caches the registry between calls', async () => {
     routed({ data: [free('big-pickle')] });
     await runPrompt('a');
@@ -661,5 +669,27 @@ describe('image prompts', () => {
 
     // Free models normally get three attempts; a timeout spends one, on each model.
     expect(created).toEqual(['free-a', 'free-b']);
+  });
+
+  it('caps an explicit chain with maxModels so the third model is never tried', async () => {
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    await expect(
+      runPrompt('x', {
+        models: [...twoFreeModels, { id: 'free-c', providerID: 'opencode' }],
+        timeoutMs: 0,
+        maxModels: 2,
+      })
+    ).rejects.toThrow(/timed out/);
+
+    expect(created).toEqual(['free-a', 'free-b']);
+  });
+
+  it('treats maxModels 0 as "one model", never as an empty chain', async () => {
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    await expect(runPrompt('x', { models: twoFreeModels, timeoutMs: 0, maxModels: 0 })).rejects.toThrow(/timed out/);
+
+    expect(created).toEqual(['free-a']);
   });
 });

@@ -13,8 +13,8 @@ shape comes from the shipped app's own bytecode.
 | --- | --- |
 | `client.ts` | REST client: `signup` → `login` (Basic `secret:deviceId`) → bearer; legal acceptance; `/v6/searchMeta` body builder; v7 list reads, `createLink`, and `addOrUpdate` upserts. |
 | `match.ts` | Deterministic line → product matching (token coverage + size compatibility). No LLM, no I/O. |
-| `choose.ts` | `buildMatchPrompt` / `readPicks` / `chooseWithModel`: opencode picks a catalogue product **by position** among the candidates the backend fetched. An index outside that line's list is discarded and the rules score stands. |
-| `list.ts` | `searchListCandidates` → `buildPlan` (rules) → `applyPicks` (opencode), composed by `planShoppingList`; `rerankWithHistory` prefers what the user actually bought but never overrides a model pick. |
+| `choose.ts` | `buildMatchPrompt` / `readPicks` / `chooseWithModel`: opencode picks a product **by position** from the menu the backend built for that line (catalogue search + recent purchases, deduped, scored, capped at 8). An index outside that line's menu is discarded and the rules score stands. Budgeted: one call, `timeoutMs: 20_000`, `maxModels: 3`. |
+| `list.ts` | `searchListCandidates` → `buildPlan` (rules) → `applyPicks` (opencode), composed by `planShoppingList`; `rerankWithHistory` corrects a weak *rules* line with what the user bought before, and never overrides a model pick. |
 | `ocr.ts` | tesseract over a photo of a handwritten list. Local, no network. Being replaced by `extract.ts`. |
 | `extract.ts` | `extractListLines`: one opencode vision call for a photographed list, free models first and the curated paid tier only as a fallback. The reply is validated into `ListLine`s; it never picks products. A legible line is never dropped; only its quantity falls back to 1. |
 | `insights.ts` | Deterministic spend/units/product aggregates: store-name merging, deposit returns kept separate, POS summary lines excluded. |
@@ -30,10 +30,14 @@ shape comes from the shipped app's own bytecode.
    delete endpoint. The app keeps a row when `amount > 0` and drops it otherwise.
 3. **Match, don't invent.** A line that does not clear the score threshold stays a
    free-text row. Never fabricate a product id or borrow one from another store.
-   opencode may *choose* among candidates (`choose.ts`) but only by index: the candidate
-   object always comes from the search results this backend fetched, and an index outside
-   that line's list is ignored. The rules score is the pre-filter and the fallback when
-   opencode is down, rate-limited or answers with something else.
+   opencode may *choose* from the menu (`choose.ts`) but only by index: the candidate
+   object always comes from that menu — catalogue search results plus recent purchases
+   this backend fetched, never from the model — and an index outside the line's menu is
+   ignored. The rules score is the pre-filter and the fallback when opencode is down,
+   rate-limited or answers with something else.
+   Recent purchases are part of that menu, so the model may pick one on its own merits;
+   `rerankWithHistory` is only the correction for a weak rules line, not a second opinion
+   that outranks the model.
 4. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
    store is meaningless.
 5. **The photo exception is explicit.** `AGENTS.md` says opencode gets text only; a photo

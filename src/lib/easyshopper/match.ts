@@ -5,7 +5,7 @@
  * product groups, and each line is scored against catalogue search results.
  * The LLM's only job upstream is turning a photo into lines of text.
  */
-import { deumlaut, normalizeName, parseSize, sizeCompatible } from '../bot/product-groups';
+import { normalizeName, parseSize, sizeCompatible } from '../bot/product-groups';
 
 export interface ListLine {
   text: string;
@@ -162,8 +162,12 @@ export function toCandidate(item: Record<string, unknown>): MatchCandidate | nul
   };
 }
 
-/** Human label for a line, e.g. "2x Milch". */
+/**
+ * Human label for a line, e.g. "2x Milch". The text is kept exactly as the shopper
+ * wrote it — umlauts included — because it is also what the model reads, and "Müsli"
+ * and "Muesli" are not the same word to it.
+ */
 export function describeLine(line: ListLine): string {
   if (line.quantity > 1) return `${line.quantity}x ${line.text}`;
-  return deumlaut(line.text);
+  return line.text;
 }

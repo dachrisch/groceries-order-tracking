@@ -166,6 +166,12 @@ export interface RunPromptOptions {
   models?: ModelRef[];
   /** Per attempt, not per call: the whole chain is models × attempts × this. */
   timeoutMs?: number;
+  /**
+   * Try at most this many models (at least one). It bounds wall clock and quota when a
+   * caller is latency-sensitive — a user-facing request must not wait out the whole
+   * free chain at one timeout per attempt.
+   */
+  maxModels?: number;
   /** Attachments posted with the prompt. */
   files?: PromptFile[];
   /** Only models whose registry capabilities include this input modality. */
@@ -480,6 +486,8 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
 /**
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
+ * `maxModels` truncates the chain before the first attempt, for callers that cannot
+ * spend the whole chain's wall clock.
  * A paid fallback model gets a single attempt. A reply that does not parse, or that
  * `accept` rejects, is a failed attempt: it is never reported as the answer. A timeout
  * is non-retryable for every caller — intent, occasions and the bot included — because
@@ -491,9 +499,12 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
     throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
   }
 
-  const models =
+  const resolved =
     options.models ??
     (await getModelChain({ require: options.require, allowPaid: options.allowPaid }));
+  // A caller that bounded the chain gets a prefix of it, never an empty chain.
+  const models =
+    options.maxModels === undefined ? resolved : resolved.slice(0, Math.max(1, options.maxModels));
   if (models.length === 0) {
     throw new Error('no free opencode model is available (GET /api/model lists none active at cost 0)');
   }

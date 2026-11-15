@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../opencode-client', () => ({ runPrompt: vi.fn() }));
+vi.mock('../opencode-client', () => ({ runPrompt: vi.fn(), isOpencodeConfigured: vi.fn(() => true) }));
 
-import { runPrompt } from '../opencode-client';
+import { isOpencodeConfigured, runPrompt } from '../opencode-client';
 import {
   parseListLine,
   scoreCandidate,
@@ -10,6 +10,7 @@ import {
   toCandidate,
   type MatchCandidate,
 } from '../easyshopper/match';
+import { MAX_CANDIDATES } from '../easyshopper/choose';
 import { applyPicks, buildPlan, planShoppingList, rerankWithHistory, searchListCandidates } from '../easyshopper/list';
 import type { EasyShopperClient, EasyShopperSession } from '../easyshopper/client';
 
@@ -138,11 +139,24 @@ describe('planShoppingList', () => {
   });
 
   it('falls back to the rules score when opencode fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockRunPrompt.mockRejectedValueOnce(new Error('opencode reply timed out'));
     const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
     expect(plan.lines[0].match.candidate?.id).toBe('m1');
     expect(plan.lines[0].chooser).toBe('rules');
     expect(plan.source).toBe('rules');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('using the rules score'), 'opencode reply timed out');
+    warn.mockRestore();
+  });
+
+  it('stays quiet when opencode is simply not configured', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(isOpencodeConfigured).mockReturnValueOnce(false);
+    mockRunPrompt.mockRejectedValueOnce(new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)'));
+    const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    expect(plan.lines[0].chooser).toBe('rules');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('does not ask the model when the caller turned it off', async () => {
@@ -178,11 +192,81 @@ describe('planShoppingList', () => {
     expect(plan.matched).toBe(0);
   });
 
-  it('asks for a cheap text call, never the paid photo path', async () => {
+  it('applies no pick when the pool does not belong to the line', async () => {
+    const entries = await searchListCandidates(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    const foreign = [{ ...entries[0], line: { text: 'Brot', quantity: 1 } }];
+    const applied = applyPicks(buildPlan(entries, 's'), foreign, [0]);
+    expect(applied.lines[0].line.text).toBe('Milch 1,5');
+    expect(applied.lines[0].chooser).toBe('rules');
+  });
+
+  it('asks for one cheap text call inside a time budget, never the paid photo path', async () => {
     mockRunPrompt.mockResolvedValueOnce({ picks: [] });
     await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
-    expect(mockRunPrompt.mock.calls[0][1]).not.toHaveProperty('allowPaid');
-    expect(mockRunPrompt.mock.calls[0][1]).not.toHaveProperty('require');
+    expect(mockRunPrompt).toHaveBeenCalledTimes(1);
+    for (const [, options] of mockRunPrompt.mock.calls) {
+      expect(options).not.toHaveProperty('allowPaid');
+      expect(options).not.toHaveProperty('require');
+      // A synchronous request cannot wait out a whole free chain at 120 s per attempt.
+      expect(options).toMatchObject({ timeoutMs: 20_000, maxModels: 3 });
+    }
+  });
+});
+
+describe('searchListCandidates', () => {
+  beforeEach(() => mockRunPrompt.mockReset());
+
+  it('offers a history row that duplicates a catalogue item only once', async () => {
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [
+        { name: 'Frosch Waschmittel Sensitiv Pulver', brand: 'Frosch', raw: { name: 'history row' } },
+        { name: 'Frosch Waschmittel Sensitiv Pulver', brand: 'Frosch' },
+      ],
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.name)).toEqual([
+      'Frosch Waschmittel Sensitiv Pulver',
+      'Weichspüler Sensitiv 1l',
+    ]);
+    // The surviving copy is the catalogue's, so the preview still has an id.
+    expect(entries[0].candidates[0].id).toBe('w1');
+  });
+
+  it('offers a recent purchase the catalogue does not list, without inventing an id', async () => {
+    const history = { name: 'Waschmittel Sensitiv Pulver 20WL', brand: 'Domol' };
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [history],
+    });
+    const index = entries[0].candidates.findIndex((candidate) => candidate.name === history.name);
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index }] });
+    const plan = await planShoppingList(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [history],
+    });
+    expect(plan.lines[0].chooser).toBe('model');
+    expect(plan.lines[0].match.candidate?.name).toBe(history.name);
+    expect(plan.lines[0].match.candidate?.id).toBeUndefined();
+  });
+
+  it('orders the menu by score and caps it, so the cap keeps what matters', async () => {
+    const extras = Array.from({ length: 12 }, (_unused, i) => ({
+      name: `Waschmittel Sensitiv Variante ${i}`,
+      brand: 'Domol',
+    }));
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: extras,
+    });
+    expect(entries[0].candidates).toHaveLength(MAX_CANDIDATES);
+    const scores = entries[0].candidates.map((candidate) => scoreCandidate('Waschmittel sensitiv', candidate).score);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
   });
 });
 

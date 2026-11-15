@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../opencode-client', () => ({ runPrompt: vi.fn() }));
 
 import { runPrompt } from '../opencode-client';
-import { buildMatchPrompt, chooseWithModel, readPicks } from '../easyshopper/choose';
+import { buildMatchPrompt, chooseWithModel, readPicks, MAX_CANDIDATES } from '../easyshopper/choose';
 import type { ListLine, MatchCandidate } from '../easyshopper/match';
 
 const mockRunPrompt = vi.mocked(runPrompt);
@@ -45,6 +45,29 @@ describe('buildMatchPrompt', () => {
     // Nothing but position and display name: no ids, no brands, no raw payloads.
     expect(prompt).not.toContain('"brand"');
   });
+
+  it('does not repeat a brand the product name already starts with', () => {
+    const prompt = buildMatchPrompt([{ line: lines[0], candidates: pools[0] }]);
+    expect(prompt).toContain('"name":"Frosch Waschmittel 22WL');
+    expect(prompt).not.toContain('Frosch Frosch');
+  });
+
+  it('prepends a brand the name does not carry', () => {
+    const prompt = buildMatchPrompt([
+      { line: lines[0], candidates: [{ id: 'x', name: 'Sensitiv Pulver 1450g', brand: 'Frosch' }] },
+    ]);
+    expect(prompt).toContain('"name":"Frosch Sensitiv Pulver 1450g"');
+  });
+
+  it('keeps the shopper’s umlauts on every line, with or without a quantity', () => {
+    const prompt = buildMatchPrompt([
+      { line: { text: 'Müsli 500g', quantity: 1 }, candidates: [] },
+      { line: { text: 'Müsli 500g', quantity: 2 }, candidates: [] },
+    ]);
+    expect(prompt).toContain('"text":"Müsli 500g"');
+    expect(prompt).toContain('"text":"2x Müsli 500g"');
+    expect(prompt).not.toContain('Muesli');
+  });
 });
 
 describe('readPicks', () => {
@@ -63,6 +86,22 @@ describe('readPicks', () => {
 
   it('takes the last answer for a repeated line', () => {
     expect(readPicks({ picks: [{ line: 0, index: 0 }, { line: 0, index: 1 }] }, entries)).toEqual([1, null, null]);
+  });
+
+  it('lets a later invalid answer keep an earlier valid pick', () => {
+    expect(
+      readPicks(
+        {
+          picks: [
+            { line: 0, index: 1 },
+            { line: 0, index: null },
+            { line: 1, index: 0 },
+            { line: 1, index: 9 },
+          ],
+        },
+        entries
+      )
+    ).toEqual([1, 0, null]);
   });
 
   it('refuses any index when the line was given no candidates at all', () => {
@@ -84,6 +123,17 @@ describe('readPicks', () => {
       )
     ).toEqual([null, null, null]);
   });
+
+  it('never accepts a position past the cap the prompt showed', () => {
+    const wide = [
+      {
+        line: lines[0],
+        candidates: Array.from({ length: MAX_CANDIDATES + 4 }, (_unused, i) => ({ id: `c${i}`, name: `Produkt ${i}` })),
+      },
+    ];
+    expect(readPicks({ picks: [{ line: 0, index: MAX_CANDIDATES }] }, wide)).toEqual([null]);
+    expect(readPicks({ picks: [{ line: 0, index: MAX_CANDIDATES - 1 }] }, wide)).toEqual([MAX_CANDIDATES - 1]);
+  });
 });
 
 describe('chooseWithModel', () => {
@@ -96,10 +146,11 @@ describe('chooseWithModel', () => {
     expect(mockRunPrompt).toHaveBeenCalledTimes(1);
 
     // The matcher is a text call: no image requirement and no paid fallback tier.
-    const options = mockRunPrompt.mock.calls[0][1];
-    expect(options).not.toHaveProperty('allowPaid');
-    expect(options).not.toHaveProperty('require');
-    expect(options).not.toHaveProperty('files');
+    for (const [, options] of mockRunPrompt.mock.calls) {
+      expect(options).not.toHaveProperty('allowPaid');
+      expect(options).not.toHaveProperty('require');
+      expect(options).not.toHaveProperty('files');
+    }
   });
 
   it('does not call the model when no line has a candidate', async () => {
@@ -108,9 +159,9 @@ describe('chooseWithModel', () => {
     expect(mockRunPrompt).not.toHaveBeenCalled();
   });
 
-  it('forwards a caller-supplied timeout', async () => {
+  it('passes the caller’s time budget through', async () => {
     mockRunPrompt.mockResolvedValueOnce({ picks: [] });
-    await chooseWithModel(entries, { timeoutMs: 5_000 });
-    expect(mockRunPrompt.mock.calls[0][1]).toMatchObject({ timeoutMs: 5_000 });
+    await chooseWithModel(entries, { timeoutMs: 20_000, maxModels: 3 });
+    expect(mockRunPrompt.mock.calls[0][1]).toEqual({ timeoutMs: 20_000, maxModels: 3 });
   });
 });

@@ -198,6 +198,9 @@ const planSchema = z.object({
   lines: z.array(z.string().min(1).max(200)).min(1).max(60),
   storeGuid: z.string().optional(),
   attributes: z.array(z.string()).optional(),
+  // `false` forces the instant rules plan, e.g. when opencode is slow or the shopper
+  // does not want a model call at all.
+  useModel: z.boolean().optional(),
 });
 
 /** Trim the typed lines; the photo is a separate, asynchronous step. */
@@ -255,12 +258,17 @@ export async function handlePlanList(req: Request, res: Response) {
 
   try {
     const { client, session, storeGuid } = await ensureSession(req.userId, key, parsed.data.storeGuid);
-    const plan = await planShoppingList(client, session, {
-      lines,
-      storeGuid,
-      attributes: parsed.data.attributes,
-      extraCandidates: await recentlyBoughtCandidates(req.userId),
-    });
+    const plan = await planShoppingList(
+      client,
+      session,
+      {
+        lines,
+        storeGuid,
+        attributes: parsed.data.attributes,
+        extraCandidates: await recentlyBoughtCandidates(req.userId),
+      },
+      { useModel: parsed.data.useModel }
+    );
     res.json(plan);
   } catch (err: unknown) {
     console.error('EASY Shopper plan failed:', err);
@@ -306,13 +314,20 @@ export async function handleCreateList(req: Request, res: Response) {
   try {
     const { client, session, storeGuid } = await ensureSession(req.userId, key, parsed.data.storeGuid);
     const bought = await recentlyBoughtCandidates(req.userId);
+    // The shopper's preview is advisory: this handler plans again, so a re-roll may pick
+    // differently. Accepting the client's own plan back is a follow-up.
     const plan = rerankWithHistory(
-      await planShoppingList(client, session, {
-        lines,
-        storeGuid,
-        attributes: parsed.data.attributes,
-        extraCandidates: bought,
-      }),
+      await planShoppingList(
+        client,
+        session,
+        {
+          lines,
+          storeGuid,
+          attributes: parsed.data.attributes,
+          extraCandidates: bought,
+        },
+        { useModel: parsed.data.useModel }
+      ),
       bought
     );
 
