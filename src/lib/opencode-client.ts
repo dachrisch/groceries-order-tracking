@@ -401,6 +401,11 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
   // registry prices it above zero, or when the registry cannot vouch for it at all:
   // only an explicit all-zero cost array proves a model is free, because a missing price
   // is not evidence of free — and that holds for the pin too.
+  //
+  // This is not vision-only. A pinned text model (OPENCODE_MODELS) that the registry
+  // does not know is tagged the same way, so it gets one attempt instead of three and
+  // logs `paid fallback used` when it answers. The alternative — trusting an unpriced
+  // pin — is what turns a typo'd id into a retry storm on someone's bill.
   const billable = (m: ModelRef): ModelRef => {
     const entry = known(m);
     const paid = PAID_VISION_KEYS.has(modelKey(m)) || entry === undefined || !isFree(entry);

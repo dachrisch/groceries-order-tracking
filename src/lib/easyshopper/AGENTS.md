@@ -13,9 +13,9 @@ shape comes from the shipped app's own bytecode.
 | --- | --- |
 | `client.ts` | REST client: `signup` → `login` (Basic `secret:deviceId`) → bearer; legal acceptance; `/v6/searchMeta` body builder; v7 list reads, `createLink`, and `addOrUpdate` upserts. |
 | `match.ts` | Deterministic line → product matching (token coverage + size compatibility). No LLM, no I/O. |
-| `choose.ts` | `buildMatchPrompt` / `readPicks` / `chooseWithModel`: one batched text call that offers each line's candidate **names by positional index**. A pick outside that line's menu is discarded and the rules score stands; the model's `why` never decides anything. `ChooseOptions` cannot express a photo or a paid call, so `allowPaid` is unreachable at this call site. Budgeted: `timeoutMs: 20_000`, `maxModels: 3`. |
+| `choose.ts` | `buildMatchPrompt` / `readPicks` / `chooseWithModel`: one batched text call that offers each line's candidate **names by positional index**. A pick outside that line's menu is discarded and the rules score stands; the model's `why` never decides anything. `ChooseOptions` cannot express a photo or a paid call, so `allowPaid` is unreachable at this call site. Budgeted by the caller — `list.ts` passes `timeoutMs: 15_000`, `maxModels: 2`. |
 | `list.ts` | `searchListCandidates` builds one scored, deduped menu per line → `buildPlan` (rules) → `applyPicks` (model picks inside that menu), composed by `planShoppingList`; `rerankWithHistory` corrects a weak *rules* line with what the user bought before and never outranks a model pick. |
-| `extract.ts` | `extractListLines`: one opencode vision call for a photographed list — free vision models first, the curated paid tier only as a fallback (`allowPaid`). The reply is validated into `ListLine`s: a legible line is never dropped, only its quantity falls back to 1. It never sees or picks products. |
+| `extract.ts` | `extractListLines`: one opencode vision *chain* for a photographed list — free vision models first, the curated paid tier only as a fallback (`allowPaid`), bounded to 3 models at 38 s per attempt so a hang costs 3 × 38 s = 114 s and stays inside the job's 120 s deadline. The reply is validated into `ListLine`s: a legible line is never dropped, only its quantity falls back to 1. It never sees or picks products. |
 | `extract-jobs.ts` | The in-memory registry behind `POST /list/extract`: at most one running read per user, a 2-minute deadline per job, a 1 h TTL and 5 jobs/user, and error text written for the shopper. One process only. |
 | `insights.ts` | Deterministic spend/units/product aggregates: store-name merging, deposit returns kept separate, POS summary lines excluded. |
 | `capture-parse.ts` | Pure parsers for the purchase screens (money, rows, reconciliation) with unit tests. |
@@ -34,9 +34,11 @@ shape comes from the shipped app's own bytecode.
    purchases, scored, deduped and capped at 8 — and that single array is the prompt's
    order, `readPicks`' bound and `applyPicks`' index. The model may only point at a row
    in it; the candidate object and its id always come from the menu this backend built,
-   never from the reply, and an index outside the line's own menu is dropped. The rules
-   score is the pre-filter and the fallback when opencode is unconfigured, rate-limited
-   or answers with something else.
+   never from the reply, and an index outside the line's own menu is dropped. `readPicks`
+   keeps the first *valid* pick per line: a later repeated answer only replaces an earlier
+   one when it is also valid, so an invalid or explicit `null` pick does not erase a pick
+   the model already made correctly. The rules score is the pre-filter and the fallback
+   when opencode is unconfigured, rate-limited or answers with something else.
    Recent purchases are part of that menu, so the model may pick one on its own merits;
    `rerankWithHistory` is only the correction for a weak rules line, not a second opinion
    that outranks the model. A purchase collapses into a catalogue row only when it is the
@@ -47,10 +49,10 @@ shape comes from the shipped app's own bytecode.
 4. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
    store is meaningless.
 5. **The photo leaves the server; the backend still owns the menu and the ids.** Photo
-   intake is one opencode vision call (`extract.ts`): the image is downscaled in the
-   browser, is never written to Mongo, never logged, and is not kept by the job — only the
-   lines it produced are. The model returns list lines and nothing else; it never sees the
-   catalogue, never picks a product, and matching (`choose.ts`, `match.ts`) is unchanged
+   intake is one bounded opencode vision chain (`extract.ts`): the image is downscaled in
+   the browser, is never written to Mongo, never logged, and is not kept by the job — only
+   the lines it produced are. The model returns list lines and nothing else; it never sees
+   the catalogue, never picks a product, and matching (`choose.ts`, `match.ts`) is unchanged
    by how the lines were typed or read.
 
 ## Photo intake (opencode vision)
@@ -60,8 +62,10 @@ chain runs. Operational limits, because a vision chain can reach a paid model:
 
 - **One running read per user.** A second request answers `429`; a settled job is the only
   thing a new read may evict (5 jobs/user, 1 h TTL).
-- **A 2-minute deadline per job.** `extractListLines` cannot be cancelled, so the
-  in-flight model call may still finish — and cost money — after its job has settled.
+- **A 2-minute deadline per job, and a chain that fits inside it.** A timeout is not
+  retried, so the hang path is `maxModels` × `timeoutMs` = 3 × 38 s = 114 s; the UI polls
+  for 110 s and then says so. `extractListLines` still cannot be cancelled, so a call
+  already in flight can finish — and cost money — after its job has settled.
 - **In memory, one process.** A restart or a second instance answers `404` ("read the
   photo again"); there is no shared store.
 - **Errors are written for the shopper.** `NO_READABLE_LIST`, the deadline message and
@@ -110,7 +114,10 @@ Units vs rows: the `ITEMS` header counts **units**, so a receipt with 28 rows an
 and `src/api/__tests__/easyshopper.test.ts` (photo intake: `202` + poll, `404` for someone
 else's or a lost job). `easyshopper-extract.test.ts` feeds the synthetic fixture photo
 `src/lib/__tests__/fixtures/shopping-list.png` through the prompt shape and mocks
-`runPrompt`; `opencode-client.test.ts` owns the vision chain and the paid tagging
-(one attempt, kill switch, pin). The client tests stub `fetch`; never call the real API
-or a real model from a test. Purchases must stay out of the Knuspr `Order` collection and
-out of `consumption.ts` unless a caller explicitly opts in.
+`runPrompt`, and asserts the chain's budget (3 models × 38 s). `opencode-client.test.ts`
+owns the vision chain and the paid tagging (one attempt, kill switch, pin).
+`src/frontend/lib/__tests__/listForm.test.ts` covers the textarea's line and character
+caps, the merge with a photo's lines and the wording for a refused body. The client
+tests stub `fetch`; never call the real API or a real model from a test. Purchases must
+stay out of the Knuspr `Order` collection and out of `consumption.ts` unless a caller
+explicitly opts in.

@@ -207,8 +207,10 @@ describe('planShoppingList', () => {
     for (const [, options] of mockRunPrompt.mock.calls) {
       expect(options).not.toHaveProperty('allowPaid');
       expect(options).not.toHaveProperty('require');
-      // A synchronous request cannot wait out a whole free chain at 120 s per attempt.
-      expect(options).toMatchObject({ timeoutMs: 20_000, maxModels: 3 });
+      // A synchronous request cannot wait out the whole chain: two models at 15 s, and
+      // a timeout is not retried, so a hang costs 2 × 15 s = 30 s — the client aborts
+      // at 45 s. The retry path (2 × 3 × 15 s) only applies to fast transport errors.
+      expect(options).toMatchObject({ timeoutMs: 15_000, maxModels: 2 });
     }
   });
 });

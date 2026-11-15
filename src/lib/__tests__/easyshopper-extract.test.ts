@@ -162,12 +162,15 @@ describe('extractListLines', () => {
     expect(options?.files?.[0]).toMatchObject({ source: { type: 'inline' }, uri: 'data:image/jpeg;base64,AAAA' });
   });
 
-  it('bounds the wait per attempt, below the patience of the UI', async () => {
+  it('bounds the chain per attempt and in models, inside the job deadline', async () => {
     mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
 
     await extractListLines('data:image/jpeg;base64,AAAA');
 
-    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(90_000);
+    // A timeout is not retried, so a hang costs models × 1 × timeout: 3 × 38 s = 114 s,
+    // under the 120 s job deadline and the UI's 110 s poll budget.
+    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(38_000);
+    expect(mockRunPrompt.mock.calls[0][1]?.maxModels).toBe(3);
   });
 
   it('rejects an empty answer at the client boundary, so the next model is tried', async () => {

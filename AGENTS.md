@@ -21,6 +21,7 @@ npm run dev:frontend # Vite only
 npm run dev:backend  # Express with tsx watch
 npm test             # NODE_ENV=test vitest run (in-memory MongoDB)
 npm run lint         # oxlint
+npm run typecheck    # tsc over the in-store/opencode surface (build does not check types)
 npm run build        # production frontend + bundled server
 npm run start:prod   # run dist-server/server.js
 npm run easyshopper:capture   # sidecar: read EASY Shopper purchases off the phone (adb)
@@ -28,9 +29,15 @@ npm run easyshopper:sync      # sidecar worker: run capture when the UI asks for
 ```
 
 `npm test`, `npm run lint` and `npm run build` must all pass before a change is
-considered done. `npx tsc --noEmit` is not usable in this repo: TypeScript 7
-rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
-`baseUrl`). Use `npm run build` for type-checking.
+considered done. `npm run build` is **not** a type check — vite and esbuild strip
+types without looking at them. `npx tsc --noEmit` cannot read this repo's
+`tsconfig.json` under TypeScript 7 (`moduleResolution=node10` and `baseUrl` were
+removed), so `npm run typecheck` runs `tsc --ignoreConfig` twice over the
+in-store/opencode surface (lib + api modules, then the page with Solid's JSX
+settings). CI does not type-check yet; run it yourself. The rest of the tree
+(`src/api/app.ts`, the bot/order controllers, `src/models`) still has
+`--strict` errors from before this script existed, which is why the scope is
+narrow.
 
 ## Architecture
 
@@ -91,8 +98,11 @@ Optional bot settings: `OPENCODE_BASE_URL`, `OPENCODE_API_KEY`,
 `OPENCODE_ALLOW_INSECURE_TLS` (only for a test host with a self-signed
 opencode certificate), `OPENCODE_MODELS` (`provider:id,...` override for text
 calls; normally unset, because the client picks active cost-0 models from
-`GET /api/model`). Without opencode, simple commands still work because
-`src/lib/bot/intent.ts` has a regex parser.
+`GET /api/model`). A pinned model the registry cannot vouch for is tagged
+billable — it gets a single attempt instead of three and logs `paid fallback
+used` when it answers — so a text pin carries the same "prove it is free or
+treat it as paid" rule as a vision one. Without opencode, simple commands still
+work because `src/lib/bot/intent.ts` has a regex parser.
 
 ## Testing notes
 

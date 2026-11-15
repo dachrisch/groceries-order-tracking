@@ -1,6 +1,13 @@
 import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
 import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert } from 'lucide-solid';
 import QRCode from 'qrcode';
+import {
+  FULL_LIST_MESSAGE,
+  listLinesFromText,
+  listOverflows,
+  listRefusalMessage,
+  mergeExtractedLines,
+} from '../lib/listForm';
 
 interface PlannedLine {
   line: { text: string; quantity: number };
@@ -19,8 +26,6 @@ interface Plan {
   lines: PlannedLine[];
   matched: number;
   unmatched: number;
-  /** `model` as soon as one line was chosen by opencode. */
-  source: 'model' | 'rules';
 }
 
 /** What `GET /list/extract/:id` answers while a photo read is in flight or settled. */
@@ -92,9 +97,10 @@ async function prepareImage(file: File): Promise<string> {
 }
 
 /**
- * The plan route can spend ~3 min on three models (3 × 3 × 20 s), and the photo read is
- * bounded server-side at 120 s. Waiting that long in a button is not an option, so both
- * calls carry a client budget and report it as a sentence rather than as "aborted".
+ * The plan route is bounded at 2 models × 3 attempts × 15 s ≈ 90 s on repeated fast
+ * errors (`MATCH_CALL`), and the photo read is bounded server-side at 120 s. Waiting
+ * that long in a button is not an option, so both calls carry a client budget and
+ * report it as a sentence rather than as "aborted".
  */
 const POST_TIMEOUT_MS = 45_000;
 const EXTRACT_POST_TIMEOUT_MS = 20_000;
@@ -172,19 +178,15 @@ export function InStore() {
    */
   let photoGeneration = 0;
 
-  /** Add the read lines to whatever the shopper already typed, without duplicating any. */
+  /**
+   * Add the read lines to whatever the shopper already typed, without duplicating any.
+   * The merge is capped at the schema's 60 lines: a photo alone may return 60, so
+   * appending without a cap would turn the next "Match products" into a raw 400.
+   */
   const appendLines = (extracted: Array<{ text: string; quantity: number }>) => {
-    const existing = lines()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const formatted = extracted.map((line) => (line.quantity > 1 ? `${line.quantity}x ${line.text}` : line.text));
-    // Both sides: a photo that lists an item twice must not append it twice either.
-    const merged = [...existing];
-    for (const line of formatted) {
-      if (!merged.includes(line)) merged.push(line);
-    }
-    setLines(merged.join('\n'));
+    const { text, truncated } = mergeExtractedLines(lines(), extracted);
+    setLines(text);
+    if (truncated) setError(FULL_LIST_MESSAGE);
   };
 
   onCleanup(() => {
@@ -254,12 +256,15 @@ export function InStore() {
     }
   };
 
-  const body = () => ({
-    lines: lines()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean),
-  });
+  /**
+   * The request body, already inside the schema (`listLinesFromText` clamps each line
+   * to 200 characters and the list to 60), so a click can never send a `400` for its
+   * own size. A textarea that outgrew the cap is reported rather than silently cut.
+   */
+  const body = () => {
+    if (listOverflows(lines())) setError(FULL_LIST_MESSAGE);
+    return { lines: listLinesFromText(lines()) };
+  };
 
   /**
    * Hand the photo to opencode, then poll the job until it settles. The image never
@@ -341,8 +346,8 @@ export function InStore() {
     setShareLink(null);
     setQr(null);
     try {
-      const { ok, data } = await postJson<Plan>('/api/easyshopper/list/plan', body());
-      if (!ok) throw new Error(data.error ?? 'planning failed');
+      const { ok, status, data } = await postJson<Plan>('/api/easyshopper/list/plan', body());
+      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'planning failed'));
       setPlan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'planning failed');
@@ -355,12 +360,12 @@ export function InStore() {
     setBusy('create');
     setError(null);
     try {
-      const { ok, data } = await postJson<{ plan: Plan; shareLink?: string | null; added: number }>(
+      const { ok, status, data } = await postJson<{ plan: Plan; shareLink?: string | null; added: number }>(
         '/api/easyshopper/list/create',
         body(),
         { timeoutMessage: 'creating the list took too long — try again' }
       );
-      if (!ok) throw new Error(data.error ?? 'list creation failed');
+      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'list creation failed'));
       setPlan(data.plan);
       setShareLink(data.shareLink ?? null);
       setExpiresAt(null);

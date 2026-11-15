@@ -20,12 +20,26 @@ const MAX_TEXT_QUANTITY = 99;
 export const NO_READABLE_LIST = 'the photo contained no readable shopping list';
 
 /**
- * Per attempt, not per call: `runPrompt` gives each free model three attempts and each
- * paid model one, so the whole chain costs models × attempts × this. A timeout fails
- * over to the next model instead of being retried, because a vision call that hung on
- * one image rarely answers on a second try. Keep the total well under the UI's patience.
+ * Per attempt, not per call, and the chain is capped at `VISION_MAX_MODELS`.
+ *
+ * A timeout is non-retryable in `runPrompt` (it moves straight to the next model), so a
+ * chain where every model *hangs* costs models × 1 × this: 3 × 38 s = 114 s. That fits
+ * inside the job's 120 s deadline (`extract-jobs.ts`) and the UI's 110 s poll budget, so
+ * the shopper is never told "took too long" while a chain is still spending. The three
+ * attempts per free model only apply to *fast* transport errors, so they add seconds,
+ * not minutes. A slow-but-working model that needs more than 38 s per attempt is treated
+ * as hung by design: one unreadable photo is worth less than anyone's patience.
  */
-const VISION_TIMEOUT_MS = 90_000;
+const VISION_TIMEOUT_MS = 38_000;
+/**
+ * The hang bound above, and a *prefix* of the chain: free models first, the paid tier
+ * appended after them. Three models therefore means three free ones while the free tier
+ * is healthy; the curated paid names reach the prefix only once free models are cooled
+ * down by a quota error or a pin shortens the free head. That is the bet: a photo that
+ * cannot be read on three free models inside the job deadline is not worth extending
+ * into an unbounded paid walk that the shopper has already given up on.
+ */
+const VISION_MAX_MODELS = 3;
 
 const PROMPT = [
   'The attached photo shows a handwritten shopping list for a German supermarket.',
@@ -76,8 +90,8 @@ export function normalizeExtractedLines(raw: unknown): ListLine[] {
         ? clampLine(
             value.text
               .replace(/\s+/g, ' ')
-              // A control byte or a zero-width joiner from JSON/OCR must not hide in a
-              // line or glue words together; emoji are left alone.
+              // A control byte or a zero-width joiner from JSON or a model's transcription
+              // must not hide in a line or glue words together; emoji are left alone.
               // oxlint-disable-next-line no-control-regex -- stripping control bytes is the point
               .replace(/[\u0000-\u001f\u200b-\u200f]/g, '')
               .trim()
@@ -140,8 +154,9 @@ export async function extractListLines(imageBase64: string): Promise<ExtractedLi
       // Free vision models first; the paid tier only answers when they all failed.
       allowPaid: true,
       timeoutMs: VISION_TIMEOUT_MS,
+      maxModels: VISION_MAX_MODELS,
       // A model that never received the image still answers happily, with no lines;
-      // that is not an answer, so the next model (and eventually the paid tier) gets it.
+      // that is not an answer, so the next model in the chain gets it.
       accept: (reply) => normalizeExtractedLines(reply).length > 0,
       onModelUsed: (model) => {
         answered = model;
