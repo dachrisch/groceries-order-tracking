@@ -573,7 +573,9 @@ describe('image prompts', () => {
     await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
       { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
     ]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('staying free-only'));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('paid vision fallback was requested but no curated model is servable')
+    );
   });
 
   it('does not report a model that answered with prose instead of JSON', async () => {

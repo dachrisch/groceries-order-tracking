@@ -397,7 +397,9 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
     .filter((m): m is ModelRef => m !== null);
 
   // A pin carries its own billing marker; untagged, a paid pin would be retried
-  // three times and logged as free.
+  // three times and logged as free. A registry entry without cost data counts as paid:
+  // only an explicit all-zero cost array proves a model is free, because a missing price
+  // is not evidence of free.
   const billable = (m: ModelRef): ModelRef => {
     const entry = known(m);
     const paid = PAID_VISION_KEYS.has(modelKey(m)) || (entry !== undefined && !isFree(entry));
@@ -436,7 +438,7 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
       return entry !== undefined && !isFree(entry);
     });
     if (curated.length === 0) {
-      console.warn('[opencode] paid vision fallback was requested but no curated model is servable, staying free-only');
+      console.warn('[opencode] paid vision fallback was requested but no curated model is servable');
     }
     const seen = new Set(result.map(modelKey));
     result = [
