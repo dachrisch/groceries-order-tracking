@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../opencode-client', () => ({
   runPrompt: vi.fn(),
-  isOpencodeConfigured: () => true,
 }));
 
 import { runPrompt } from '../opencode-client';
@@ -11,6 +13,10 @@ import { extractListLines, normalizeExtractedLines } from '../easyshopper/extrac
 const mockRunPrompt = vi.mocked(runPrompt);
 
 beforeEach(() => mockRunPrompt.mockReset());
+
+/** A real multi-KB photo, so a payload problem cannot hide behind a 20-byte stub. */
+const photo = readFileSync(fileURLToPath(new URL('./fixtures/shopping-list.png', import.meta.url)));
+const photoDataUri = `data:image/png;base64,${photo.toString('base64')}`;
 
 describe('normalizeExtractedLines', () => {
   it('keeps clean lines and the quantity', () => {
@@ -31,7 +37,7 @@ describe('normalizeExtractedLines', () => {
 
   it('drops junk, empties and non-list noise', () => {
     const lines = normalizeExtractedLines({
-      lines: ['', '   ', '---', '12', '[]', { text: 'x'.repeat(200) }, { text: 'Eier', quantity: 4 }],
+      lines: ['', '   ', '---', '12', '[]', '2x', { text: 'Eier', quantity: 4 }],
     });
     expect(lines).toEqual([{ text: 'Eier', quantity: 4 }]);
   });
@@ -54,10 +60,36 @@ describe('normalizeExtractedLines', () => {
     expect(normalizeExtractedLines({ lines: entries })).toHaveLength(60);
   });
 
-  it('treats a nonsense quantity as one instead of dropping the line', () => {
-    expect(normalizeExtractedLines({ lines: [{ text: 'Milch', quantity: 999 }, { text: 'Brot', quantity: '2' }] })).toEqual([
+  it('applies the cap after the filters, so junk cannot crowd out real lines', () => {
+    const junk = Array.from({ length: 60 }, () => '---');
+    expect(normalizeExtractedLines({ lines: [...junk, { text: 'Butter' }] })).toEqual([
+      { text: 'Butter', quantity: 1 },
+    ]);
+  });
+
+  it('treats an unusable quantity as one instead of dropping or trusting it', () => {
+    expect(
+      normalizeExtractedLines({
+        lines: [
+          { text: 'Milch', quantity: 999 },
+          { text: 'Brot', quantity: '2' },
+          { text: 'Eier', quantity: -3 },
+          { text: 'Butter', quantity: 2.5 },
+        ],
+      })
+    ).toEqual([
       { text: 'Milch', quantity: 1 },
       { text: 'Brot', quantity: 1 },
+      { text: 'Eier', quantity: 1 },
+      { text: 'Butter', quantity: 1 },
+    ]);
+  });
+
+  it('lets a quantity written in the text exceed the model field, up to 99', () => {
+    // A crate of 24 is real; 99 is the sanity ceiling so a misread cannot reach the cart.
+    expect(normalizeExtractedLines({ lines: [{ text: '24x Bier' }, { text: '999x Eier' }] })).toEqual([
+      { text: 'Bier', quantity: 24 },
+      { text: 'Eier', quantity: 99 },
     ]);
   });
 
@@ -65,6 +97,24 @@ describe('normalizeExtractedLines', () => {
     expect(normalizeExtractedLines({ lines: [{ text: '  Waschmittel   sensitiv ' }] })).toEqual([
       { text: 'Waschmittel sensitiv', quantity: 1 },
     ]);
+  });
+
+  it('strips control and zero-width characters but keeps emoji', () => {
+    expect(
+      normalizeExtractedLines({ lines: [{ text: 'Wasch\u200bmittel\u0000 sensitiv' }, { text: 'Milch 🥛' }] })
+    ).toEqual([
+      { text: 'Waschmittel sensitiv', quantity: 1 },
+      { text: 'Milch 🥛', quantity: 1 },
+    ]);
+  });
+
+  it('truncates an over-long line at a word boundary instead of dropping it', () => {
+    const long = `Waschmittel ${'sensitiv '.repeat(9)}4,5kg`;
+    const [line] = normalizeExtractedLines({ lines: [{ text: long }] });
+
+    expect(line.text.length).toBeLessThanOrEqual(80);
+    expect(long.startsWith(line.text)).toBe(true);
+    expect(long[line.text.length]).toBe(' ');
   });
 });
 
@@ -77,16 +127,52 @@ describe('extractListLines', () => {
 
     const result = await extractListLines('data:image/jpeg;base64,AAAA');
 
-    expect(result.lines).toEqual([
-      { text: 'Milch 1,5', quantity: 2 },
-      { text: 'Brot', quantity: 1 },
-    ]);
-    expect(result.model).toBe('opencode:mimo-v2.6-flash-free');
+    expect(result).toEqual({
+      lines: [
+        { text: 'Milch 1,5', quantity: 2 },
+        { text: 'Brot', quantity: 1 },
+      ],
+      model: 'opencode:mimo-v2.6-flash-free',
+      paid: false,
+    });
     const [prompt, options] = mockRunPrompt.mock.calls[0];
     expect(prompt).toContain('shopping list');
     expect(options?.require).toBe('image');
     expect(options?.allowPaid).toBe(true);
     expect(options?.files?.[0]).toMatchObject({ source: { type: 'inline' }, uri: 'data:image/jpeg;base64,AAAA' });
+  });
+
+  it('bounds the wait per attempt, below the patience of the UI', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(90_000);
+  });
+
+  it('rejects an empty answer at the client boundary, so the next model is tried', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    const accept = mockRunPrompt.mock.calls[0][1]?.accept;
+    expect(accept?.(null)).toBe(false);
+    expect(accept?.({ lines: [] })).toBe(false);
+    expect(accept?.({ lines: ['---'] })).toBe(false);
+    expect(accept?.({ lines: [{ text: 'Brot', quantity: 2 }] })).toBe(true);
+  });
+
+  it('reports a paid fallback as the answering model', async () => {
+    mockRunPrompt.mockImplementationOnce(async (_prompt, options) => {
+      options?.onModelUsed?.({ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true });
+      return { lines: [{ text: 'Butter' }] };
+    });
+
+    await expect(extractListLines('data:image/jpeg;base64,AAAA')).resolves.toEqual({
+      lines: [{ text: 'Butter', quantity: 1 }],
+      model: 'opencode-go:gpt-6-luna',
+      paid: true,
+    });
   });
 
   it('wraps bare base64 in a data URI', async () => {
@@ -95,6 +181,26 @@ describe('extractListLines', () => {
     await extractListLines('AAAA');
 
     expect(mockRunPrompt.mock.calls[0][1]?.files?.[0]).toMatchObject({ uri: 'data:image/jpeg;base64,AAAA' });
+  });
+
+  it('names the attachment after the type it actually is', async () => {
+    mockRunPrompt.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/png;base64,AAAA');
+    await extractListLines('data:image/webp;base64,AAAA');
+
+    expect(mockRunPrompt.mock.calls[0][1]?.files?.[0]?.name).toBe('shopping-list.png');
+    expect(mockRunPrompt.mock.calls[1][1]?.files?.[0]?.name).toBe('shopping-list.webp');
+  });
+
+  it('posts the fixture photo byte-for-byte', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Milch 1,5', quantity: 2 }] });
+
+    await extractListLines(photoDataUri);
+
+    const file = mockRunPrompt.mock.calls[0][1]?.files?.[0];
+    expect(file?.uri).toBe(photoDataUri);
+    expect(file?.name).toBe('shopping-list.png');
   });
 
   it('asks exactly once per photo', async () => {

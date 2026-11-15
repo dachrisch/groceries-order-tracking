@@ -585,4 +585,55 @@ describe('image prompts', () => {
     ).rejects.toThrow(/did not contain JSON/);
     expect(used).toEqual([]);
   });
+
+  /** Two models; the first answers `emptyReply` whenever it is asked. */
+  function twoModels(firstReply: string) {
+    const created: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.endsWith('/api/session')) {
+        const model = JSON.parse(String((init as { body?: string } | undefined)?.body ?? '{}')).model.id as string;
+        created.push(model);
+        return response({ data: { id: `ses_${model}` } });
+      }
+      if (u.endsWith('/prompt')) return response({ data: {} });
+      if (u.includes('/message')) {
+        const model = u.split('/api/session/ses_')[1].split('/')[0];
+        const text = model === 'free-a' ? firstReply : '{"lines":[{"text":"Milch"}]}';
+        return response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text }] }] });
+      }
+      return response({});
+    });
+    return created;
+  }
+
+  const twoFreeModels = [
+    { id: 'free-a', providerID: 'opencode' },
+    { id: 'free-b', providerID: 'opencode' },
+  ];
+
+  it('fails over to the next model when a reply is not an answer', async () => {
+    twoModels('{"lines":[]}');
+
+    const used: string[] = [];
+    const result = await runPrompt<{ lines: unknown[] }>('x', {
+      models: twoFreeModels,
+      accept: (raw) => ((raw as { lines?: unknown[] }).lines ?? []).length > 0,
+      onModelUsed: (model) => used.push(model.id),
+    });
+
+    expect(result).toEqual({ lines: [{ text: 'Milch' }] });
+    // The model that answered with nothing must never be reported as the answer.
+    expect(used).toEqual(['free-b']);
+  });
+
+  it('moves to the next model on a timeout instead of retrying the same one', async () => {
+    // timeoutMs 0 makes the poll give up immediately, without sleeping.
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    await expect(runPrompt('x', { models: twoFreeModels, timeoutMs: 0 })).rejects.toThrow(/timed out/);
+
+    // Free models normally get three attempts; a timeout spends one, on each model.
+    expect(created).toEqual(['free-a', 'free-b']);
+  });
 });

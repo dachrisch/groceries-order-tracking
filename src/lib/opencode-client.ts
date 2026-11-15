@@ -95,6 +95,9 @@ const MODELS_FAILURE_TTL_MS = 30 * 1000;
 // A model that answered with a quota/rate-limit error is skipped this long.
 const EXHAUSTED_COOLDOWN_MS = 15 * 60 * 1000;
 const QUOTA_ERROR = /\b429\b|FreeUsageLimitError|rate limit|quota/i;
+// A hung generation on the same payload rarely recovers, so a timeout fails over to
+// the next model instead of spending two more attempts on the one that hung.
+const TIMEOUT_ERROR = /timed out/i;
 
 let lastGoodModels: RegistryModel[] | null = null;
 let lastGoodAtMs = 0;
@@ -154,6 +157,7 @@ export interface PromptFile {
 export interface RunPromptOptions {
   /** Explicit chain, used as given — the caller owns its `paid` tagging. */
   models?: ModelRef[];
+  /** Per attempt, not per call: the whole chain is models × attempts × this. */
   timeoutMs?: number;
   /** Attachments posted with the prompt. */
   files?: PromptFile[];
@@ -163,6 +167,12 @@ export interface RunPromptOptions {
   allowPaid?: boolean;
   /** Called with the model that answered, so a paid fallback is visible. */
   onModelUsed?: (model: ModelRef) => void;
+  /**
+   * Reject a parsed reply that is not an answer, so the next model is tried. A
+   * rejected reply is a failed attempt: it is never reported through `onModelUsed`
+   * and never logged as a paid fallback, because it did no useful work.
+   */
+  accept?: (raw: unknown) => boolean;
 }
 
 export interface OpencodeConfig {
@@ -459,7 +469,8 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
 /**
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
- * A paid fallback model gets a single attempt.
+ * A paid fallback model gets a single attempt. A reply that does not parse, or that
+ * `accept` rejects, is a failed attempt: it is never reported as the answer.
  */
 export async function runPrompt<T = unknown>(prompt: string, options: RunPromptOptions = {}): Promise<T> {
   const config = getOpencodeConfig();
@@ -486,9 +497,13 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
         sessionId = await createSession(config, model);
         await sendPrompt(config, sessionId, prompt, options.files);
         const replyText = await pollForReply(config, sessionId, timeoutMs);
-        // Only a parsed reply counts as an answer: prose that fails to parse is a
-        // failed attempt, and must not be reported as the model that answered.
+        // Only a parsed reply that is also an answer counts: prose that fails to
+        // parse, or a well-formed non-answer such as {"lines":[]}, is a failed
+        // attempt and must not be reported as the model that answered.
         const parsed = JSON.parse(extractFirstJsonObject(replyText)) as T;
+        if (options.accept && !options.accept(parsed)) {
+          throw new Error('opencode reply was not an answer');
+        }
         if (model.paid) console.warn(`[opencode] paid fallback used: ${modelKey(model)}`);
         options.onModelUsed?.(model);
         return parsed;
@@ -497,10 +512,14 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
           await discardSession(config, sessionId);
         }
         lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
         // Quota/rate limit: retrying the same model won't help for minutes.
         // Cool it down and move straight to the next model.
-        if (QUOTA_ERROR.test(error instanceof Error ? error.message : String(error))) {
+        if (QUOTA_ERROR.test(message)) {
           exhaustedUntil.set(modelKey(model), Date.now() + EXHAUSTED_COOLDOWN_MS);
+          break;
+        }
+        if (TIMEOUT_ERROR.test(message)) {
           break;
         }
         if (attempt < attempts) {

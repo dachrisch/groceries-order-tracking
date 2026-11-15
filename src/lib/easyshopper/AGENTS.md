@@ -15,7 +15,7 @@ shape comes from the shipped app's own bytecode.
 | `match.ts` | Deterministic line → product matching (token coverage + size compatibility). No LLM, no I/O. |
 | `list.ts` | `planShoppingList` (search per line, match, keep unmatched as free text) and `rerankWithHistory` (prefer what the user actually bought). |
 | `ocr.ts` | tesseract over a photo of a handwritten list. Local, no network. Being replaced by `extract.ts`. |
-| `extract.ts` | `extractListLines`: one opencode vision call for a photographed list, free models first and the curated paid tier only as a fallback. The reply is validated into `ListLine`s; it never picks products. |
+| `extract.ts` | `extractListLines`: one opencode vision call for a photographed list, free models first and the curated paid tier only as a fallback. The reply is validated into `ListLine`s; it never picks products. A legible line is never dropped; only its quantity falls back to 1. |
 | `insights.ts` | Deterministic spend/units/product aggregates: store-name merging, deposit returns kept separate, POS summary lines excluded. |
 | `capture-parse.ts` | Pure parsers for the purchase screens (money, rows, reconciliation) with unit tests. |
 
