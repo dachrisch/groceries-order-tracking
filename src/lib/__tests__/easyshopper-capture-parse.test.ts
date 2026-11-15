@@ -23,7 +23,7 @@ describe('parseListRow', () => {
     const row = parseListRow('11/13/2026, 04:50 PM, EDEKA MUSTERSTADT (MUSTERSTR.), CART, €107.19');
     expect(row).toMatchObject({
       displayWhen: '11/13/2026, 04:50 PM',
-      purchasedAt: '2026-11-13T15:50:00.000Z',
+      purchasedAt: '2026-11-13T16:50:00.000Z',
       type: 'CART',
       total: 107.19,
     });
@@ -82,8 +82,10 @@ describe('titleCase', () => {
 
 describe('toIso', () => {
   it('converts the 12-hour clock', () => {
-    expect(toIso('11/13/2026', '04:50 PM')).toBe('2026-11-13T15:50:00.000Z');
-    expect(toIso('12/30/2025', '12:58 PM')).toBe('2025-12-30T11:58:00.000Z');
+    // Wall clock as UTC: no dependency on the machine's timezone.
+    expect(toIso('11/13/2026', '04:50 PM')).toBe('2026-11-13T16:50:00.000Z');
+    expect(toIso('12/30/2025', '12:58 PM')).toBe('2025-12-30T12:58:00.000Z');
+    expect(toIso('01/02/2026', '12:05 AM')).toBe('2026-01-02T00:05:00.000Z');
   });
 });
 

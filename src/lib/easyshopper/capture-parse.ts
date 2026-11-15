@@ -74,6 +74,12 @@ export const LIST_ROW = /^(\d{1,2}\/\d{1,2}\/\d{4}), (\d{1,2}:\d{2} [AP]M), (.*)
 export const ITEM_ROW = /^(.*), (-?€ ?[\d.,]+), (-?€ ?[\d.,]+) x ([\d.,]+)$/;
 const QTY_CELL = /^-?€ ?[\d.,]+ x [\d.,]+$/;
 
+/**
+ * Receipt timestamps are the device's wall clock, not an absolute instant. They are
+ * encoded as UTC so the result is identical on any runner — building a local `Date`
+ * shifts the value by the CI machine's timezone. All sessions come from one device in
+ * one timezone, so ordering and month bucketing stay correct.
+ */
 export function toIso(datePart: string, timePart: string): string {
   const [month, day, year] = datePart.split('/').map(Number);
   const clock = /(\d{1,2}):(\d{2}) (AM|PM)/.exec(timePart);
@@ -81,11 +87,8 @@ export function toIso(datePart: string, timePart: string): string {
   const minute = clock ? Number(clock[2]) : 0;
   if (clock && clock[3] === 'PM' && hour < 12) hour += 12;
   if (clock && clock[3] === 'AM' && hour === 12) hour = 0;
-  const date = new Date(year, month - 1, day, hour, minute);
-  if (Number.isNaN(date.getTime())) {
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00.000Z`;
-  }
-  return date.toISOString();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00.000Z`;
 }
 
 export function titleCase(value: string): string {
