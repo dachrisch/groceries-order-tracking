@@ -4,7 +4,7 @@
  * it cannot answer. No writes happen here, so the plan can be previewed and corrected
  * before anything reaches the EASY Shopper list.
  */
-import { normalizeName } from '../bot/product-groups';
+import { deumlaut } from '../bot/product-groups';
 import { chooseWithModel, MAX_CANDIDATES, type LineCandidates } from './choose';
 import { EasyShopperClient, type EasyShopperSession, type SearchProduct } from './client';
 import { matchLines, parseListLine, scoreCandidate, toCandidate, type LineMatch, type ListLine, type MatchCandidate } from './match';
@@ -48,14 +48,15 @@ function productKey(product: SearchProduct): string {
 
 /**
  * Who a candidate *is*, however it reached us: a history row and a catalogue item for
- * the same product must collapse to one menu row. A catalogue name often repeats its
- * brand, so that repetition is stripped before comparing.
+ * the same product must collapse to one menu row — but only the *same* product. Sizes,
+ * percentages and parentheticals are part of a product's identity ("H-Milch 1,5%" is not
+ * "H-Milch 3,5%", "laktosefrei" is not the ordinary carton), so only a brand the name
+ * already repeats is stripped; everything else is merely case- and umlaut-normalised.
  */
 function candidateKey(candidate: MatchCandidate): string {
-  const brand = normalizeName(candidate.brand ?? '').normalized;
-  let name = normalizeName(candidate.name).normalized;
-  if (brand && name.startsWith(brand)) name = name.slice(brand.length).trim();
-  return `${brand}|${name}`;
+  const brand = deumlaut(candidate.brand ?? '').toLowerCase().trim();
+  const name = deumlaut(candidate.name).toLowerCase().replace(/\s+/g, ' ').trim();
+  return `${brand}|${brand && name.startsWith(brand) ? name.slice(brand.length).trim() : name}`;
 }
 
 /**
@@ -108,9 +109,18 @@ export async function searchListCandidates(
 
     // One ordered menu: the model's positions, `readPicks`' bounds and `applyPicks`'
     // index all refer to this array. Best score first, so the cap keeps what matters.
+    // A purchase only belongs in the menu when it has evidence for this line; a
+    // catalogue row always does. Without that filter six unrelated purchases would pad
+    // the eight slots and evict real catalogue candidates the model never sees.
     const pool = [...catalogue, ...history]
       .map((candidate) => ({ candidate, score: scoreCandidate(line.text, candidate).score }))
-      .sort((a, b) => b.score - a.score || a.candidate.name.length - b.candidate.name.length)
+      .filter((entry) => entry.candidate.id !== undefined || entry.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          Number(b.candidate.id !== undefined) - Number(a.candidate.id !== undefined) ||
+          a.candidate.name.length - b.candidate.name.length
+      )
       .slice(0, MAX_CANDIDATES)
       .map((entry) => entry.candidate);
 
@@ -177,9 +187,10 @@ export interface PlanOptions {
 }
 
 /**
- * One pick is one cheap text call on a user-facing request: three candidate models at
- * 20 s each bound the wait at roughly a minute, instead of the whole free chain at the
- * client's default timeout.
+ * One pick is one cheap text call on a user-facing request, and it is bounded: three
+ * candidate models, and a transport error still gets `MAX_ATTEMPTS` (3) tries each, so
+ * the hard ceiling is 3 × 3 × 20 s ≈ 3 min. A timeout is not retried, so the common
+ * case is far shorter; a client-side abort for the shopper is a UI follow-up.
  */
 const MATCH_CALL = { timeoutMs: 20_000, maxModels: 3 } as const;
 

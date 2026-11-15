@@ -37,7 +37,10 @@ shape comes from the shipped app's own bytecode.
    rate-limited or answers with something else.
    Recent purchases are part of that menu, so the model may pick one on its own merits;
    `rerankWithHistory` is only the correction for a weak rules line, not a second opinion
-   that outranks the model.
+   that outranks the model. A purchase collapses into a catalogue row only when it is the
+   *same* product: pack size, percentage and parentheticals are identity ("H-Milch 3,5 %"
+   stays next to "H-Milch 1,5 %", "laktosefrei" next to the ordinary carton), and a
+   purchase with no evidence for the line never takes a menu slot.
 4. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
    store is meaningless.
 5. **The photo exception is explicit.** `AGENTS.md` says opencode gets text only; a photo

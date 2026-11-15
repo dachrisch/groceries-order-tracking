@@ -254,19 +254,92 @@ describe('searchListCandidates', () => {
     expect(plan.lines[0].match.candidate?.id).toBeUndefined();
   });
 
+  it('keeps a purchase whose pack size differs from the catalogue row', async () => {
+    // The shopper bought 3,5 %; the catalogue lists 1,5 %. Both belong in the menu —
+    // collapsing them deletes the row the shopper actually bought.
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Milch 1,5'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Weihenstephan H-Milch 3,5% 1l', brand: 'Weihenstephan' }],
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.name).sort()).toEqual([
+      'Weihenstephan H-Milch 1,5% 1l',
+      'Weihenstephan H-Milch 3,5% 1l',
+    ]);
+  });
+
+  it('does not merge products that differ in a parenthetical', async () => {
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Milch'],
+      storeGuid: 's',
+      extraCandidates: [
+        { name: 'Müllermilch Milch', brand: 'Müllermilch' },
+        { name: 'Müllermilch Milch (laktosefrei)', brand: 'Müllermilch' },
+      ],
+    });
+    const names = entries[0].candidates.map((candidate) => candidate.name);
+    expect(names).toContain('Müllermilch Milch');
+    expect(names).toContain('Müllermilch Milch (laktosefrei)');
+  });
+
+  it('keeps zero-score purchases out of the menu, so catalogue rows are not evicted', async () => {
+    // Eight catalogue rows for a line no purchase relates to: unrelated purchases must
+    // not take menu slots just because their names are short.
+    const unrelatedCatalogue = {
+      searchProducts: async () => ({
+        items: Array.from({ length: 8 }, (_unused, i) => ({
+          product: { id: `k${i}`, name: `Testmarke Katalogprodukt Nummer ${i} 1l`, brand: 'Testmarke' },
+        })),
+        count: 8,
+        groups: [],
+      }),
+    } as unknown as EasyShopperClient;
+
+    const entries = await searchListCandidates(unrelatedCatalogue, session, {
+      lines: ['Kaugummi'],
+      storeGuid: 's',
+      extraCandidates: ['Ei', 'Brot', 'Salz', 'Öl', 'Reis', 'Mehl'].map((name) => ({ name })),
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.id)).toEqual([
+      'k0',
+      'k1',
+      'k2',
+      'k3',
+      'k4',
+      'k5',
+      'k6',
+      'k7',
+    ]);
+  });
+
   it('orders the menu by score and caps it, so the cap keeps what matters', async () => {
-    const extras = Array.from({ length: 12 }, (_unused, i) => ({
-      name: `Waschmittel Sensitiv Variante ${i}`,
-      brand: 'Domol',
-    }));
+    // Mixed evidence: some purchases share both query words, some one, some none — with
+    // equal scores any permutation would pass, and a missing sort would go unnoticed.
+    const extras = [
+      { name: 'Domol Waschmittel Sensitiv Pulver', brand: 'Domol' },
+      { name: 'Waschmittel Color Pulver', brand: 'Ariel' },
+      { name: 'Sensitiv Spüler Zitrone', brand: 'Pril' },
+      { name: 'Waschmittel', brand: 'Persil' },
+      { name: 'Waschmittel Pulver Sensitiv', brand: 'Ariel' },
+      { name: 'Sensitiv Pulver', brand: 'Domol' },
+      { name: 'Waschmittel Flüssig', brand: 'Domol' },
+      { name: 'Sensitiv Zusatz', brand: 'Domol' },
+      { name: 'Eier 10er' },
+      { name: 'Brot Vollkorn' },
+      { name: 'Salz' },
+      { name: 'Öl' },
+    ];
     const entries = await searchListCandidates(client, session, {
       lines: ['Waschmittel sensitiv'],
       storeGuid: 's',
       extraCandidates: extras,
     });
-    expect(entries[0].candidates).toHaveLength(MAX_CANDIDATES);
     const scores = entries[0].candidates.map((candidate) => scoreCandidate('Waschmittel sensitiv', candidate).score);
+    expect(entries[0].candidates).toHaveLength(MAX_CANDIDATES);
     expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    expect(new Set(scores).size).toBeGreaterThan(1);
+    // The unrelated purchases stay out; the menu is catalogue + evidence-carrying history.
+    expect(entries[0].candidates.map((candidate) => candidate.name)).not.toContain('Eier 10er');
   });
 });
 
