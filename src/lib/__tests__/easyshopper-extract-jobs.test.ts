@@ -2,7 +2,7 @@
  * The photo job registry has no Mongo and no network, so it can be tested here
  * even where `mongodb-memory-server` cannot spawn (musl container, glibc mongod).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../easyshopper/extract', async (importOriginal) => ({
   // Partial: `NO_READABLE_LIST` must be the real string the registry compares against.
@@ -116,6 +116,24 @@ describe('startExtractJob', () => {
     expect(job.error).toBe('the photo could not be read — try again or type the list');
   });
 
+  it('settles the job even when describing the failure throws', async () => {
+    // The status is written before the message, so a broken log sink cannot leave the
+    // user locked out behind a 429: a 'running' job refuses the next read.
+    vi.spyOn(console, 'error').mockImplementation(() => {
+      throw new Error('the log sink is gone');
+    });
+    mockExtract.mockRejectedValueOnce(new Error('provider said 500'));
+
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    const job = await settle(started!.id);
+
+    expect(job.status).toBe('error');
+    expect(job.error).toBe('the photo could not be read — try again or type the list');
+    // Settled means the next read is accepted, not refused.
+    mockExtract.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+    expect(startExtractJob('alice', 'data:image/jpeg;base64,AAAA')).not.toBeNull();
+  });
+
   it('gives up at the deadline instead of waiting for a chain that may run for half an hour', async () => {
     // The real chain can spend ~36 min on model × attempt × timeout; the UI waits ~3.
     mockExtract.mockReturnValueOnce(new Promise(() => {}));
@@ -191,7 +209,7 @@ describe('startExtractJob', () => {
     expect(getExtractJob('bob', bob.id)).not.toBeNull();
   });
 
-  it('never evicts a job that is still running', async () => {
+  it('makes room for a new read by evicting a settled job, never the one it starts', async () => {
     mockExtract.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
     const ids: string[] = [];
     for (let i = 0; i < 5; i += 1) {
@@ -215,5 +233,82 @@ describe('startExtractJob', () => {
 
     running.resolve({ lines: [{ text: 'Milch', quantity: 1 }] });
     expect((await settle(live.id)).status).toBe('done');
+  });
+});
+
+/**
+ * The sweep is the only thing that keeps the registry from growing forever, and its
+ * guard (age from `finishedAt`, never from a live job) is invisible to every other
+ * test here. Fake timers only: the deadline test above runs on the real clock.
+ */
+describe('job sweep', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const ONE_HOUR = 60 * 60 * 1000;
+
+  /** Flush the detached worker's microtasks without firing its 120 s deadline. */
+  async function flush() {
+    await vi.advanceTimersByTimeAsync(1);
+  }
+
+  it('forgets a settled job after the hour', async () => {
+    mockExtract.mockResolvedValue({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    const old = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+    await flush();
+    expect(getExtractJob('alice', old.id)?.status).toBe('done');
+
+    vi.setSystemTime(Date.now() + ONE_HOUR + 60_000);
+    const fresh = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+    await flush();
+
+    expect(getExtractJob('alice', old.id)).toBeNull();
+    expect(getExtractJob('alice', fresh.id)).not.toBeNull();
+  });
+
+  it('ages a job from the moment it settled, not from when it started', async () => {
+    // A deadline longer than the jump below, so the job is genuinely still reading when
+    // the clock moves. Production caps this at two minutes; the registry must still age
+    // by `finishedAt`, because that is what "started" would get wrong.
+    const slow = deferred<{ lines: { text: string; quantity: number }[] }>();
+    mockExtract.mockReturnValue(slow.promise);
+    const late = startExtractJob('alice', 'data:image/jpeg;base64,AAAA', { deadlineMs: ONE_HOUR })!;
+    await flush();
+
+    vi.setSystemTime(Date.now() + 30 * 60 * 1000);
+    slow.resolve({ lines: [{ text: 'Milch', quantity: 1 }] });
+    await flush();
+    expect(getExtractJob('alice', late.id)?.status).toBe('done');
+
+    // 70 minutes after it started, 40 after it settled: still worth reading.
+    vi.setSystemTime(Date.now() + 40 * 60 * 1000);
+    const fresh = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+    await flush();
+
+    expect(getExtractJob('alice', late.id)).not.toBeNull();
+    expect(getExtractJob('alice', fresh.id)).not.toBeNull();
+  });
+
+  it('keeps a read that is still running, however old its creation time', async () => {
+    // Still running after an hour of wall clock: only the deadline can end it, and the
+    // sweep must not delete it — its poller is the one waiting.
+    const stuck = deferred<{ lines: { text: string; quantity: number }[] }>();
+    mockExtract.mockReturnValue(stuck.promise);
+
+    const live = startExtractJob('alice', 'data:image/jpeg;base64,AAAA')!;
+    await flush();
+    expect(getExtractJob('alice', live.id)?.status).toBe('running');
+
+    vi.setSystemTime(Date.now() + ONE_HOUR + 60_000);
+    // The concurrency guard answers first: one read at a time.
+    expect(startExtractJob('alice', 'data:image/jpeg;base64,AAAA')).toBeNull();
+
+    expect(getExtractJob('alice', live.id)?.status).toBe('running');
+
+    // Not swept, just late: it finishes normally and counts as fresh from now on.
+    stuck.resolve({ lines: [{ text: 'Milch', quantity: 1 }] });
+    await flush();
+    expect(getExtractJob('alice', live.id)?.status).toBe('done');
   });
 });

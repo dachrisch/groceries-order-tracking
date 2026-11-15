@@ -124,10 +124,11 @@ export function startExtractJob(
   const mine = [...jobs.values()].filter((job) => job.userId === userId);
   if (mine.some((job) => !isSettled(job))) return null;
 
-  // Only settled jobs may go: evicting a running one would throw away a result the
-  // shopper already paid for and leave its poller staring at a 404.
+  // Only settled jobs may go. The early return above guarantees every job of this user
+  // is settled here, so a new read may evict exactly as many of them as it would push
+  // the user past the cap — and never the one it is about to start.
   const settled = mine.filter(isSettled);
-  const excess = mine.length - MAX_JOBS_PER_USER + 1;
+  const excess = settled.length - MAX_JOBS_PER_USER + 1;
   for (const stale of settled.slice(0, Math.max(0, excess))) jobs.delete(stale.id);
 
   const job: ExtractJob = { id: randomUUID(), userId, status: 'pending', createdAt: Date.now() };
@@ -144,8 +145,16 @@ export function startExtractJob(
       job.paid = extracted.paid;
       job.status = 'done';
     } catch (error) {
-      job.error = userSafeMessage(error);
+      // Settle first, then describe: a throw while formatting must not leave the job
+      // 'running', because a running job answers the user's next read with 429.
       job.status = 'error';
+      try {
+        job.error = userSafeMessage(error);
+      } catch {
+        // The formatter itself failed, which only happens when the log sink does. The
+        // generic hint is still the truth, and the worker must never reject.
+        job.error = PHOTO_FAILED;
+      }
     } finally {
       job.finishedAt = Date.now();
     }
