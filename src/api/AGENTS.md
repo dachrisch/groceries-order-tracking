@@ -36,6 +36,23 @@ Reads: `GET /api/stats`, `/api/aggregates`, `/api/orders`,
 Cart: `POST /api/cart/add` (thin wrapper around `addItems` in
 `src/lib/knuspr-cart.ts`).
 
+EASY Shopper (in-store, `src/lib/easyshopper/AGENTS.md`):
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/easyshopper/import-purchases` | sidecar upload; idempotent on `key`, clears a pending sync |
+| GET | `/api/easyshopper/purchases` | stored sessions + per-store summary |
+| GET | `/api/easyshopper/insights` | spend/units/products aggregated deterministically |
+| POST | `/api/easyshopper/list/plan` | OCR (optional) + search + match, no writes |
+| POST | `/api/easyshopper/list/create` | write the plan to the account's list, then mint a share link |
+| POST | `/api/easyshopper/list/share` | (re)mint the 24 h invite link |
+| POST | `/api/easyshopper/sync/request` | flag a capture for the laptop sidecar |
+| GET | `/api/easyshopper/sync/status` | pending request, last import, last purchase |
+
+The EASY Shopper integration keeps its own anonymous device credentials encrypted in
+`Integration` (`provider: easyshopper`); `list/*` and `sync/request` need
+`req.derivedKey` and return 401 without it.
+
 Bot:
 
 | Method | Path | Purpose |
