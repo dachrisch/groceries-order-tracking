@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.13.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.12.0...v1.13.0) (2026-11-15)
+
+
+### Features
+
+* **easyshopper:** upload an existing capture from disk ([ed66348](https://github.com/dachrisch/groceries-order-tracking/commit/ed66348029d55d1b2d620b5c17ef9ac0e2a917ab))
+* **easyshopper:** upload an existing capture instead of re-reading the phone ([f5b6da4](https://github.com/dachrisch/groceries-order-tracking/commit/f5b6da4a431f78a450468ac40bbb4448ebcca458))
+
 ## [1.12.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.11.19...v1.12.0) (2026-11-15)
 
 
