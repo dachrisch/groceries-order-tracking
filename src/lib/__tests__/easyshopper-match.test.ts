@@ -282,6 +282,55 @@ describe('searchListCandidates', () => {
     expect(names).toContain('Müllermilch Milch (laktosefrei)');
   });
 
+  it('offers a purchase in a spare slot when the catalogue found nothing', async () => {
+    // "Klopapier" is not the catalogue's word for the product the shopper bought; only
+    // the model can bridge that, so the purchase must still reach the menu.
+    const emptyCatalogue = {
+      searchProducts: async () => ({ items: [], count: 0, groups: [] }),
+    } as unknown as EasyShopperClient;
+    const input = {
+      lines: ['Klopapier'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Toilettenpapier 3-lagig', brand: 'Gut & Günstig' }],
+    };
+
+    const entries = await searchListCandidates(emptyCatalogue, session, input);
+    expect(entries[0].candidates.map((candidate) => candidate.name)).toEqual(['Toilettenpapier 3-lagig']);
+    // Zero overlap with the line is exactly why the call has to happen at all.
+    expect(scoreCandidate('Klopapier', entries[0].candidates[0]).score).toBe(0);
+
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index: 0 }] });
+    const plan = await planShoppingList(emptyCatalogue, session, input);
+    expect(mockRunPrompt).toHaveBeenCalledTimes(1);
+    expect(plan.lines[0].match.candidate?.name).toBe('Toilettenpapier 3-lagig');
+  });
+
+  it('merges a brand only when the name repeats it as a whole word', async () => {
+    const cheese = {
+      searchProducts: async () => ({
+        items: [{ product: { id: 'cheese', name: 'Käse Natur', brand: 'Bio' } }],
+        count: 1,
+        groups: [],
+      }),
+    } as unknown as EasyShopperClient;
+
+    // "Biokäse Natur" is a different word, not the brand "Bio" plus "Käse Natur".
+    const distinct = await searchListCandidates(cheese, session, {
+      lines: ['Käse'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Biokäse Natur', brand: 'Bio' }],
+    });
+    expect(distinct[0].candidates.map((candidate) => candidate.name)).toEqual(['Käse Natur', 'Biokäse Natur']);
+
+    // A separated brand prefix is the same product, so the catalogue row wins alone.
+    const merged = await searchListCandidates(cheese, session, {
+      lines: ['Käse'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Bio Käse Natur', brand: 'Bio' }],
+    });
+    expect(merged[0].candidates.map((candidate) => candidate.name)).toEqual(['Käse Natur']);
+  });
+
   it('keeps zero-score purchases out of the menu, so catalogue rows are not evicted', async () => {
     // Eight catalogue rows for a line no purchase relates to: unrelated purchases must
     // not take menu slots just because their names are short.

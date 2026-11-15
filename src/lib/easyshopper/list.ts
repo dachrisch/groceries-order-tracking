@@ -51,12 +51,15 @@ function productKey(product: SearchProduct): string {
  * the same product must collapse to one menu row — but only the *same* product. Sizes,
  * percentages and parentheticals are part of a product's identity ("H-Milch 1,5%" is not
  * "H-Milch 3,5%", "laktosefrei" is not the ordinary carton), so only a brand the name
- * already repeats is stripped; everything else is merely case- and umlaut-normalised.
+ * repeats as a whole word is stripped; everything else is merely case- and
+ * umlaut-normalised.
  */
 function candidateKey(candidate: MatchCandidate): string {
   const brand = deumlaut(candidate.brand ?? '').toLowerCase().trim();
   const name = deumlaut(candidate.name).toLowerCase().replace(/\s+/g, ' ').trim();
-  return `${brand}|${brand && name.startsWith(brand) ? name.slice(brand.length).trim() : name}`;
+  // Whole-word only: brand "Bio" must not turn "Biokäse Natur" into "käse natur".
+  const stripped = brand && name.startsWith(`${brand} `) ? name.slice(brand.length).trim() : name;
+  return `${brand}|${stripped}`;
 }
 
 /**
@@ -109,20 +112,21 @@ export async function searchListCandidates(
 
     // One ordered menu: the model's positions, `readPicks`' bounds and `applyPicks`'
     // index all refer to this array. Best score first, so the cap keeps what matters.
-    // A purchase only belongs in the menu when it has evidence for this line; a
-    // catalogue row always does. Without that filter six unrelated purchases would pad
-    // the eight slots and evict real catalogue candidates the model never sees.
-    const pool = [...catalogue, ...history]
+    // A purchase with evidence ranks beside the catalogue; one without evidence is only
+    // admitted into the slots the catalogue left over — never enough to evict a catalogue
+    // row, but enough to reach the model when the search found nothing for the line
+    // ("Klopapier" vs a bought "Toilettenpapier 3-lagig" is a bridge only it can make).
+    const ranked = [...catalogue, ...history]
       .map((candidate) => ({ candidate, score: scoreCandidate(line.text, candidate).score }))
-      .filter((entry) => entry.candidate.id !== undefined || entry.score > 0)
       .sort(
         (a, b) =>
           b.score - a.score ||
           Number(b.candidate.id !== undefined) - Number(a.candidate.id !== undefined) ||
           a.candidate.name.length - b.candidate.name.length
-      )
-      .slice(0, MAX_CANDIDATES)
-      .map((entry) => entry.candidate);
+      );
+    const admitted = ranked.filter((entry) => entry.candidate.id !== undefined || entry.score > 0);
+    const spare = ranked.filter((entry) => entry.candidate.id === undefined && entry.score === 0);
+    const pool = [...admitted, ...spare].slice(0, MAX_CANDIDATES).map((entry) => entry.candidate);
 
     entries.push({ line, candidates: pool });
   }
