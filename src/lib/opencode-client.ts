@@ -397,12 +397,13 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
     .filter((m): m is ModelRef => m !== null);
 
   // A pin carries its own billing marker; untagged, a paid pin would be retried
-  // three times and logged as free. A registry entry without cost data counts as paid:
+  // three times and logged as free. A pin is billed when it is a curated id, when the
+  // registry prices it above zero, or when the registry cannot vouch for it at all:
   // only an explicit all-zero cost array proves a model is free, because a missing price
-  // is not evidence of free.
+  // is not evidence of free — and that holds for the pin too.
   const billable = (m: ModelRef): ModelRef => {
     const entry = known(m);
-    const paid = PAID_VISION_KEYS.has(modelKey(m)) || (entry !== undefined && !isFree(entry));
+    const paid = PAID_VISION_KEYS.has(modelKey(m)) || entry === undefined || !isFree(entry);
     return paid ? { ...m, paid: true } : m;
   };
 

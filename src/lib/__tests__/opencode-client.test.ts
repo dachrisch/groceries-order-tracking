@@ -534,6 +534,42 @@ describe('image prompts', () => {
     expect(chain.map((m) => m.id)).toEqual(['gpt-6-luna', 'qwen/qwen3.7-flash', 'qwen-vl-ocr']);
   });
 
+  it('treats a pinned model the registry cannot vouch for as billed', async () => {
+    // Discovery down + a pin that is neither curated nor in the registry: nothing proves
+    // it is free, so it must not get the free retry budget.
+    process.env.OPENCODE_VISION_MODELS = 'opencode-go:whatever';
+    const created: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith('/api/model')) return response({}, false, 500);
+      if (u.endsWith('/api/session')) {
+        created.push('whatever');
+        return response({ data: { id: 'ses_w' } });
+      }
+      if (u.endsWith('/prompt')) return response({}, false, 500);
+      return response({});
+    });
+
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([
+      { id: 'whatever', providerID: 'opencode-go', paid: true },
+    ]);
+
+    await expect(runPrompt('x', { require: 'image' })).rejects.toThrow(/prompt failed/);
+    // One attempt, not three: an unjudgeable pin counts as billed.
+    expect(created).toHaveLength(1);
+  });
+
+  it('keeps a registry-confirmed free pin on the free retry budget', async () => {
+    process.env.OPENCODE_VISION_MODELS = 'opencode:seer';
+    mockFetch.mockResolvedValueOnce(
+      response({ data: [{ id: 'seer', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } }] })
+    );
+
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([
+      { id: 'seer', providerID: 'opencode' },
+    ]);
+  });
+
   it('reports the answering model once, after the reply parsed', async () => {
     mockFetch
       .mockResolvedValueOnce(response({ data: { id: 'ses_1' } }))
