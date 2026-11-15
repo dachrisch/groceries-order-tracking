@@ -11,6 +11,7 @@ import { Products } from './pages/Products';
 import { Inventory } from './pages/Inventory';
 import { Bot } from './pages/Bot';
 import { Settings } from './pages/Settings';
+import { InStore } from './pages/InStore';
 import './index.css';
 
 patchFetch();
@@ -38,6 +39,7 @@ render(
       <Route path="/inventory" component={Inventory} />
       <Route path="/bot" component={Bot} />
       <Route path="/settings" component={Settings} />
+      <Route path="/in-store" component={InStore} />
     </Router>
   ),
   root!,

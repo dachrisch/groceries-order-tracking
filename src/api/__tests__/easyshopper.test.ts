@@ -1,0 +1,197 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import request from 'supertest';
+import { app } from '../app';
+import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf } from './helpers';
+import PurchaseSession from '../../models/PurchaseSession';
+import { findListForStore } from '../controllers/easyshopper.controller';
+
+beforeAll(setupTestDB);
+afterAll(teardownTestDB);
+
+const capture = {
+  sessions: [
+    {
+      key: '11/13/2026 04:50 PM|MARKTKAUF MUSTERSTADT|107.19',
+      displayWhen: '11/13/2026, 04:50 PM',
+      purchasedAt: '2026-11-13T15:50:00.000Z',
+      store: 'Edeka Musterstadt (MUSTERSTR.)',
+      type: 'CART',
+      paymentMode: 'EASY Shopper Cashier',
+      receiptBarcode: null,
+      itemCount: 36,
+      total: 107.19,
+      items: [
+        { brand: 'Kneipp', name: 'Dusche 200ml Gute Laune', quantity: 1, unitPrice: 2.95, lineTotal: 2.95 },
+        { brand: 'Frosch', name: 'Waschmittel 22WL 1450g Sensitiv Aloe Vera Pulver', quantity: 1, unitPrice: 5.45, lineTotal: 5.45 },
+      ],
+    },
+    {
+      displayWhen: '10/17/2026, 11:54 AM',
+      purchasedAt: '2026-10-17T09:54:00.000Z',
+      store: 'Wez Musterstadt',
+      type: 'CART',
+      total: 16.96,
+      items: [{ brand: null, name: 'Kiwi gold', quantity: 2, unitPrice: 0.33, lineTotal: 0.66 }],
+    },
+  ],
+};
+
+describe('EASY Shopper purchase import', () => {
+  let cookies: string;
+
+  beforeEach(async () => {
+    await clearDB();
+    await registerUser();
+    cookies = await loginUser();
+  });
+
+  it('stores sessions and is idempotent on re-import', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const first = await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(capture);
+
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ received: 2, inserted: 2 });
+
+    const second = await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(capture);
+
+    expect(second.status).toBe(200);
+    expect(second.body.inserted).toBe(0);
+    expect(await PurchaseSession.countDocuments()).toBe(2);
+  });
+
+  it('derives a stable key when the capture did not provide one', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const body = { sessions: [capture.sessions[1]] };
+    await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(body);
+    await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(body);
+
+    const stored = await PurchaseSession.find().lean();
+    expect(stored).toHaveLength(1);
+    expect(stored[0].key).toContain('16.96');
+  });
+
+  it('rejects an empty payload', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    const res = await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ sessions: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns sessions newest first with a per-store summary', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(capture);
+
+    const res = await request(app).get('/api/easyshopper/purchases').set('Cookie', cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body.sessions).toHaveLength(2);
+    expect(res.body.sessions[0].store).toContain('Musterstadt');
+    expect(res.body.stores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ store: expect.stringContaining('Musterstadt'), visits: 1, total: 107.19 }),
+        expect.objectContaining({ visits: 1, total: 16.96 }),
+      ])
+    );
+  });
+
+  it('keeps purchases out of the Knuspr order collection', async () => {
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+    await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send(capture);
+
+    const res = await request(app).get('/api/orders').set('Cookie', cookies);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+});
+
+describe('findListForStore', () => {
+  it('picks the list bound to the requested store', () => {
+    const lists = [
+      { shoppingListGuid: 'a', storeGuid: 'store-1' },
+      { shoppingListGuid: 'b', storeGuid: 'store-2' },
+    ];
+    expect(findListForStore(lists, 'store-2')).toBe('b');
+  });
+
+  it('falls back to the first list when none is store-tagged', () => {
+    expect(findListForStore([{ guid: 'only' }], 'store-x')).toBe('only');
+  });
+
+  it('returns null for an empty account', () => {
+    expect(findListForStore([], 'store-x')).toBeNull();
+  });
+});
+
+/**
+ * End-to-end against a real capture, when one exists on this machine. Skipped in CI
+ * (no phone), but it is the check that catches schema drift against real receipts.
+ */
+const REAL_CAPTURE = join(homedir(), '.local/share/groceries/easyshopper/purchases.json');
+
+describe.runIf(existsSync(REAL_CAPTURE))('EASY Shopper import of a real capture', () => {
+  let cookies: string;
+
+  beforeEach(async () => {
+    await clearDB();
+    await registerUser();
+    cookies = await loginUser();
+  });
+
+  it('imports every captured session and keeps deposits out of the spend', async () => {
+    const capture = JSON.parse(readFileSync(REAL_CAPTURE, 'utf8')) as {
+      sessions: Array<{ items: unknown[]; total: number }>;
+    };
+    const sessions = capture.sessions.filter((session) => session.items.length > 0);
+    const { token, cookies: csrfCookies } = await fetchCsrf(cookies);
+
+    const res = await request(app)
+      .post('/api/easyshopper/import-purchases')
+      .set('Cookie', `${cookies}; ${csrfCookies.join('; ')}`)
+      .set('x-csrf-token', token)
+      .send({ sessions });
+
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(sessions.length);
+
+    const insights = await request(app).get('/api/easyshopper/insights').set('Cookie', cookies);
+    expect(insights.status).toBe(200);
+    expect(insights.body.totals.sessions).toBe(sessions.length);
+    expect(insights.body.totals.spend).toBeCloseTo(
+      sessions.reduce((sum, session) => sum + session.total, 0),
+      2
+    );
+    // Deposits are money back, never products.
+    expect(insights.body.topProducts.map((product: { name: string }) => product.name)).not.toContain('Leergut');
+    expect(insights.body.totals.creditReturned).toBeLessThan(0);
+  });
+});

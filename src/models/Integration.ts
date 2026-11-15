@@ -5,6 +5,7 @@ import mongoose, { Document, Schema } from 'mongoose';
  */
 export enum IntegrationProvider {
   KNUSPR = 'knuspr',
+  EASySHOPPER = 'easyshopper',
 }
 
 /**
@@ -41,6 +42,7 @@ const integrationSchema = new Schema<IIntegration>({
   cookies: { type: String },
   lastSyncAt: { type: Date },
   lastSyncAttemptAt: { type: Date },
+  syncRequestedAt: { type: Date },
   syncInProgress: { type: Boolean, default: false }
 }, { timestamps: true });
 

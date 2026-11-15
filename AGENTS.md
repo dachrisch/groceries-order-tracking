@@ -9,6 +9,10 @@ occasion baskets, and can fill the Knuspr cart from chat or from the UI.
 **Stack:** SolidJS + Vite frontend, Express 5 + Mongoose backend, MongoDB.
 Single deployable container; no separate frontend server in production.
 
+Two grocery sources: Knuspr (online orders, imported through the API) and EDEKA /
+EASY Shopper (in-store purchases read from the phone, lists written through the
+integration's own device account).
+
 ## Commands
 
 ```bash
@@ -19,6 +23,8 @@ npm test             # NODE_ENV=test vitest run (in-memory MongoDB)
 npm run lint         # oxlint
 npm run build        # production frontend + bundled server
 npm run start:prod   # run dist-server/server.js
+npm run easyshopper:capture   # sidecar: read EASY Shopper purchases off the phone (adb)
+npm run easyshopper:sync      # sidecar worker: run capture when the UI asks for it
 ```
 
 `npm test`, `npm run lint` and `npm run build` must all pass before a change is
@@ -34,6 +40,8 @@ rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
   the app-wide bot panel and styling conventions.
 - [src/lib/bot/AGENTS.md](src/lib/bot/AGENTS.md) — the deterministic learning
   and cart pipeline, the LLM boundary and its tests.
+- [src/lib/easyshopper/AGENTS.md](src/lib/easyshopper/AGENTS.md) — EDEKA / EASY
+  Shopper client, list matching and the in-store purchase model.
 
 ## Core invariants
 
@@ -48,6 +56,12 @@ rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
    products with different IDs.
 4. **Occasion baskets must not inflate weekly consumption.** Purchases that
    belong to a detected occasion are excluded from the weekly rate.
+5. **In-store purchases are a separate source.** EASY Shopper sessions live in
+   `PurchaseSession`, never in Knuspr `Order`; merging the two would double-count
+   a week that contains both a delivery and a shop run.
+6. **Handwriting OCR is the one permitted non-text input.** A photo of a paper list
+   is read locally by tesseract; the LLM may clean lines but never sees the
+   catalogue and never chooses products. Matching stays in `easyshopper/match.ts`.
 
 ## Environment
 
@@ -55,6 +69,10 @@ Copy `.env.example` to `.env` for local development. Production values come
 from the servyy-container Ansible role (`groceries/.env.j2`).
 
 Required in production: `MONGODB_URI`, `JWT_SECRET`.
+EASY Shopper (optional, in-store features): `EASYSHOPPER_API_URL`,
+`EASYSHOPPER_API_KEY`, `EASYSHOPPER_STORE_GUID` (defaults match the shipped app).
+List planning needs `tesseract` (with the `deu` language pack) on the host.
+
 Optional bot settings: `OPENCODE_BASE_URL`, `OPENCODE_API_KEY`,
 `OPENCODE_ALLOW_INSECURE_TLS` (only for a test host with a self-signed
 opencode certificate), `OPENCODE_MODELS` (`provider:id,...` override; normally

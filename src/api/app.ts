@@ -12,6 +12,16 @@ import { handleGetInventory } from './controllers/inventory.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 import {
+  handleImportPurchases,
+  handleGetPurchases,
+  handlePlanList,
+  handleCreateList,
+  handleRequestSync,
+  handleSyncStatus,
+  handleShareList,
+  handleGetInsights,
+} from './controllers/easyshopper.controller';
+import {
   handleBotMessage,
   handleGetJob,
   handleGetForecast,
@@ -43,7 +53,7 @@ app.use(helmet({
     },
   },
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
 // Use csurf for CSRF protection. CodeQL recognizes this middleware.
@@ -132,3 +142,14 @@ app.get('/api/settings/integrations', auth, handleListIntegrations);
 app.post('/api/settings/integrations/knuspr', auth, handleConnectKnuspr);
 app.delete('/api/settings/integrations/knuspr', auth, handleDisconnectKnuspr);
 app.post('/api/settings/integrations/knuspr/sync', auth, handleSyncKnuspr);
+
+// EDEKA / EASY Shopper (in-store). Purchases arrive from the capture sidecar; list
+// planning and share-link creation talk to the integration's own device account.
+app.post('/api/easyshopper/import-purchases', auth, handleImportPurchases);
+app.get('/api/easyshopper/purchases', auth, handleGetPurchases);
+app.get('/api/easyshopper/insights', auth, handleGetInsights);
+app.post('/api/easyshopper/list/plan', auth, handlePlanList);
+app.post('/api/easyshopper/list/create', auth, handleCreateList);
+app.post('/api/easyshopper/list/share', auth, handleShareList);
+app.post('/api/easyshopper/sync/request', auth, handleRequestSync);
+app.get('/api/easyshopper/sync/status', auth, handleSyncStatus);

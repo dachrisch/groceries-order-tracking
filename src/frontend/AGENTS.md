@@ -6,7 +6,8 @@
 - `App.tsx` — root layout: session check, sidebar nav, cart/bot drawers.
   Mounts `<BotPanel />` so chat is available on every page.
 - `pages/` — `Dashboard`, `Orders`, `Products`, `Inventory`, `Bot`,
-  `Settings`, `Login`, `Register`.
+  `Settings`, `Login`, `Register`, `InStore` (EDEKA: purchases, list from a photo,
+  share-link QR).
 - `components/BotPanel.tsx` — the app-wide chat drawer.
 - `index.css` — Tailwind 4 + DaisyUI theme.
 
