@@ -20,26 +20,27 @@ const MAX_TEXT_QUANTITY = 99;
 export const NO_READABLE_LIST = 'the photo contained no readable shopping list';
 
 /**
- * Per attempt, not per call, and the chain is capped at `VISION_MAX_MODELS`.
+ * Per attempt, not per call, and the chain is bounded on both sides: two free models,
+ * then one curated paid model.
  *
  * A timeout is non-retryable in `runPrompt` (it moves straight to the next model), so a
- * chain where every model *hangs* costs models × 1 × this: 3 × 38 s = 114 s. That fits
- * inside the job's 120 s deadline (`extract-jobs.ts`) and the UI's 110 s poll budget, so
- * the shopper is never told "took too long" while a chain is still spending. The three
- * attempts per free model only apply to *fast* transport errors, so they add seconds,
- * not minutes. A slow-but-working model that needs more than 38 s per attempt is treated
- * as hung by design: one unreadable photo is worth less than anyone's patience.
+ * chain where every model *hangs* costs (2 free × 38 s) + (1 paid × 38 s) = 114 s. That
+ * fits inside the job's 120 s deadline (`extract-jobs.ts`) and the UI's 110 s poll
+ * budget, so the shopper is never told "took too long" while a chain is still spending.
+ * The three attempts per free model only apply to *fast* transport errors, so they add
+ * seconds, not minutes. A slow-but-working model that needs more than 38 s per attempt
+ * is treated as hung by design: one unreadable photo is worth less than anyone's
+ * patience.
  */
 const VISION_TIMEOUT_MS = 38_000;
 /**
- * The hang bound above, and a *prefix* of the chain: free models first, the paid tier
- * appended after them. Three models therefore means three free ones while the free tier
- * is healthy; the curated paid names reach the prefix only once free models are cooled
- * down by a quota error or a pin shortens the free head. That is the bet: a photo that
- * cannot be read on three free models inside the job deadline is not worth extending
- * into an unbounded paid walk that the shopper has already given up on.
+ * The reservation: the free tier gets two models, the paid fallback exactly one. The
+ * paid budget is separate from the free one, so two free failures still leave the
+ * curated fallback reachable — that is the whole point of "free first, paid as the
+ * fallback". Both together are the 114 s hang bound above.
  */
-const VISION_MAX_MODELS = 3;
+const VISION_FREE_MODELS = 2;
+const VISION_PAID_MODELS = 1;
 
 const PROMPT = [
   'The attached photo shows a handwritten shopping list for a German supermarket.',
@@ -151,10 +152,11 @@ export async function extractListLines(imageBase64: string): Promise<ExtractedLi
     raw = await runPrompt(PROMPT, {
       files: [file],
       require: 'image',
-      // Free vision models first; the paid tier only answers when they all failed.
+      // Free vision models first, then — and only after they failed — the paid fallback.
       allowPaid: true,
       timeoutMs: VISION_TIMEOUT_MS,
-      maxModels: VISION_MAX_MODELS,
+      maxModels: VISION_FREE_MODELS,
+      maxPaid: VISION_PAID_MODELS,
       // A model that never received the image still answers happily, with no lines;
       // that is not an answer, so the next model in the chain gets it.
       accept: (reply) => normalizeExtractedLines(reply).length > 0,

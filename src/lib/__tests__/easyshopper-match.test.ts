@@ -211,6 +211,8 @@ describe('planShoppingList', () => {
       // a timeout is not retried, so a hang costs 2 × 15 s = 30 s — the client aborts
       // at 45 s. The retry path (2 × 3 × 15 s) only applies to fast transport errors.
       expect(options).toMatchObject({ timeoutMs: 15_000, maxModels: 2 });
+      // No paid reservation: the matcher must never buy a model.
+      expect(options).not.toHaveProperty('maxPaid');
     }
   });
 });

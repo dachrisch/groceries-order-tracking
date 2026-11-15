@@ -35,6 +35,13 @@ export interface ModelRef {
    * when it answers. Callers that pass `models` themselves own this tagging.
    */
   paid?: boolean;
+  /**
+   * The entry came from an operator pin (`OPENCODE_MODELS` / `OPENCODE_VISION_MODELS`)
+   * instead of discovery. A pin is a deliberate choice, so the paid reservation
+   * (`maxPaid`) does not drop it: that budget bounds the *curated fallback tier*, not a
+   * model an operator named by hand. Pinned models are still paid models — one attempt.
+   */
+  pinned?: boolean;
 }
 
 export interface RegistryModel extends ModelRef {
@@ -162,16 +169,25 @@ export interface PromptFile {
 }
 
 export interface RunPromptOptions {
-  /** Explicit chain, used as given — the caller owns its `paid` tagging. */
+  /** Explicit chain, used as given — the caller owns its `paid` tagging. The caps below still apply. */
   models?: ModelRef[];
-  /** Per attempt, not per call: the whole chain is models × attempts × this. */
+  /** Per attempt, not per call: the whole chain is (free models + paid fallbacks) × attempts × this. */
   timeoutMs?: number;
   /**
-   * Try at most this many models (at least one). It bounds wall clock and quota when a
-   * caller is latency-sensitive — a user-facing request must not wait out the whole
-   * free chain at one timeout per attempt.
+   * How many *free* models to try before giving up or falling back. Unset = every free
+   * model in the chain. It bounds wall clock and quota on a latency-sensitive call, and
+   * it bounds only the free part: the paid fallback is reserved separately, so a free
+   * cap can never swallow the fallback the caller asked for. An explicit `0` still means
+   * one free model, because a caller asking for "none" is a bug, not a boundary.
    */
   maxModels?: number;
+  /**
+   * How many *curated* paid fallback models may be tried after the free ones. Default 0:
+   * spend has to be asked for, exactly like `allowPaid`, so a chain that merely happens
+   * to contain a paid entry cannot start buying tokens. `0` means none. An operator pin
+   * is exempt — naming a model by hand is not an accident.
+   */
+  maxPaid?: number;
   /** Attachments posted with the prompt. */
   files?: PromptFile[];
   /** Only models whose registry capabilities include this input modality. */
@@ -226,7 +242,8 @@ async function createSession(config: OpencodeConfig, model: ModelRef): Promise<s
   const response = await undiciFetch(`${config.baseUrl}/api/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey },
-    body: JSON.stringify({ model }),
+    // Only the model's identity goes out; `paid` and `pinned` are our bookkeeping.
+    body: JSON.stringify({ model: { id: model.id, providerID: model.providerID } }),
     dispatcher: dispatcherFor(config),
   });
   if (!response.ok) {
@@ -365,8 +382,10 @@ export interface ModelChainOptions {
  * `require: 'image'` keeps text-only models out of the chain — including a pinned
  * OPENCODE_MODELS entry, because a text-only model cannot read a photo at all.
  * `allowPaid` appends the curated paid vision tier after every free model; only
- * photo intake asks for it, so every other call stays cost 0. Photo calls read
- * OPENCODE_VISION_MODELS instead of OPENCODE_MODELS.
+ * photo intake asks for it, so every other call stays cost 0. Appending is not
+ * spending: `runPrompt` tries only the paid entries its caller reserved with
+ * `maxPaid` (default 0), so a chain can carry the fallback without buying it. Photo
+ * calls read OPENCODE_VISION_MODELS instead of OPENCODE_MODELS.
  *
  * OPENCODE_VISION_PAID=off|false|0|no drops the curated tier only: an explicit pin
  * is still used, and still gets its single attempt, because a pin is a deliberate
@@ -414,7 +433,9 @@ export async function getModelChain(options: ModelChainOptions = {}): Promise<Mo
 
   let chain: ModelRef[];
   if (override.length > 0) {
-    chain = override.filter(servable).map(billable);
+    // Marked so the chain bound in `runPrompt` never silently drops the model an
+    // operator pinned by hand.
+    chain = override.filter(servable).map((m) => billable({ ...m, pinned: true }));
   } else if (registry) {
     const preferences = needsVision ? VISION_PREFERENCE : FREE_PREFERENCE;
     chain = registry
@@ -494,8 +515,14 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
 /**
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
- * `maxModels` truncates the chain before the first attempt, for callers that cannot
- * spend the whole chain's wall clock.
+ *
+ * The resolved chain is free models first, then the paid tier (a pin or the curated
+ * fallback). `maxModels` bounds only the free part and `maxPaid` only the curated paid
+ * part, so a caller can reserve "two free models, then one paid" — the free cap cannot
+ * swallow the fallback it was asked for. `maxPaid` defaults to 0: spend is asked for,
+ * never inherited from a chain that happened to contain a paid entry. A pin is the one
+ * exception (see `ModelRef.pinned`).
+ *
  * A paid fallback model gets a single attempt. A reply that does not parse, or that
  * `accept` rejects, is a failed attempt: it is never reported as the answer. A timeout
  * is non-retryable for every caller — intent, occasions and the bot included — because
@@ -510,11 +537,24 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
   const resolved =
     options.models ??
     (await getModelChain({ require: options.require, allowPaid: options.allowPaid }));
-  // A caller that bounded the chain gets a prefix of it, never an empty chain.
-  const models =
-    options.maxModels === undefined ? resolved : resolved.slice(0, Math.max(1, options.maxModels));
+  // Three buckets, in the order they are tried: free models, an operator's paid pin, and
+  // the curated paid tier. Only the free bucket takes `maxModels` (never empty: an
+  // explicit 0 still means one model) and only the curated bucket takes `maxPaid`
+  // (`0` really means none). A pin is exempt from both, because an operator who names a
+  // model in an env var has already decided to spend on it.
+  const free = resolved.filter((model) => model.paid !== true);
+  const pinned = resolved.filter((model) => model.paid === true && model.pinned === true);
+  const curated = resolved.filter((model) => model.paid === true && model.pinned !== true);
+  const freeBudget =
+    options.maxModels === undefined ? free : free.slice(0, Math.max(1, options.maxModels));
+  const paidBudget = curated.slice(0, Math.max(0, options.maxPaid ?? 0));
+  const models = [...freeBudget, ...pinned, ...paidBudget];
   if (models.length === 0) {
-    throw new Error('no free opencode model is available (GET /api/model lists none active at cost 0)');
+    throw new Error(
+      resolved.length === 0
+        ? 'no free opencode model is available (GET /api/model lists none active at cost 0)'
+        : 'no model may be tried: the chain holds only paid fallbacks and this call reserved none (maxPaid)'
+    );
   }
   const timeoutMs = options.timeoutMs ?? POLL_TIMEOUT_MS;
   let lastError: unknown;

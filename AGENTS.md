@@ -90,9 +90,14 @@ List photo intake needs opencode with at least one `image`-capable cost-0 model 
 configured). `OPENCODE_VISION_PAID` (default on) lets a curated paid tier answer when
 every free vision model has failed; `off|false|0|no` drops that tier, though a paid
 model pinned in `OPENCODE_VISION_MODELS` is still used. `OPENCODE_VISION_MODELS`
-(`provider:id,...`) pins the photo chain, never the text one. No other LLM call may
-use a paid model. The photo button is always shown: without opencode a click answers
-`503` with its own explanation, and typed lines still plan and match.
+(`provider:id,...`) pins the photo chain, never the text one. The photo read reserves
+**two free models, then one paid one** (`maxModels: 2`, `maxPaid: 1`): a hang costs
+2 × 38 s + 1 × 38 s = 114 s, inside the job deadline, and the paid budget is separate
+from the free one so a free failure never swallows the fallback. `maxPaid` defaults to
+0 everywhere else — appending the paid tier to a chain is not permission to buy it —
+except an operator pin, which is a deliberate choice. No other LLM call may use a paid
+model. The photo button is always shown: without opencode a click answers `503` with its
+own explanation, and typed lines still plan and match.
 
 Optional bot settings: `OPENCODE_BASE_URL`, `OPENCODE_API_KEY`,
 `OPENCODE_ALLOW_INSECURE_TLS` (only for a test host with a self-signed

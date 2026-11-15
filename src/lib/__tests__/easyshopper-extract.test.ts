@@ -162,15 +162,17 @@ describe('extractListLines', () => {
     expect(options?.files?.[0]).toMatchObject({ source: { type: 'inline' }, uri: 'data:image/jpeg;base64,AAAA' });
   });
 
-  it('bounds the chain per attempt and in models, inside the job deadline', async () => {
+  it('bounds the chain per attempt, with a paid model reserved behind the free ones', async () => {
     mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
 
     await extractListLines('data:image/jpeg;base64,AAAA');
 
-    // A timeout is not retried, so a hang costs models × 1 × timeout: 3 × 38 s = 114 s,
-    // under the 120 s job deadline and the UI's 110 s poll budget.
+    // A timeout is not retried, so a hang costs the whole named chain: (2 × 38 s) +
+    // (1 × 38 s) = 114 s, under the 120 s job deadline and the UI's 110 s poll budget.
     expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(38_000);
-    expect(mockRunPrompt.mock.calls[0][1]?.maxModels).toBe(3);
+    expect(mockRunPrompt.mock.calls[0][1]?.maxModels).toBe(2);
+    // The paid tier has its own budget, so two free failures still leave it reachable.
+    expect(mockRunPrompt.mock.calls[0][1]?.maxPaid).toBe(1);
   });
 
   it('rejects an empty answer at the client boundary, so the next model is tried', async () => {

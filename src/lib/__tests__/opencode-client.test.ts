@@ -321,7 +321,7 @@ describe('model discovery', () => {
   it('honours OPENCODE_MODELS but drops entries the registry cannot serve', async () => {
     process.env.OPENCODE_MODELS = 'opencode:gone-free,opencode:big-pickle';
     routed({ data: [free('big-pickle')] });
-    expect(await getModelChain()).toEqual([{ id: 'big-pickle', providerID: 'opencode' }]);
+    expect(await getModelChain()).toEqual([{ id: 'big-pickle', providerID: 'opencode', pinned: true }]);
   });
 
   it('classifies registry entries', () => {
@@ -403,7 +403,11 @@ describe('image prompts', () => {
     });
 
     await expect(
-      runPrompt('x', { models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }] })
+      runPrompt('x', {
+        models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+        // An explicit paid chain is a spend decision: the reservation has to be asked for.
+        maxPaid: 1,
+      })
     ).rejects.toThrow(/prompt failed/);
 
     const created = mockFetch.mock.calls.filter(([url]) => String(url).endsWith('/api/session'));
@@ -421,7 +425,9 @@ describe('image prompts', () => {
       })
     );
 
-    await expect(getModelChain({ require: 'image' })).resolves.toEqual([{ id: 'seer', providerID: 'opencode' }]);
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([
+      { id: 'seer', providerID: 'opencode', pinned: true },
+    ]);
   });
 
   it('drops the paid tier when OPENCODE_VISION_PAID is off', async () => {
@@ -505,9 +511,10 @@ describe('image prompts', () => {
     });
 
     await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
-      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true, pinned: true },
     ]);
 
+    // No `maxPaid`: a pin is exempt from the reservation, so the operator's choice runs.
     await expect(runPrompt('x', { require: 'image', allowPaid: true })).rejects.toThrow(/prompt failed/);
     expect(created).toHaveLength(1);
   });
@@ -520,7 +527,7 @@ describe('image prompts', () => {
     );
 
     await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
-      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true, pinned: true },
     ]);
   });
 
@@ -530,7 +537,7 @@ describe('image prompts', () => {
 
     const chain = await getModelChain({ require: 'image', allowPaid: true });
 
-    expect(chain[0]).toEqual({ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true });
+    expect(chain[0]).toEqual({ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true, pinned: true });
     expect(chain.map((m) => m.id)).toEqual(['gpt-6-luna', 'qwen/qwen3.7-flash', 'qwen-vl-ocr']);
   });
 
@@ -551,7 +558,7 @@ describe('image prompts', () => {
     });
 
     await expect(getModelChain({ require: 'image' })).resolves.toEqual([
-      { id: 'whatever', providerID: 'opencode-go', paid: true },
+      { id: 'whatever', providerID: 'opencode-go', paid: true, pinned: true },
     ]);
 
     await expect(runPrompt('x', { require: 'image' })).rejects.toThrow(/prompt failed/);
@@ -566,7 +573,7 @@ describe('image prompts', () => {
     );
 
     await expect(getModelChain({ require: 'image' })).resolves.toEqual([
-      { id: 'seer', providerID: 'opencode' },
+      { id: 'seer', providerID: 'opencode', pinned: true },
     ]);
   });
 
@@ -595,6 +602,8 @@ describe('image prompts', () => {
     const used: string[] = [];
     await runPrompt('x', {
       models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+      // A caller that hands over a paid model still has to reserve it.
+      maxPaid: 1,
       onModelUsed: (model) => used.push(model.id),
     });
 
@@ -626,6 +635,7 @@ describe('image prompts', () => {
     await expect(
       runPrompt('x', {
         models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+        maxPaid: 1,
         onModelUsed: (model) => used.push(model.id),
       })
     ).rejects.toThrow(/did not contain JSON/);
@@ -689,6 +699,7 @@ describe('image prompts', () => {
     await expect(
       runPrompt('x', {
         models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }],
+        maxPaid: 1,
         accept: (raw) => ((raw as { lines?: unknown[] }).lines ?? []).length > 0,
         onModelUsed: (model) => used.push(model.id),
       })
@@ -729,5 +740,74 @@ describe('image prompts', () => {
     await expect(runPrompt('x', { models: twoFreeModels, timeoutMs: 0, maxModels: 0 })).rejects.toThrow(/timed out/);
 
     expect(created).toEqual(['free-a']);
+  });
+
+  // A chain as `getModelChain({ allowPaid: true })` builds it: every free model, then the
+  // curated paid fallbacks.
+  const freeThenPaid = [
+    { id: 'free-a', providerID: 'opencode' },
+    { id: 'free-b', providerID: 'opencode' },
+    { id: 'paid-a', providerID: 'opencode-go', paid: true },
+    { id: 'paid-b', providerID: 'openrouter', paid: true },
+  ];
+
+  it('bounds only the free part with maxModels, so the reserved paid model survives', async () => {
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    await expect(
+      runPrompt('x', { models: freeThenPaid, timeoutMs: 0, maxModels: 1, maxPaid: 1 })
+    ).rejects.toThrow(/timed out/);
+
+    // One free model and the first paid fallback: the free cap must not swallow it.
+    expect(created).toEqual(['free-a', 'paid-a']);
+  });
+
+  it('reserves no paid model unless the caller asks (maxPaid defaults to 0)', async () => {
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    // Both paid entries are in the chain and neither may be tried without `maxPaid`.
+    await expect(runPrompt('x', { models: freeThenPaid, timeoutMs: 0 })).rejects.toThrow(/timed out/);
+
+    expect(created).toEqual(['free-a', 'free-b']);
+  });
+
+  it('keeps exactly one paid model behind the whole free chain with maxPaid: 1', async () => {
+    const created = twoModels('{"lines":[{"text":"Milch"}]}');
+
+    await expect(runPrompt('x', { models: freeThenPaid, timeoutMs: 0, maxPaid: 1 })).rejects.toThrow(/timed out/);
+
+    expect(created).toEqual(['free-a', 'free-b', 'paid-a']);
+  });
+
+  it('reaches the paid fallback when the free tier fails fast, and buys one attempt only', async () => {
+    const created: string[] = [];
+    mockFetch.mockImplementation(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.endsWith('/api/session')) {
+        const model = JSON.parse(String((init as { body?: string } | undefined)?.body ?? '{}')).model.id as string;
+        created.push(model);
+        return response({ data: { id: `ses_${model}` } });
+      }
+      if (u.endsWith('/prompt')) return response({ data: {} });
+      // Both free models answer with nothing usable; the paid one actually reads it.
+      const id = u.split('/api/session/ses_')[1].split('/')[0];
+      const text = id === 'paid-a' ? '{"lines":[{"text":"Milch"}]}' : '{"lines":[]}';
+      return response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text }] }] });
+    });
+
+    const used: string[] = [];
+    const result = await runPrompt<{ lines: unknown[] }>('x', {
+      models: freeThenPaid,
+      maxModels: 2,
+      maxPaid: 1,
+      accept: (raw) => ((raw as { lines?: unknown[] }).lines ?? []).length > 0,
+      onModelUsed: (model) => used.push(model.id),
+    });
+
+    expect(result).toEqual({ lines: [{ text: 'Milch' }] });
+    // Two free failures (a non-answer is not retried), then exactly one paid model: the
+    // fallback the owner asked for is reachable, and it is not walked twice.
+    expect(created).toEqual(['free-a', 'free-b', 'paid-a']);
+    expect(used).toEqual(['paid-a']);
   });
 });
