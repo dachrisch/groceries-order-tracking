@@ -36,6 +36,8 @@ beforeEach(() => {
   process.env.OPENCODE_BASE_URL = 'https://opencode.test';
   process.env.OPENCODE_API_KEY = 'test-key';
   delete process.env.OPENCODE_ALLOW_INSECURE_TLS;
+  delete process.env.OPENCODE_VISION_MODELS;
+  delete process.env.OPENCODE_VISION_PAID;
 });
 
 afterEach(() => {
@@ -310,5 +312,118 @@ describe('model discovery', () => {
     expect(isFree(free('a'))).toBe(true);
     expect(isFree(free('a', { cost: [{ input: 0.15, output: 0.6 }] }))).toBe(false);
     expect(isFree(free('a', { cost: undefined }))).toBe(false);
+  });
+});
+
+describe('image prompts', () => {
+  it('sends files with the prompt', async () => {
+    mockFetch
+      .mockResolvedValueOnce(response({ data: { id: 'ses_1' } }))
+      .mockResolvedValueOnce(response({ data: { id: 'msg_1' } }))
+      .mockResolvedValueOnce(
+        response({ data: [{ type: 'assistant', finish: 'stop', content: [{ type: 'text', text: '{"ok":true}' }] }] })
+      );
+
+    await runPrompt('read it', {
+      ...M,
+      files: [{ uri: 'data:image/jpeg;base64,AAAA', source: { type: 'inline' }, name: 'list.jpg' }],
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+    expect(body.files).toHaveLength(1);
+    expect(body.files[0].source).toEqual({ type: 'inline' });
+    expect(body.text).toBe('read it');
+  });
+
+  it('keeps text-only models out of a vision chain', async () => {
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [
+          { id: 'texto', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text'] } },
+          { id: 'seer', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([{ id: 'seer', providerID: 'opencode' }]);
+    await expect(getModelChain()).resolves.toEqual([
+      { id: 'texto', providerID: 'opencode' },
+      { id: 'seer', providerID: 'opencode' },
+    ]);
+  });
+
+  it('appends only the verified paid tier, after every free vision model', async () => {
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [
+          { id: 'mimo-v2.6-flash-free', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
+          { id: 'gpt-6-luna', providerID: 'opencode-go', status: 'active', cost: [{ input: 0.1, output: 0.5 }], capabilities: { input: ['text', 'image'] } },
+          // Paid, image-capable in the registry, but it never received the probe photo.
+          { id: 'gemini-2.5-flash-lite', providerID: 'google', status: 'active', cost: [{ input: 0.1, output: 0.4 }], capabilities: { input: ['text', 'image'] } },
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
+      { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+    ]);
+  });
+
+  it('stays free-only when the caller did not ask for paid models', async () => {
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [
+          { id: 'gpt-6-luna', providerID: 'opencode-go', status: 'active', cost: [{ input: 0.1, output: 0.5 }], capabilities: { input: ['text', 'image'] } },
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image' })).rejects.toThrow(/no vision-capable/i);
+  });
+
+  it('gives a paid model one attempt, not three', async () => {
+    mockFetch.mockImplementation(async (url: unknown) => {
+      if (String(url).endsWith('/api/session')) return response({ data: { id: 'ses_x' } });
+      if (String(url).includes('/prompt')) return response({ error: 'boom' }, false, 500);
+      return response({});
+    });
+
+    await expect(
+      runPrompt('x', { models: [{ id: 'gpt-6-luna', providerID: 'opencode-go', paid: true }] })
+    ).rejects.toThrow(/prompt failed/);
+
+    const created = mockFetch.mock.calls.filter(([url]) => String(url).endsWith('/api/session'));
+    expect(created).toHaveLength(1);
+  });
+
+  it('filters a pinned vision override down to image-capable models', async () => {
+    process.env.OPENCODE_VISION_MODELS = 'opencode:texto,opencode:seer';
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [
+          { id: 'texto', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text'] } },
+          { id: 'seer', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image' })).resolves.toEqual([{ id: 'seer', providerID: 'opencode' }]);
+  });
+
+  it('drops the paid tier when OPENCODE_VISION_PAID is off', async () => {
+    process.env.OPENCODE_VISION_PAID = 'off';
+    mockFetch.mockResolvedValueOnce(
+      response({
+        data: [
+          { id: 'mimo-v2.6-flash-free', providerID: 'opencode', status: 'active', cost: [{ input: 0, output: 0 }], capabilities: { input: ['text', 'image'] } },
+          { id: 'gpt-6-luna', providerID: 'opencode-go', status: 'active', cost: [{ input: 0.1, output: 0.5 }], capabilities: { input: ['text', 'image'] } },
+        ],
+      })
+    );
+
+    await expect(getModelChain({ require: 'image', allowPaid: true })).resolves.toEqual([
+      { id: 'mimo-v2.6-flash-free', providerID: 'opencode' },
+    ]);
   });
 });

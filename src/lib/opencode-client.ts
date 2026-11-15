@@ -4,13 +4,14 @@ import { Agent, fetch as undiciFetch } from 'undici';
  * Minimal opencode client: one prompt in, one JSON object out.
  *
  * The bot never gives opencode tools or database access. The backend computes
- * everything from MongoDB and hands opencode only text (intent classification,
- * occasion naming, reply wording). Replies are polled because opencode's
- * session API acknowledges a prompt before the model has answered.
+ * everything from MongoDB and hands opencode text (intent classification,
+ * occasion naming, reply wording) — plus, for a photographed paper list, one
+ * inline image. Replies are polled because opencode's session API acknowledges
+ * a prompt before the model has answered.
  *
  * Contract (opencode 2.1.2, V2 API), same as dontforget's client:
  *   POST   /api/session               -> {"data": {"id": "ses_..."}}
- *   POST   /api/session/:id/prompt    -> {"text": "..."} in, ack out (not the reply)
+ *   POST   /api/session/:id/prompt    -> {"text": "...", "files": [...]} in, ack out (not the reply)
  *   GET    /api/session/:id/message   -> {"data": [...]}, newest first;
  *                                        ?limit=N&order=desc pages it
  *   POST   /api/session/:id/interrupt -> stops the run (V2 has no /abort)
@@ -28,12 +29,16 @@ const RETRY_DELAY_MS = 1000;
 export interface ModelRef {
   id: string;
   providerID: string;
+  /** Registry-derived: this model bills tokens. */
+  paid?: boolean;
 }
 
 export interface RegistryModel extends ModelRef {
   status?: string;
   enabled?: boolean;
   cost?: Array<{ input?: number; output?: number }>;
+  /** Input modalities from `capabilities.input`: text, image, video, audio, pdf. */
+  input?: string[];
 }
 
 // GET /api/model is the truth for which models are servable. A pinned model
@@ -41,15 +46,40 @@ export interface RegistryModel extends ModelRef {
 // "Model unavailable" (how mimo-v2.5-free died), so never trust a hard-coded
 // name without checking it against the registry first.
 //
-// Preference among discovered free models, best first. Other active cost-0
-// `opencode` models follow in registry order. Used as-is only when discovery
-// itself is down.
+// Both lists below are used as-is only when discovery itself is down; otherwise
+// the registry decides which models exist and these supply the order.
+
+/** Free text models, best first; other active cost-0 models follow in registry order. */
 const FREE_PREFERENCE = [
   'mimo-v2.6-flash-free',
   'big-pickle',
   'nemotron-3.5-lightning-free',
   'nemotron-3-ultra-free',
   'ling-3.1-flash-free',
+];
+
+/** Free vision models, best first; used when discovery itself is down. */
+const VISION_PREFERENCE = [
+  'mimo-v2.6-flash-free',
+  'inkling-2-small-free',
+  'nemotron-3.5-super-vl-free',
+  'longcat-2.5-free',
+  'glm-5.3-flash-free',
+  'deepseek-v4.1-flash-free',
+  'minimax-m3.1-flash-free',
+];
+
+/**
+ * Verified paid vision fallbacks, best first — used only when every free model failed.
+ * Each was probed with a real photo through this exact endpoint; a registry `image`
+ * capability is NOT proof the image arrives (gemini-2.5-flash-lite and
+ * gemma-3-27b-it answered happily without ever seeing it). Keep the list short, and
+ * re-probe before adding or reordering an entry.
+ */
+const PAID_VISION_PREFERENCE: ModelRef[] = [
+  { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+  { id: 'qwen/qwen3.7-flash', providerID: 'openrouter', paid: true },
+  { id: 'qwen-vl-ocr', providerID: 'alibaba', paid: true },
 ];
 const MODELS_TTL_MS = 10 * 60 * 1000;
 // A failed discovery suppresses re-probing briefly and never replaces a good list.
@@ -88,6 +118,11 @@ export function isFree(model: RegistryModel): boolean {
   return Array.isArray(model.cost) && model.cost.length > 0 && model.cost.every((c) => !c.input && !c.output);
 }
 
+/** The registry says this model accepts image input. */
+export function isVision(model: RegistryModel): boolean {
+  return Array.isArray(model.input) && model.input.includes('image');
+}
+
 interface OpencodeMessage {
   type: 'user' | 'assistant' | 'idle' | 'system' | 'synthetic';
   finish?: string;
@@ -96,9 +131,25 @@ interface OpencodeMessage {
   error?: { message: string };
 }
 
+/** A prompt attachment; an inline image needs a vision-capable model. */
+export interface PromptFile {
+  uri: string;
+  name?: string;
+  description?: string;
+  source?: { type: 'inline' } | { type: 'uri'; uri: string };
+}
+
 export interface RunPromptOptions {
   models?: ModelRef[];
   timeoutMs?: number;
+  /** Attachments posted with the prompt. */
+  files?: PromptFile[];
+  /** Only models whose registry capabilities include this input modality. */
+  require?: 'image';
+  /** Append the verified paid vision tier. Only photo intake sets this. */
+  allowPaid?: boolean;
+  /** Called with the model that answered, so a paid fallback is visible. */
+  onModelUsed?: (model: ModelRef) => void;
 }
 
 export interface OpencodeConfig {
@@ -149,11 +200,16 @@ async function createSession(config: OpencodeConfig, model: ModelRef): Promise<s
   return data.data.id;
 }
 
-async function sendPrompt(config: OpencodeConfig, sessionId: string, text: string): Promise<void> {
+async function sendPrompt(
+  config: OpencodeConfig,
+  sessionId: string,
+  text: string,
+  files?: PromptFile[]
+): Promise<void> {
   const response = await undiciFetch(`${config.baseUrl}/api/session/${sessionId}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(files && files.length > 0 ? { text, files } : { text }),
     dispatcher: dispatcherFor(config),
   });
   if (!response.ok) {
@@ -219,6 +275,9 @@ async function discoverModels(config: OpencodeConfig): Promise<RegistryModel[] |
         status: typeof m.status === 'string' ? m.status : undefined,
         enabled: typeof m.enabled === 'boolean' ? m.enabled : undefined,
         cost: Array.isArray(m.cost) ? (m.cost as RegistryModel['cost']) : undefined,
+        input: Array.isArray((m.capabilities as { input?: unknown } | undefined)?.input)
+          ? ((m.capabilities as { input: unknown[] }).input.filter((v) => typeof v === 'string') as string[])
+          : undefined,
       }));
   } catch {
     return null;
@@ -243,26 +302,53 @@ async function getRegistry(config: OpencodeConfig): Promise<RegistryModel[] | nu
   return lastGoodModels;
 }
 
-const preferenceRank = (id: string) => {
-  const index = FREE_PREFERENCE.indexOf(id);
-  return index === -1 ? FREE_PREFERENCE.length : index;
+const preferenceRank = (id: string, preferences: string[]) => {
+  const index = preferences.indexOf(id);
+  return index === -1 ? preferences.length : index;
 };
 
+function preferenceChain(models: string[]): ModelRef[] {
+  return models.map((id) => ({ id, providerID: 'opencode' }));
+}
+
+export interface ModelChainOptions {
+  require?: 'image';
+  /** Append the verified paid vision tier after every free model. Default false. */
+  allowPaid?: boolean;
+}
+
 /**
- * Free models to try, best first: OPENCODE_MODELS ("provider:id,...") if set,
- * else the registry's active cost-0 `opencode` models, else (discovery down)
- * the pinned preference list. Models the registry cannot serve are dropped;
- * quota-exhausted models are skipped while their cooldown lasts.
+ * Models to try, best first: OPENCODE_MODELS ("provider:id,...") if set, else the
+ * registry's active cost-0 `opencode` models, else (discovery down) the pinned
+ * preference list. Models the registry cannot serve are dropped; quota-exhausted
+ * models are skipped while their cooldown lasts.
+ *
+ * `require: 'image'` keeps text-only models out of the chain — including a pinned
+ * OPENCODE_MODELS entry, because a text-only model cannot read a photo at all.
+ * `allowPaid` appends the curated paid vision tier after every free model; only
+ * photo intake asks for it, so every other call stays cost 0. Photo calls read
+ * OPENCODE_VISION_MODELS instead of OPENCODE_MODELS, and OPENCODE_VISION_PAID=off
+ * removes the paid tier for ops.
  */
-export async function getModelChain(): Promise<ModelRef[]> {
+export async function getModelChain(options: ModelChainOptions = {}): Promise<ModelRef[]> {
   const config = getOpencodeConfig();
   if (!config) throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
 
+  const needsVision = options.require === 'image';
   const registry = await getRegistry(config);
+  const byKey = new Map((registry ?? []).map((model) => [modelKey(model), model]));
   const usable = registry ? new Set(registry.filter(isUsable).map(modelKey)) : null;
-  const servable = (m: ModelRef) => !usable || usable.has(modelKey(m));
+  const known = (m: ModelRef): RegistryModel | undefined => byKey.get(modelKey(m));
+  // A model the registry knows must advertise `image`; with discovery down nothing
+  // can be checked, so the pinned names are tried and a wrong guess fails one call.
+  const visionOk = (m: ModelRef) => !needsVision || !registry || isVision(known(m) ?? m);
+  const servable = (m: ModelRef) => (!usable || usable.has(modelKey(m))) && visionOk(m);
+  // Free is the default; the paid tier is opt-in per call and can be killed by ops.
+  const paidEnabled =
+    needsVision && options.allowPaid === true && (process.env.OPENCODE_VISION_PAID ?? 'on') !== 'off';
 
-  const override = (process.env.OPENCODE_MODELS ?? '')
+  // Vision has its own override so a pinned text model can never hijack a photo call.
+  const override = (process.env[needsVision ? 'OPENCODE_VISION_MODELS' : 'OPENCODE_MODELS'] ?? '')
     .split(',')
     .map(parseModelKey)
     .filter((m): m is ModelRef => m !== null);
@@ -271,19 +357,38 @@ export async function getModelChain(): Promise<ModelRef[]> {
   if (override.length > 0) {
     chain = override.filter(servable);
   } else if (registry) {
+    const preferences = needsVision ? VISION_PREFERENCE : FREE_PREFERENCE;
     chain = registry
-      .filter((m) => m.providerID === 'opencode' && isUsable(m) && isFree(m))
+      .filter((m) => m.providerID === 'opencode' && isUsable(m) && isFree(m) && visionOk(m))
       .map((m, order) => ({ m, order }))
-      .sort((a, b) => preferenceRank(a.m.id) - preferenceRank(b.m.id) || a.order - b.order)
+      .sort((a, b) => preferenceRank(a.m.id, preferences) - preferenceRank(b.m.id, preferences) || a.order - b.order)
       .map(({ m }) => ({ id: m.id, providerID: m.providerID }));
   } else {
-    chain = FREE_PREFERENCE.map((id) => ({ id, providerID: 'opencode' }));
+    chain = preferenceChain(needsVision ? VISION_PREFERENCE : FREE_PREFERENCE);
   }
 
   const now = Date.now();
   const available = chain.filter((m) => (exhaustedUntil.get(modelKey(m)) ?? 0) <= now);
   // Everything cooling down: try the full chain rather than fail without asking.
-  return available.length > 0 ? available : chain;
+  let result = available.length > 0 ? available : chain;
+
+  if (paidEnabled) {
+    // The curated tier never replaces the free one, it only follows it. The registry
+    // is used to skip a curated name that was deprecated or went free — never to
+    // widen the list, because a registry `image` capability does not prove delivery.
+    const paid = PAID_VISION_PREFERENCE.filter((m) => {
+      const entry = known(m);
+      return servable(m) && (!registry || (entry !== undefined && isUsable(entry) && !isFree(entry)));
+    });
+    result = [...result, ...paid.filter((m) => (exhaustedUntil.get(modelKey(m)) ?? 0) <= now)];
+  }
+
+  if (needsVision && result.length === 0) {
+    throw new Error(
+      'no vision-capable opencode model is available (GET /api/model lists none active at cost 0 with image input, and no paid fallback answered)'
+    );
+  }
+  return result;
 }
 
 /**
@@ -309,6 +414,7 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
 /**
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
+ * A paid fallback model gets a single attempt.
  */
 export async function runPrompt<T = unknown>(prompt: string, options: RunPromptOptions = {}): Promise<T> {
   const config = getOpencodeConfig();
@@ -316,7 +422,9 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
     throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
   }
 
-  const models = options.models ?? (await getModelChain());
+  const models =
+    options.models ??
+    (await getModelChain({ require: options.require, allowPaid: options.allowPaid }));
   if (models.length === 0) {
     throw new Error('no free opencode model is available (GET /api/model lists none active at cost 0)');
   }
@@ -324,12 +432,16 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
   let lastError: unknown;
 
   for (const model of models) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // A paid fallback gets one attempt: a retry storm on the owner's bill is worse
+    // than a failed read. Free models keep the normal three tries.
+    const attempts = model.paid ? 1 : MAX_ATTEMPTS;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       let sessionId: string | undefined;
       try {
         sessionId = await createSession(config, model);
-        await sendPrompt(config, sessionId, prompt);
+        await sendPrompt(config, sessionId, prompt, options.files);
         const replyText = await pollForReply(config, sessionId, timeoutMs);
+        options.onModelUsed?.(model);
         return JSON.parse(extractFirstJsonObject(replyText)) as T;
       } catch (error) {
         if (sessionId) {
@@ -342,7 +454,7 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
           exhaustedUntil.set(modelKey(model), Date.now() + EXHAUSTED_COOLDOWN_MS);
           break;
         }
-        if (attempt < MAX_ATTEMPTS) {
+        if (attempt < attempts) {
           await sleep(RETRY_DELAY_MS * 2 ** (attempt - 1));
         }
       }
