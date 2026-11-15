@@ -25,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import {
   ITEM_ROW,
   childrenOf,
+  decodeEntities,
   mergeSessions,
   valueBelow,
   valueBelowMatching,
@@ -133,16 +134,6 @@ async function ensureAppForeground(serial: string | null): Promise<boolean> {
 
 const ATTR = /([\w:-]+)="([^"]*)"/g;
 
-function decode(value: string): string {
-  return value
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .trim();
-}
-
 export function parseNodes(xml: string): Node[] {
   const nodes: Node[] = [];
   const tag = /<node\b([^>]*?)\/?>/g;
@@ -154,8 +145,8 @@ export function parseNodes(xml: string): Node[] {
     while ((a = ATTR.exec(m[1])) !== null) attrs[a[1]] = a[2];
     const bounds = (attrs.bounds ?? '').match(/-?\d+/g)?.map(Number) ?? [];
     if (bounds.length !== 4) continue;
-    const text = decode(attrs.text ?? '');
-    const desc = decode(attrs['content-desc'] ?? '');
+    const text = decodeEntities(attrs.text ?? '');
+    const desc = decodeEntities(attrs['content-desc'] ?? '');
     const id = attrs['resource-id'] ?? '';
     if (!text && !desc) continue;
     if (id.includes('com.android.systemui')) continue;

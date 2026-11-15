@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeSessions, parseItemRow, parseListRow, parseMoney, reconcile, titleCase, toIso, valueBelow, valueBelowMatching } from '../easyshopper/capture-parse';
+import { decodeEntities, mergeSessions, parseItemRow, parseListRow, parseMoney, reconcile, titleCase, toIso, valueBelow, valueBelowMatching } from '../easyshopper/capture-parse';
 
 describe('parseMoney', () => {
   it('reads euro amounts in both separators', () => {
@@ -181,5 +181,17 @@ describe('reconcile', () => {
   it('treats deposit returns as negative rows', () => {
     const check = reconcile([item(24.91), item(-7.95)], 2, 16.96);
     expect(check.reconciled).toBe(true);
+  });
+});
+
+describe('decodeEntities', () => {
+  it('decodes the entities the dump emits', () => {
+    expect(decodeEntities('Gut &amp; Günstig')).toBe('Gut & Günstig');
+    expect(decodeEntities('&quot;Bio&quot; Milch')).toBe('"Bio" Milch');
+  });
+
+  it('does not double-unescape', () => {
+    // The app escaped the text once; "&amp;lt;" is a literal "&lt;", not "<".
+    expect(decodeEntities('&amp;lt;')).toBe('&lt;');
   });
 });

@@ -41,6 +41,22 @@ export interface CapturedSession {
   difference: number;
 }
 
+const ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
+/**
+ * Decode the XML entities the dump uses. Single pass on purpose: chained replaces
+ * turn `&amp;lt;` into `<`, double-unescaping text that was only escaped once.
+ */
+export function decodeEntities(value: string): string {
+  return value.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity).trim();
+}
+
 /** The subset of a UI node the parsers need. */
 export interface UiCell {
   text: string;
