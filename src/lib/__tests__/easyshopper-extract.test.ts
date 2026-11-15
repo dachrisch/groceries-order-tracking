@@ -238,8 +238,14 @@ describe('extractListLines', () => {
   });
 
   it('rejects a photo without a readable list', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockRunPrompt.mockRejectedValueOnce(new Error(NOT_AN_ANSWER));
+
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/no readable/i);
+
+    // The internal rejection is mapped to shopper wording, but stays diagnosable.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no vision model could read the photo'));
+    warn.mockRestore();
   });
 
   it('still refuses an empty reply if the client ever returns one', async () => {

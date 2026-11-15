@@ -96,13 +96,12 @@ export function normalizeExtractedLines(raw: unknown): ListLine[] {
     // keystroke to delete, while a line dropped here is invisible and costs the shopper a
     // trip to the shop.
     // One ceiling for both paths: a quantity the shopper wrote is theirs up to the sanity
-    // ceiling; only a value that cannot be a real count (0, negative, fractional, > 99)
-    // falls back to the text.
+    // ceiling. A field value that cannot be a real count (0, negative, fractional, > 99)
+    // falls back to the text quantity, while a text value over 99 is clamped to 99.
+    const field = value?.quantity;
     const stated =
-      Number.isInteger(value?.quantity) &&
-      (value.quantity as number) >= 1 &&
-      (value.quantity as number) <= MAX_TEXT_QUANTITY
-        ? (value.quantity as number)
+      Number.isInteger(field) && (field as number) >= 1 && (field as number) <= MAX_TEXT_QUANTITY
+        ? (field as number)
         : 1;
     const quantity = Math.min(MAX_TEXT_QUANTITY, Math.max(parsed.quantity, stated));
 
@@ -151,6 +150,9 @@ export async function extractListLines(imageBase64: string): Promise<ExtractedLi
     // The client's "not an answer" is internal wording, and it is the likeliest failure
     // for an unreadable photo. The caller shows this message to the shopper.
     if (error instanceof Error && error.message === NOT_AN_ANSWER) {
+      // Keeps a blurry photo and "every provider silently dropped the image"
+      // distinguishable in the logs. Nothing sensitive in the line.
+      console.warn('[easyshopper] no vision model could read the photo (replies rejected as non-answers)');
       throw new Error(NO_READABLE_LIST);
     }
     throw error;
