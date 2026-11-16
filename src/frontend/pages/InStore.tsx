@@ -98,14 +98,14 @@ async function prepareImage(file: File): Promise<string> {
 
 /**
  * The plan route is bounded at 2 models × 3 attempts × 15 s ≈ 90 s on repeated fast
- * errors (`MATCH_CALL`), and the photo read is bounded server-side at 120 s. Waiting
+ * errors (`MATCH_CALL`), and the photo read is bounded server-side at 160 s. Waiting
  * that long in a button is not an option, so both calls carry a client budget and
  * report it as a sentence rather than as "aborted".
  */
 const POST_TIMEOUT_MS = 45_000;
 const EXTRACT_POST_TIMEOUT_MS = 20_000;
-/** Well under the server's 120 s deadline, so the shopper learns first. */
-const EXTRACT_POLL_BUDGET_MS = 110_000;
+/** Well under the server's 160 s deadline, so the shopper learns first. */
+const EXTRACT_POLL_BUDGET_MS = 150_000;
 /** One hung poll must not eat the whole budget; the loop's deadline stays the ceiling. */
 const EXTRACT_POLL_TIMEOUT_MS = 10_000;
 /** 1 s, growing ×1.5 up to 5 s: ~27 polls, not the 90 a fixed 2 s would spend against

@@ -69,31 +69,46 @@ const FREE_PREFERENCE = [
   'ling-3.1-flash-free',
 ];
 
-/** Free vision models, best first; used when discovery itself is down. */
+/**
+ * Free vision models, best first; used when discovery itself is down.
+ *
+ * Order measured on this project's real photo (a ruled "Notizen" pad, items ticked off):
+ * `deepseek-v4.1-flash-free` read all four items in 7-26 s; `nemotron-3.5-super-vl-free`
+ * can read them but needed 96 s once and then never answered; `mimo-v2.6-flash-free`,
+ * `longcat-2.5-free` and `minimax-m3.1-flash-free` never answered inside two minutes;
+ * `glm-5.3-flash-free` answers "free usage limit reached"; `inkling-2-small-free` is
+ * blocked by country. The broken ones stay listed but last, so a registry change cannot
+ * silently promote a model known to hang.
+ */
 const VISION_PREFERENCE = [
-  'mimo-v2.6-flash-free',
-  'inkling-2-small-free',
-  'nemotron-3.5-super-vl-free',
-  'longcat-2.5-free',
-  'glm-5.3-flash-free',
   'deepseek-v4.1-flash-free',
+  'nemotron-3.5-super-vl-free',
+  'glm-5.3-flash-free',
+  'mimo-v2.6-flash-free',
+  'longcat-2.5-free',
   'minimax-m3.1-flash-free',
+  'inkling-2-small-free',
 ];
 
 /**
- * Verified paid vision fallbacks, best first — used only when every free model failed.
- * Each was probed with a real photo through this exact endpoint; a registry `image`
- * capability is NOT proof the image arrives (gemini-2.5-flash-lite and
- * gemma-3-27b-it answered happily without ever seeing it). Keep the list short, and
- * re-probe before adding or reordering an entry.
+ * Paid vision fallbacks, best first — used only when the free tier failed. Each was
+ * probed with the same real photo through this exact endpoint; a registry `image`
+ * capability is NOT proof the image arrives (gemini-2.5-flash-lite and gemma-3-27b-it
+ * answered happily without ever seeing it). Re-probe before adding or reordering: a
+ * previous ordering put `qwen-vl-ocr` first on the strength of the fixture, and it turned
+ * out to echo the prompt's JSON example instead of reading the image.
+ *
+ * Order on the real photo: `qwen/qwen3.7-flash` read all four items in 17 s;
+ * `gpt-6-luna` read three of four in 9 s; `qwen-vl-ocr` kept the printed "NOTIZEN"
+ * heading, split a word, and is last for that reason.
  *
  * Worst case, by design: only a quota error sets a cooldown, so while the free tier
  * is out (provider errors, not 429s) every upload re-buys this whole list — one
  * attempt each, unbounded per day. A spend counter is deliberately out of scope.
  */
 const PAID_VISION_PREFERENCE: ModelRef[] = [
-  { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
   { id: 'qwen/qwen3.7-flash', providerID: 'openrouter', paid: true },
+  { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
   { id: 'qwen-vl-ocr', providerID: 'alibaba', paid: true },
 ];
 const MODELS_TTL_MS = 10 * 60 * 1000;

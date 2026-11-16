@@ -471,12 +471,14 @@ describe('image prompts', () => {
 
     const chain = await getModelChain({ require: 'image', allowPaid: true });
 
-    expect(chain[0]).toEqual({ id: 'mimo-v2.6-flash-free', providerID: 'opencode' });
+    // The list is ordered by what actually answered a real photo: the model that
+    // hangs must never be the one tried first.
+    expect(chain[0]).toEqual({ id: 'deepseek-v4.1-flash-free', providerID: 'opencode' });
     // The text preference list would pin big-pickle, which cannot see a photo.
     expect(chain.map((m) => m.id)).not.toContain('big-pickle');
     const firstPaid = chain.findIndex((m) => m.paid);
     expect(chain.slice(0, firstPaid).every((m) => m.providerID === 'opencode')).toBe(true);
-    expect(chain.slice(firstPaid).map((m) => m.id)).toEqual(['gpt-6-luna', 'qwen/qwen3.7-flash', 'qwen-vl-ocr']);
+    expect(chain.slice(firstPaid).map((m) => m.id)).toEqual(['qwen/qwen3.7-flash', 'gpt-6-luna', 'qwen-vl-ocr']);
   });
 
   it('excludes a model without capabilities from a vision chain but keeps it for text', async () => {

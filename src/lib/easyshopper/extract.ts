@@ -24,32 +24,51 @@ export const NO_READABLE_LIST = 'the photo contained no readable shopping list';
  * then one curated paid model.
  *
  * A timeout is non-retryable in `runPrompt` (it moves straight to the next model), so a
- * chain where every model *hangs* costs (2 free × 38 s) + (1 paid × 38 s) = 114 s. That
- * fits inside the job's 120 s deadline (`extract-jobs.ts`) and the UI's 110 s poll
+ * chain where every model *hangs* costs (2 free × 45 s) + (1 paid × 45 s) = 135 s. That
+ * fits inside the job's 160 s deadline (`extract-jobs.ts`) and the UI's 150 s poll
  * budget, so the shopper is never told "took too long" while a chain is still spending.
  * The three attempts per free model only apply to *fast* transport errors, so they add
- * seconds, not minutes. A slow-but-working model that needs more than 38 s per attempt
- * is treated as hung by design: one unreadable photo is worth less than anyone's
- * patience.
+ * seconds, not minutes.
+ *
+ * 45 s is measured, not guessed: the one reliable free vision model answered this
+ * project's real test photo in 7-26 s, while the models that hang never answered at all
+ * inside two minutes. A model that needs longer than this is not slow, it is broken.
  */
-const VISION_TIMEOUT_MS = 38_000;
+const VISION_TIMEOUT_MS = 45_000;
 /**
  * The reservation: the free tier gets two models, the paid fallback exactly one. The
  * paid budget is separate from the free one, so two free failures still leave the
  * curated fallback reachable — that is the whole point of "free first, paid as the
- * fallback". Both together are the 114 s hang bound above.
+ * fallback". Both together are the 135 s hang bound above.
  */
 const VISION_FREE_MODELS = 2;
 const VISION_PAID_MODELS = 1;
 
+/**
+ * The wording here is load-bearing; a real photo on a ruled "Notizen" pad taught us why.
+ *
+ * 1. Items were ticked off with a pen stroke through them. The old prompt said "ignore
+ *    crossed-out words", so a compliant model answered `{"lines":[]}` and the shopper was
+ *    told their list was unreadable. A strike is a tick on a shopping list, never a
+ *    deletion — the textarea is editable, so an unwanted line is one keystroke, while a
+ *    dropped line sends them shopping without it.
+ * 2. The JSON example used to spell out "Milch 1,5"/"Brot". One paid model answered the
+ *    fixture photo by echoing that example instead of reading the image, which made a
+ *    model look verified when it was not. Placeholders cannot be mistaken for an answer.
+ */
 const PROMPT = [
   'The attached photo shows a handwritten shopping list for a German supermarket.',
   'Transcribe every item as the shopper meant it. Keep product words, brand names and',
   'sizes exactly as written ("1,5", "500g", "1 l"). A leading quantity like "2x" or "3 ×"',
-  'belongs to the quantity field. Keep each line short: what to buy and its size, without',
-  'the packaging description. Ignore checkboxes, dates, page numbers, crossed-out words',
-  'and anything that is not a list item. Never invent an item that is not in the photo.',
-  'Return JSON only: {"lines":[{"text":"Milch 1,5","quantity":2},{"text":"Brot","quantity":1}]}',
+  'belongs to the quantity field.',
+  'The pad is ruled, and items may have a pen stroke through them: that is a tick, not a',
+  'deletion. Transcribe struck-through items too; the shopper removes what they no longer',
+  'need. Ignore only non-items: checkboxes, dates, page numbers, a printed heading such as',
+  '"NOTIZEN", and decorative borders.',
+  'Keep each line short: what to buy and its size, without the packaging description.',
+  'Never invent an item that is not in the photo.',
+  'Return JSON only, using this shape (do not copy the placeholders):',
+  '{"lines":[{"text":"<item>","quantity":<number>}]}',
   'quantity is the number written before the item, or 1 when there is none.',
 ].join(' ');
 

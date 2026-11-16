@@ -167,9 +167,9 @@ describe('extractListLines', () => {
 
     await extractListLines('data:image/jpeg;base64,AAAA');
 
-    // A timeout is not retried, so a hang costs the whole named chain: (2 × 38 s) +
-    // (1 × 38 s) = 114 s, under the 120 s job deadline and the UI's 110 s poll budget.
-    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(38_000);
+    // A timeout is not retried, so a hang costs the whole named chain: (2 × 45 s) +
+    // (1 × 45 s) = 135 s, under the 160 s job deadline and the UI's 150 s poll budget.
+    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(45_000);
     expect(mockRunPrompt.mock.calls[0][1]?.maxModels).toBe(2);
     // The paid tier has its own budget, so two free failures still leave it reachable.
     expect(mockRunPrompt.mock.calls[0][1]?.maxPaid).toBe(1);
@@ -262,5 +262,32 @@ describe('extractListLines', () => {
   it('passes the model failure through', async () => {
     mockRunPrompt.mockRejectedValueOnce(new Error('no vision-capable opencode model is available'));
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/vision-capable/);
+  });
+});
+
+describe('the extraction prompt', () => {
+  it('keeps struck-through items instead of calling the list empty', async () => {
+    // A real "Notizen" pad had every item ticked off with a pen stroke. The prompt used
+    // to say "ignore crossed-out words", so a compliant model answered {"lines":[]} and
+    // the shopper was told their readable list was unreadable.
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    const prompt = String(mockRunPrompt.mock.calls[0][0]);
+    expect(prompt).toMatch(/struck-through items too/i);
+    expect(prompt).not.toMatch(/crossed-out words/i);
+  });
+
+  it('does not put a real list into the JSON example', async () => {
+    // The example used to read "Milch 1,5"/"Brot" — the fixture's own content — and a
+    // paid model answered the fixture by echoing it, which looked like a successful read.
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    const prompt = String(mockRunPrompt.mock.calls[0][0]);
+    expect(prompt).toContain('<item>');
+    expect(prompt).not.toContain('Milch 1,5');
   });
 });
