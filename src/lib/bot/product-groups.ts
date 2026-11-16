@@ -45,6 +45,11 @@ export interface BuiltGroup {
   label: string;
   productIds: number[];
   manual: boolean;
+  /**
+   * The stored document's id. Only manual groups can be edited, and editing
+   * needs the id, so it travels with the group instead of being looked up by key.
+   */
+  _id?: string;
 }
 
 /** Brands we know are noise for grouping. Extend as new ones show up. */
@@ -363,7 +368,23 @@ export function invalidateProductGroupCache(userId: string): void {
  * Rebuild rule groups for a user and persist them. Manual groups survive
  * untouched.
  */
+/**
+ * Rebuilds in flight, per user. Two parallel reads with a cold cache would both
+ * delete and re-upsert the same keys, and the second insert loses on the
+ * `userId+key` unique index — the pages fan out enough reads for that to happen.
+ */
+const rebuildsInFlight = new Map<string, Promise<BuiltGroup[]>>();
+
 export async function rebuildProductGroups(userId: string): Promise<BuiltGroup[]> {
+  const running = rebuildsInFlight.get(userId);
+  if (running) return running;
+
+  const task = doRebuildProductGroups(userId).finally(() => rebuildsInFlight.delete(userId));
+  rebuildsInFlight.set(userId, task);
+  return task;
+}
+
+async function doRebuildProductGroups(userId: string): Promise<BuiltGroup[]> {
   const objectId = new mongoose.Types.ObjectId(userId);
 
   const products = await Order.aggregate<{
@@ -394,6 +415,7 @@ export async function rebuildProductGroups(userId: string): Promise<BuiltGroup[]
     label: doc.label,
     productIds: doc.productIds ?? [],
     manual: true,
+    _id: String(doc._id),
   }));
 
   const groups = buildProductGroups(
@@ -429,8 +451,17 @@ export async function rebuildProductGroups(userId: string): Promise<BuiltGroup[]
     );
   }
 
-  groupCache.set(userId, { at: Date.now(), groups });
-  return groups;
+  // Read the ids back: the upserts above do not return them, and splitting a
+  // manual group needs one. Cheap, and only on an actual rebuild.
+  const stored = await ProductGroup.find({ userId, manual: false }).select('_id key').lean();
+  const idByKey = new Map(stored.map((doc) => [doc.key, String(doc._id)]));
+  const withIds = groups.map((group) => ({
+    ...group,
+    _id: group._id ?? idByKey.get(group.key),
+  }));
+
+  groupCache.set(userId, { at: Date.now(), groups: withIds });
+  return withIds;
 }
 
 /** Return groups, rebuilding when the cache is cold. */
