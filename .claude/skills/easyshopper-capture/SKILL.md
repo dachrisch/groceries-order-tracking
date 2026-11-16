@@ -103,6 +103,17 @@ npm run easyshopper:sync -- --once        # single pass
 uploads it and the backend clears the flag. Run the worker under systemd or a logged-in
 terminal — it needs the adb connection and an unlocked phone.
 
+## Sharing a list with the phone (Aztec, not a URL)
+
+The app shares by showing an **Aztec barcode containing the owner's `userGuid`**; the
+recipient picks "Connect to Another Shopping List" *in the app* and scans it. The app
+then posts `POST /v4/shoppingList/follow {"userGuid": …}` (200). Following **swaps**
+the follower's list for the owner's — their own items are parked and return on
+unfollow — and afterwards both sides see each other's additions.
+
+The deep-link path (`createLink` URL) is *not* equivalent: in app 4.154.0 the join
+dialog never fires and the screen is blank, so use the Aztec code.
+
 ## Share links expire after 24 hours
 
 `createLink` returns a fresh invite URL each call and the list stores `linkToken` +
