@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.14.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.14.1...v1.14.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **easyshopper:** keep ticked items out, and say "all ticked" instead of "unreadable" ([ecc446d](https://github.com/dachrisch/groceries-order-tracking/commit/ecc446d7566dcfd8b8ce5be60ee4956de2277c50))
+* **easyshopper:** read a ticked-off list, and stop trusting echoable model probes ([8f8d20a](https://github.com/dachrisch/groceries-order-tracking/commit/8f8d20aafd82f0a55fa3c15ab03e40b57449fe15))
+* **easyshopper:** skip ticked-off items and report "all ticked" instead of "unreadable" ([c809cd9](https://github.com/dachrisch/groceries-order-tracking/commit/c809cd9c91c47536b1441704ecae64bdaf7466b0))
+
 ## [1.14.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.14.0...v1.14.1) (2026-11-16)
 
 
