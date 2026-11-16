@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.14.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.13.1...v1.14.0) (2026-11-16)
+
+
+### Features
+
+* **easyshopper:** async photo intake endpoint backed by opencode vision ([78a04ba](https://github.com/dachrisch/groceries-order-tracking/commit/78a04ba69a05168000885d05418b828358ddcacd))
+* **easyshopper:** opencode picks the product by index, rules score stays the fallback ([0008f2e](https://github.com/dachrisch/groceries-order-tracking/commit/0008f2ef842403d56731923352ca71373467fae7))
+* **easyshopper:** read a photographed list with an opencode vision model ([0c2f3c6](https://github.com/dachrisch/groceries-order-tracking/commit/0c2f3c6b76205ff9f286c5806ec87e8c9abe25f1))
+* **instore:** read shopping-list photos and match products through opencode ([c4aa0fe](https://github.com/dachrisch/groceries-order-tracking/commit/c4aa0fe6c932171843eea2b3da1f7a7e0e19593f))
+* **instore:** read the list photo with opencode, then match the corrected lines ([99740b6](https://github.com/dachrisch/groceries-order-tracking/commit/99740b6778a2cdafd71e1aa866a5e2cbce17af93))
+* **opencode:** send prompt attachments, prefer free vision models and fall back to a verified paid tier ([6088cb7](https://github.com/dachrisch/groceries-order-tracking/commit/6088cb7e13493592f58ce582f2a86b54bdef6b82))
+
+
+### Bug Fixes
+
+* **deps:** update dependency mongodb to v7.9.0 ([c9dda6f](https://github.com/dachrisch/groceries-order-tracking/commit/c9dda6fad3a47b93aea93daf9ad4f1a423bf2594))
+* **deps:** update dependency vite to v8.3.8 ([5e065f2](https://github.com/dachrisch/groceries-order-tracking/commit/5e065f25cf6d24c18975e165fbafb7d99decca8e))
+* **easyshopper:** bound text quantities, fail over on empty vision answers ([96a4c20](https://github.com/dachrisch/groceries-order-tracking/commit/96a4c20acecf0ebae3646e66a5bfbe513696cea2))
+* **easyshopper:** bound the matching call and give the model a scored, deduped candidate menu ([608305e](https://github.com/dachrisch/groceries-order-tracking/commit/608305e1cc7012e1fcf51c6dbca694f2036e2d66))
+* **easyshopper:** bound the vision chain, guard the line caps, and add a real typecheck ([be9f1e6](https://github.com/dachrisch/groceries-order-tracking/commit/be9f1e6204a4306645be085c8f7e624223ab0cb2))
+* **easyshopper:** identify candidates by pack, and keep zero-score purchases out of the menu ([b91adae](https://github.com/dachrisch/groceries-order-tracking/commit/b91adae54a2da1f1ac07882cb8d6a4d1475d5b35))
+* **easyshopper:** keep a line whose quantity reads as zero ([93af4b2](https://github.com/dachrisch/groceries-order-tracking/commit/93af4b2e68677a38da6508e0999af2b5d9da988c))
+* **easyshopper:** let evidence-free purchases fill spare menu slots ([c60093d](https://github.com/dachrisch/groceries-order-tracking/commit/c60093d7785ce64ff993038ac90599d80af9f580))
+* **easyshopper:** one photo read at a time, a deadline, and user-safe job errors ([5808e18](https://github.com/dachrisch/groceries-order-tracking/commit/5808e188f3c93d182d413c1fcd1229874a707e33))
+* **easyshopper:** one quantity ceiling and a readable unreadable-photo error ([6dd57f6](https://github.com/dachrisch/groceries-order-tracking/commit/6dd57f6749481ed7120f4fd774c96916bfb2db8a))
+* **easyshopper:** restore the null narrowing in the extraction guard ([59e2b2b](https://github.com/dachrisch/groceries-order-tracking/commit/59e2b2b5bfb668a9bf303fe9072ec48168b13725))
+* **instore:** never let a stale photo read overwrite a newer one ([684a5a7](https://github.com/dachrisch/groceries-order-tracking/commit/684a5a78be083ab63e931634092b03f1be3dcf58))
+* **opencode:** do not retry a model that answered but was not an answer ([e65d3ae](https://github.com/dachrisch/groceries-order-tracking/commit/e65d3ae5bfb6d83583be1b8e9d3cd402ed1baad3))
+* **opencode:** make the paid fallback single-attempt, visible and correctly reported ([4c7dec2](https://github.com/dachrisch/groceries-order-tracking/commit/4c7dec2e4e849b9c2b3c8fd5153fdeba8c57f309))
+* **opencode:** reserve one paid model inside the bounded vision chain ([5e9792e](https://github.com/dachrisch/groceries-order-tracking/commit/5e9792ede67ac4d2c2d0c058fbe6525e36aecb3a))
+* **opencode:** treat an unjudgeable pinned model as billed ([911b555](https://github.com/dachrisch/groceries-order-tracking/commit/911b555dbf24229c9257959f61a5b39131002424))
+
 ## [1.13.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.13.0...v1.13.1) (2026-11-15)
 
 
