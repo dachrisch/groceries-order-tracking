@@ -144,6 +144,24 @@ describe('/api/basket', () => {
     expect(await BotRun.countDocuments({ userId })).toBe(0);
   });
 
+  it('refuses the weekly fill away from the delivery area', async () => {
+    await BotSettings.create({ userId, homeCity: 'Berlin' });
+    const { token, cookie } = await session();
+
+    const res = await request(app)
+      .post('/api/bot/fill-week')
+      .set('Cookie', cookie)
+      .set('x-csrf-token', token)
+      .send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.status).toBe('unavailable');
+    expect(res.body.error).toContain('Munich only');
+    // The fill only knows how to write a cart, so nothing may reach the store.
+    expect(cart.addItems).not.toHaveBeenCalled();
+    expect(await BotRun.countDocuments({ userId })).toBe(0);
+  });
+
   it('blocks an over-limit basket without writing', async () => {
     await BotSettings.create({ userId, homeCity: 'Munich', maxItems: 1 });
     const { token, cookie } = await session();

@@ -13,6 +13,8 @@ import { getBotJob, startBotJob } from '../../lib/bot/jobs';
 import { detectOccasions, fillOccasion } from '../../lib/bot/occasions';
 import { discoverRecipes } from '../../lib/bot/recipes';
 import Occasion from '../../models/Occasion';
+import { getLocationSettings } from '../../lib/bot/location-settings';
+import { availability, resolveLocation } from '../../lib/providers';
 import { formatZodError } from '../utils';
 import '../utils';
 
@@ -198,6 +200,15 @@ export async function handleFillWeek(req: Request, res: Response) {
   if (!key) return;
 
   try {
+    // The weekly fill only knows how to write a Knuspr cart. Away from the
+    // delivery area that write would target a source the shopper cannot use,
+    // so refuse with the same reason the UI shows instead of quietly filling.
+    const location = await getLocationSettings(req.userId);
+    const reach = availability('knuspr', resolveLocation(new Date(), location));
+    if (!reach.available) {
+      return res.status(409).json({ error: reach.reason, destination: 'knuspr-cart', status: 'unavailable' });
+    }
+
     const result = await executeWeeklyFill(req.userId, key, { confirm: parsed.data.confirm });
     res.json({ ...result, run: serializeRun(result.run) });
   } catch (error) {
