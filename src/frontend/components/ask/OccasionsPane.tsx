@@ -1,7 +1,7 @@
 /**
  * Learned occasions and recipe drafts.
  *
- * Moved out of `pages/Bot.tsx` so the Ask hub and the legacy bot page share one
+ * Moved out of the old `/bot` page (deleted in Phase 5) so the Ask hub has one
  * set of API calls. Self-contained: it owns its loading, error and fill state.
  */
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';

@@ -10,12 +10,18 @@
 - `pages/` — the five destinations: `Overview` (two-rate week card, due cards,
   recent activity and month spend), `Groceries` (one product list over both
   sources, with the product sheet), `Activity` (merged timeline plus bot runs),
-  `Settings`, `Login`, `Register`. The legacy bodies they replaced (`Dashboard`,
-  `Orders`, `Products`, `Inventory`, `Bot`, `InStore`) still exist but are
-  unreferenced by the router; `InStore` is the Phase 6 list-flow home.
+  `Settings`, `Login`, `Register`. The legacy bodies the merge replaced
+  (`Dashboard`, `Orders`, `Products`, `Inventory`, `Bot`) were deleted in Phase
+  5. `InStore.tsx` still exists but is **unrouted** — Phase 6 rebuilds the list
+  flow from it, and until then the EDEKA list feature has no entry point.
+- `components/StatePanel.tsx` — the one shape for every non-happy path: title,
+  reason, at most one action. A disabled action always renders its
+  `disabledReason`; never a greyed button without an explanation.
+- `components/CapturePanel.tsx` — "waiting for phone" / "capture is stale" for
+  Overview and Activity. A capture is a request to the phone sidecar (T4), so it
+  never shows a spinner; Settings owns the full card.
 - `components/AskHub.tsx` — the Ask sheet: Chat | Occasions | Groups.
   `components/ask/` holds the panes; `ChatPane` owns the job protocol.
-  Occasions and Groups used to live only on `pages/Bot.tsx`.
 - `components/Sheet.tsx` — the shared bottom-sheet/desktop-panel primitive.
 - `components/ProductSheet.tsx` — one product with a stat row per provider, its
   offers, the EDEKA display match and the group merge/split corrections.
@@ -31,6 +37,11 @@
   a stat keyed per provider (`addTargetFor`, `offerFor`, `providersOf`).
 - `lib/activity.ts` — wire types for `/api/activity`, plus month-range helpers.
 - `lib/format.ts` — money, date and cadence formatting (no provider logic).
+- `lib/request.ts` — `fetchWithTimeout` (15 s) and the failure copy. Every page
+  read goes through it so a hung request ends in "Try again" instead of a
+  spinner with no way out.
+- `lib/sync.ts` — the one reading of the EDEKA capture state (`waiting`,
+  `connected`, `offline`) plus the seven-day staleness threshold.
 - `lib/overlays.ts` — signals that let any surface open Ask or search.
 - `index.css` — Tailwind 4 + DaisyUI theme.
 
@@ -54,8 +65,12 @@
   state there, not in a drawer or a hub pane.
 - After a bot run, dispatch/observe the `bot-run-complete` event so other
   pages (cart drawer, inventory) can refresh. `ChatPane`, `OccasionsPane` and
-  `BasketAddButton` dispatch it; `Inventory`, `Overview`, `Groceries`,
-  `Activity`, `pages/Bot` and `OccasionsPane` listen.
+  `BasketAddButton` dispatch it; `Overview`, `Groceries`, `Activity` and
+  `OccasionsPane` listen.
+- Empty is a state, not a missing fallback: use `StatePanel` and name the reason
+  and one action. "Nothing due", "nothing in this range" and "no products yet"
+  are different states with different ways out. A shopping list whose lines are
+  all ticked is a *success* with nothing to add, not a "nothing found".
 - Pages that show bot state: `pages/Activity` (timeline entry + Runs tab),
   `pages/Overview` (week card), `Groceries`/`ProductSheet` ("Fill week" and
   due counts), `Settings.tsx` (bot guardrails).

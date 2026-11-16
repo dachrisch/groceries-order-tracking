@@ -1,7 +1,7 @@
 /**
  * Product groups, with the merge/split corrections the learning rules cannot
- * make on their own. Extracted from `pages/Bot.tsx` so the Ask hub has one
- * implementation of these calls.
+ * make on their own. Extracted from the old `/bot` page (deleted in Phase 5)
+ * so the Ask hub has one implementation of these calls.
  */
 import { createSignal, For, onMount, Show } from 'solid-js';
 import { AlertCircle, Layers, Play } from 'lucide-solid';
