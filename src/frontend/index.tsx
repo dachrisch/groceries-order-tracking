@@ -1,17 +1,15 @@
 /* @refresh reload */
 import { render } from 'solid-js/web';
-import { Router, Route } from '@solidjs/router';
+import { Navigate, Router, Route } from '@solidjs/router';
 import { App } from './App';
 import { patchFetch } from './lib/api';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
-import { Dashboard } from './pages/Dashboard';
-import { Orders } from './pages/Orders';
-import { Products } from './pages/Products';
-import { Inventory } from './pages/Inventory';
-import { Bot } from './pages/Bot';
+import { Overview } from './pages/Overview';
+import { Groceries } from './pages/Groceries';
+import { Activity } from './pages/Activity';
 import { Settings } from './pages/Settings';
-import { InStore } from './pages/InStore';
+import { AskEntry } from './pages/AskEntry';
 import './index.css';
 
 patchFetch();
@@ -24,22 +22,33 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   );
 }
 
+/**
+ * Old URLs are bookmarks and bot links, so they redirect instead of 404ing.
+ * The destinations they collapse into are the five tabs from Phase 4.
+ */
+const redirectTo = (path: string) => () => <Navigate href={path} />;
+
 render(
   () => (
     <Router root={App}>
-      <Route path="/" component={Dashboard} />
-      <Route path="/orders" component={Orders} />
-      <Route path="/orders/:orderId" component={Products} />
-      <Route path="/orders/:orderId/products/:productId" component={Products} />
-      <Route path="/order/:orderId" component={Products} />
+      <Route path="/" component={Overview} />
+      <Route path="/groceries" component={Groceries} />
+      <Route path="/activity" component={Activity} />
+      <Route path="/settings" component={Settings} />
+      <Route path="/bot" component={AskEntry} />
+
+      <Route path="/products" component={redirectTo('/groceries')} />
+      <Route path="/products/:productId" component={redirectTo('/groceries')} />
+      <Route path="/inventory" component={redirectTo('/groceries')} />
+
+      <Route path="/orders" component={redirectTo('/activity')} />
+      <Route path="/orders/:orderId" component={redirectTo('/activity')} />
+      <Route path="/orders/:orderId/products/:productId" component={redirectTo('/groceries')} />
+      <Route path="/in-store" component={redirectTo('/activity')} />
+      <Route path="/order/:orderId" component={redirectTo('/activity')} />
+
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      <Route path="/products" component={Products} />
-      <Route path="/products/:productId" component={Products} />
-      <Route path="/inventory" component={Inventory} />
-      <Route path="/bot" component={Bot} />
-      <Route path="/settings" component={Settings} />
-      <Route path="/in-store" component={InStore} />
     </Router>
   ),
   root!,

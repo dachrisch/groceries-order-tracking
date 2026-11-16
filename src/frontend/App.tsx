@@ -1,7 +1,40 @@
-import { createSignal, onMount, JSX, Show } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, JSX, Show } from 'solid-js';
 import { useNavigate, useLocation, A } from '@solidjs/router';
-import { LogOut, LayoutDashboard, ShoppingBasket, ShoppingBag, ChevronRight, ChevronLeft, Settings as SettingsIcon, ClipboardList, Bot, Store } from 'lucide-solid';
+import {
+  Activity,
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  LayoutDashboard,
+  LogOut,
+  Search,
+  Settings as SettingsIcon,
+  ShoppingBasket,
+} from 'lucide-solid';
 import { BotPanel } from './components/BotPanel';
+import { AskHub } from './components/AskHub';
+import { SearchOverlay } from './components/SearchOverlay';
+import { LocationChip } from './components/LocationChip';
+import { LocationProvider } from './lib/location';
+import { askHubOpen, openAsk, openSearch } from './lib/overlays';
+
+/**
+ * The shell: five destinations, one navigation model.
+ *
+ * Desktop keeps the collapsible drawer; mobile uses the bottom tab bar with Ask
+ * in the centre. Search and location are overlays mounted here so every page
+ * can reach them without owning a copy.
+ */
+
+const NAV = [
+  { href: '/', label: 'Overview', icon: LayoutDashboard, tone: 'text-primary/90' },
+  { href: '/groceries', label: 'Groceries', icon: ShoppingBasket, tone: 'text-accent/90' },
+  { href: '/activity', label: 'Activity', icon: Activity, tone: 'text-secondary/90' },
+  { href: '/settings', label: 'Settings', icon: SettingsIcon, tone: 'text-neutral/90' },
+];
+
+const MOBILE_LEFT = NAV.slice(0, 2);
+const MOBILE_RIGHT = NAV.slice(2);
 
 export function App(props: { children?: JSX.Element }) {
   const [user, setUser] = createSignal<{ name: string; email: string } | null>(null);
@@ -17,10 +50,8 @@ export function App(props: { children?: JSX.Element }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data as { name: string; email: string });
-      } else {
-        if (location.pathname !== '/login' && location.pathname !== '/register') {
-          navigate('/login');
-        }
+      } else if (location.pathname !== '/login' && location.pathname !== '/register') {
+        navigate('/login');
       }
     } catch (e) {
       console.error('Session fetch failed', e);
@@ -48,15 +79,23 @@ export function App(props: { children?: JSX.Element }) {
 
   onMount(fetchVersion);
 
+  // Cmd/Ctrl+K is the one shortcut a search overlay is expected to answer.
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!user()) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        openSearch();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    onCleanup(() => window.removeEventListener('keydown', onKeyDown));
+  });
+
   const handleLogout = async () => {
     await fetch('/api/logout', { method: 'POST' });
     setUser(null);
     navigate('/login');
-  };
-
-  const closeMobileDrawer = () => {
-    const drawer = document.getElementById('mobile-drawer') as HTMLInputElement;
-    if (drawer) drawer.checked = false;
   };
 
   const isAuthPage = () => ['/login', '/register'].includes(location.pathname);
@@ -65,56 +104,99 @@ export function App(props: { children?: JSX.Element }) {
     <div class="min-h-screen bg-base-200">
       <Show when={!loading()}>
         <Show when={user() && !isAuthPage()}>
-          {/* drawer lg:drawer-open: on desktop the sidebar is always open; on mobile it slides in */}
+          {/* Mounted with the session so the first read is authenticated. */}
+          <LocationProvider>
+            {/* drawer lg:drawer-open: desktop always shows the sidebar; mobile uses the tab bar */}
           <div class={`drawer lg:drawer-open ${sidebarCollapsed() ? 'lg:drawer-collapsed' : ''}`}>
             <input id="mobile-drawer" type="checkbox" class="drawer-toggle" />
 
-            {/* Main content */}
-            <div class="drawer-content flex flex-col h-screen overflow-hidden bg-base-200">
-              {/* Mobile header */}
-              <div class="lg:hidden navbar bg-base-100 shadow-md border-b border-base-300 shrink-0">
-                <div class="flex-none">
-                  <label for="mobile-drawer" class="btn btn-square btn-ghost">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
-                  </label>
-                </div>
-                <div class="flex-1 px-2">
-                  <span class="text-lg font-bold whitespace-nowrap">Groceries Tracking</span>
-                </div>
-              </div>
+            <div class="drawer-content flex h-screen flex-col overflow-hidden bg-base-200">
+              {/* Desktop top bar: search and the one location read */}
+              <header class="hidden h-20 shrink-0 items-center gap-4 border-b border-base-300/70 bg-base-100/60 px-8 backdrop-blur lg:flex xl:px-12">
+                <button
+                  class="flex max-w-xl flex-1 items-center gap-3 rounded-xl border border-base-300 bg-base-100 px-4 py-2.5 text-left text-sm text-base-content/60 transition-colors hover:border-primary/40"
+                  onClick={openSearch}
+                >
+                  <Search size={18} />
+                  <span class="truncate">Search history and both stores…</span>
+                  <kbd class="kbd kbd-sm ml-auto hidden font-sans text-[10px] xl:inline-flex">
+                    Ctrl K
+                  </kbd>
+                </button>
+                <LocationChip />
+              </header>
 
-              {/* Desktop header spacer (aligns with sidebar header height) */}
-              <div class="h-20 shrink-0 hidden lg:block" />
-
-              {/* Scrollable page content */}
-              <main class="flex-1 overflow-y-auto p-4 lg:p-8 xl:p-12">
-                <div class="max-w-7xl mx-auto w-full">
-                  {props.children}
+              {/* Mobile top bar: brand, location, search, account */}
+              <header class="flex shrink-0 items-center gap-2 border-b border-base-300 bg-base-100 px-3 py-2 lg:hidden">
+                <div class="flex min-w-0 items-center gap-2">
+                  <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-content shadow-md">
+                    <ShoppingBasket size={17} />
+                  </div>
+                  <span class="hidden truncate text-sm font-bold sm:inline">Groceries</span>
                 </div>
+                <div class="ml-auto flex items-center gap-1">
+                  <LocationChip compact />
+                  <button
+                    class="btn btn-ghost btn-sm btn-square"
+                    onClick={openSearch}
+                    aria-label="Search"
+                  >
+                    <Search size={18} />
+                  </button>
+                  <div class="dropdown dropdown-end">
+                    <div
+                      tabindex="0"
+                      role="button"
+                      class="btn btn-ghost btn-sm btn-circle avatar placeholder"
+                      aria-label="Account"
+                    >
+                      <div class="flex w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-content">
+                        <span class="text-xs">{user()?.name?.charAt(0).toUpperCase() || 'U'}</span>
+                      </div>
+                    </div>
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu z-[60] mt-2 w-56 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
+                    >
+                      <li>
+                        <div class="px-3 py-2">
+                          <div class="truncate text-sm font-semibold">{user()?.name}</div>
+                          <div class="truncate text-[11px] opacity-60">{user()?.email}</div>
+                        </div>
+                      </li>
+                      <li>
+                        <button onClick={handleLogout} class="text-error">
+                          <LogOut size={16} /> Logout
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </header>
+
+              <main class="flex-1 overflow-y-auto p-4 pb-24 lg:p-8 xl:p-12">
+                <div class="mx-auto w-full max-w-7xl">{props.children}</div>
               </main>
             </div>
 
-            {/* Sidebar (drawer-side) — always open on desktop, slide-in on mobile */}
+            {/* Sidebar: always open on desktop, out of reach on mobile */}
             <div class="drawer-side z-30">
               <label for="mobile-drawer" aria-label="close sidebar" class="drawer-overlay" />
               <div
-                class={`bg-base-100 text-base-content flex flex-col h-full transition-all duration-300 ease-in-out shadow-xl border-r border-base-300/75
+                class={`flex h-full flex-col border-r border-base-300/75 bg-base-100 text-base-content shadow-xl transition-all duration-300 ease-in-out
                   ${sidebarCollapsed() ? 'w-20' : 'w-72'}`}
               >
-                {/* Sidebar header */}
-                <div class="flex items-center justify-between px-4 py-5 border-b border-base-300/75 h-20 shrink-0">
+                <div class="flex h-20 shrink-0 items-center justify-between border-b border-base-300/75 px-4 py-5">
                   <Show when={!sidebarCollapsed()}>
                     <div class="flex items-center gap-3">
-                      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-content shadow-lg shadow-primary/85">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                        </svg>
+                      <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-content shadow-lg shadow-primary/85">
+                        <ShoppingBasket size={18} />
                       </div>
                       <div>
-                        <span class="text-lg font-bold tracking-tight whitespace-nowrap">Groceries</span>
-                        <span class="text-xs opacity-75 block -mt-0.5">Tracking</span>
+                        <span class="whitespace-nowrap text-lg font-bold tracking-tight">
+                          Groceries
+                        </span>
+                        <span class="-mt-0.5 block text-xs opacity-75">Tracking</span>
                       </div>
                     </div>
                   </Show>
@@ -129,79 +211,87 @@ export function App(props: { children?: JSX.Element }) {
                   </button>
                 </div>
 
-                {/* Nav items */}
                 <div class="flex-grow overflow-y-auto py-4">
-                  <ul class="menu p-0 px-3 space-y-1">
+                  <ul class="menu space-y-1 p-0 px-3">
+                    <For each={NAV.slice(0, 2)}>
+                      {(item) => (
+                        <li>
+                          <A
+                            href={item.href}
+                            end={item.href === '/'}
+                            activeClass="active"
+                            class={`flex items-center gap-3.5 rounded-xl py-2.5 transition-all duration-200 hover:bg-base-200/75 ${
+                              sidebarCollapsed() ? 'justify-center px-2' : 'px-4'
+                            }`}
+                          >
+                            <item.icon size={20} class={item.tone} />
+                            <Show when={!sidebarCollapsed()}>
+                              <span class="font-medium">{item.label}</span>
+                            </Show>
+                          </A>
+                        </li>
+                      )}
+                    </For>
                     <li>
-                      <A href="/" activeClass="active" end onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <LayoutDashboard size={20} class="text-primary/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Dashboard</span></Show>
-                      </A>
-                    </li>
-                    <li>
-                      <A href="/orders" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ShoppingBag size={20} class="text-secondary/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Orders</span></Show>
-                      </A>
-                    </li>
-                    <li>
-                      <A href="/products" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ShoppingBasket size={20} class="text-accent/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Products</span></Show>
-                      </A>
-                    </li>
-                    <li>
-                      <A href="/inventory" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <ClipboardList size={20} class="text-primary-light/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Inventory</span></Show>
-                      </A>
-                    </li>
-                    <li>
-                      <A href="/bot" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
+                      <button
+                        onClick={() => openAsk('chat')}
+                        class={`flex items-center gap-3.5 rounded-xl py-2.5 transition-all duration-200 hover:bg-base-200/75 ${
+                          sidebarCollapsed() ? 'justify-center px-2' : 'px-4'
+                        } ${askHubOpen() ? 'bg-base-200 text-primary' : ''}`}
+                        title="Ask"
+                      >
                         <Bot size={20} class="text-info/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Bot</span></Show>
-                      </A>
+                        <Show when={!sidebarCollapsed()}>
+                          <span class="font-medium">Ask</span>
+                        </Show>
+                      </button>
                     </li>
-                    <li>
-                      <A href="/in-store" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <Store size={20} class="text-warning/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">EDEKA</span></Show>
-                      </A>
-                    </li>
-                    <li>
-                      <A href="/settings" activeClass="active" onClick={closeMobileDrawer}
-                        class={`flex items-center gap-3.5 py-2.5 rounded-xl transition-all duration-200 ${sidebarCollapsed() ? 'justify-center px-2' : 'px-4'} hover:bg-base-200/75`}>
-                        <SettingsIcon size={20} class="text-neutral/90" />
-                        <Show when={!sidebarCollapsed()}><span class="font-medium">Settings</span></Show>
-                      </A>
-                    </li>
+                    <For each={NAV.slice(2)}>
+                      {(item) => (
+                        <li>
+                          <A
+                            href={item.href}
+                            activeClass="active"
+                            class={`flex items-center gap-3.5 rounded-xl py-2.5 transition-all duration-200 hover:bg-base-200/75 ${
+                              sidebarCollapsed() ? 'justify-center px-2' : 'px-4'
+                            }`}
+                          >
+                            <item.icon size={20} class={item.tone} />
+                            <Show when={!sidebarCollapsed()}>
+                              <span class="font-medium">{item.label}</span>
+                            </Show>
+                          </A>
+                        </li>
+                      )}
+                    </For>
                   </ul>
                 </div>
 
-                {/* User info + logout */}
-                <div class="mt-auto border-t border-base-300/75 bg-base-100/85 p-4 space-y-3">
-                  <div class={`flex items-center gap-3 p-2.5 rounded-xl bg-base-200/40 ${sidebarCollapsed() ? 'justify-center' : ''}`}>
+                <div class="mt-auto space-y-3 border-t border-base-300/75 bg-base-100/85 p-4">
+                  <div
+                    class={`flex items-center gap-3 rounded-xl bg-base-200/40 p-2.5 ${
+                      sidebarCollapsed() ? 'justify-center' : ''
+                    }`}
+                  >
                     <div class="avatar placeholder flex-shrink-0">
-                      <div class="bg-gradient-to-br from-primary to-primary/80 text-primary-content rounded-full w-9 shadow-md ring-2 ring-primary/10 flex items-center justify-center">
-                        <span class="text-sm leading-none">{user()?.name?.charAt(0).toUpperCase() || 'U'}</span>
+                      <div class="flex w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-content shadow-md ring-2 ring-primary/10">
+                        <span class="text-sm leading-none">
+                          {user()?.name?.charAt(0).toUpperCase() || 'U'}
+                        </span>
                       </div>
                     </div>
                     <Show when={!sidebarCollapsed()}>
-                      <div class="flex-grow min-w-0">
-                        <div class="font-semibold text-sm truncate">{user()?.name}</div>
-                        <div class="text-xs opacity-75 truncate">{user()?.email}</div>
+                      <div class="min-w-0 flex-grow">
+                        <div class="truncate text-sm font-semibold">{user()?.name}</div>
+                        <div class="truncate text-xs opacity-75">{user()?.email}</div>
                       </div>
                     </Show>
                   </div>
                   <button
                     onClick={handleLogout}
-                    class={`btn btn-ghost btn-sm text-error w-full flex items-center gap-3 hover:bg-error/10 ${sidebarCollapsed() ? 'justify-center' : ''}`}
+                    class={`btn btn-ghost btn-sm flex w-full items-center gap-3 text-error hover:bg-error/10 ${
+                      sidebarCollapsed() ? 'justify-center' : ''
+                    }`}
                   >
                     <LogOut size={18} />
                     <Show when={!sidebarCollapsed()}>
@@ -209,23 +299,67 @@ export function App(props: { children?: JSX.Element }) {
                     </Show>
                   </button>
                   <Show when={!sidebarCollapsed() && version()}>
-                    <div class="text-xs opacity-85 text-center">{version()}</div>
+                    <div class="text-center text-xs opacity-85">{version()}</div>
                   </Show>
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Mobile destinations. Ask is the centre action, not a route. */}
+          <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-base-300 bg-base-100/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+            <div class="grid grid-cols-5 items-end px-2 pb-1 pt-2">
+              <For each={MOBILE_LEFT}>
+                {(item) => (
+                  <A
+                    href={item.href}
+                    end={item.href === '/'}
+                    activeClass="text-primary"
+                    inactiveClass="text-base-content/55"
+                    class="flex flex-col items-center gap-1 rounded-xl py-1 text-[10px] font-semibold"
+                  >
+                    <item.icon size={20} />
+                    <span>{item.label}</span>
+                  </A>
+                )}
+              </For>
+              <button
+                class="flex flex-col items-center gap-1 text-[10px] font-semibold text-primary"
+                onClick={() => openAsk('chat')}
+                aria-label="Ask"
+              >
+                <span class="-mt-5 flex h-12 w-12 items-center justify-center rounded-2xl border-[3px] border-base-100 bg-gradient-to-br from-primary to-primary/80 text-primary-content shadow-lg shadow-primary/30">
+                  <Bot size={22} />
+                </span>
+                <span>Ask</span>
+              </button>
+              <For each={MOBILE_RIGHT}>
+                {(item) => (
+                  <A
+                    href={item.href}
+                    activeClass="text-primary"
+                    inactiveClass="text-base-content/55"
+                    class="flex flex-col items-center gap-1 rounded-xl py-1 text-[10px] font-semibold"
+                  >
+                    <item.icon size={20} />
+                    <span>{item.label}</span>
+                  </A>
+                )}
+              </For>
+            </div>
+          </nav>
+
           <BotPanel />
+          <AskHub />
+          <SearchOverlay />
+          </LocationProvider>
         </Show>
 
-        <Show when={!user() || isAuthPage()}>
-          {props.children}
-        </Show>
+        <Show when={!user() || isAuthPage()}>{props.children}</Show>
       </Show>
 
       <Show when={loading()}>
-        <div class="flex items-center justify-center h-screen">
+        <div class="flex h-screen items-center justify-center">
           <span class="loading loading-spinner loading-lg" />
         </div>
       </Show>
