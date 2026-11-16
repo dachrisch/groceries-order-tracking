@@ -33,6 +33,23 @@ Reads: `GET /api/stats`, `/api/aggregates`, `/api/orders`,
 `/api/orders/:id`, `/api/products/:id/price`, `/api/product-trends`,
 `/api/inventory`, `/api/cart`.
 
+Merged reads (both sources, `controllers/browse.controller.ts`,
+`activity.controller.ts`, `location.controller.ts`):
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/products` | merged list; `statsByProvider` is keyed per provider and never averaged, `?due=1`, `?source=knuspr\|edeka` |
+| GET | `/api/search?q=` | own history (instant) + EDEKA `searchMeta` (25 cap, `truncated`); `knuspr.state` is `later` until a catalogue search exists. Needs at least 2 characters |
+| GET | `/api/activity` | deliveries and in-store runs as one newest-first stream; `?from&to&provider&limit`, totals per source over the returned events |
+| GET | `/api/activity/:id` | one entry with lines; the id is `knuspr:<orderId>` or `edeka:<sessionId>` |
+| GET | `/api/location` | context, per-provider availability with a reason, and the derived destination |
+| PUT | `/api/location` | `homeCity`, `homeCountry`, `awayWindows`; an unknown location keeps both sources available |
+
+The merged read model lives in `src/lib/purchases.ts` (events) and
+`src/lib/providers.ts` (location and reach). `src/lib/product-stats.ts` builds
+one stat per provider. Search never calls `ensureSession` for a user with no
+integration row: typing a query must not sign an account up.
+
 Cart: `POST /api/cart/add` (thin wrapper around `addItems` in
 `src/lib/knuspr-cart.ts`).
 
@@ -98,7 +115,8 @@ detect occasions → match bot runs to orders → tag occasion orders.
 - `ProductGroup` — `{ userId, key, label, productIds[], manual }`.
 - `Occasion` — learned occasion with per-serving items and source orders.
 - `BotRun` — exactly what the bot added and its delivery/undo status.
-- `BotSettings` — per-user guardrails and `opencodeEnabled`.
+- `BotSettings` — per-user guardrails and `opencodeEnabled`, plus the location
+  half (`homeCity`, `homeCountry`, `awayWindows`) read by `/api/location`.
 
 ## Tests
 
