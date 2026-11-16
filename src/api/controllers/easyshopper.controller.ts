@@ -6,7 +6,8 @@ import PurchaseSession from '../../models/PurchaseSession';
 import { decrypt, encrypt } from '../../lib/crypto';
 import { formatZodError } from '../utils';
 import { EasyShopperClient, type EasyShopperCredentials, type EasyShopperSession } from '../../lib/easyshopper/client';
-import { ocrImageBuffer, isTesseractAvailable } from '../../lib/easyshopper/ocr';
+import { isOpencodeConfigured } from '../../lib/opencode-client';
+import { getExtractJob, startExtractJob } from '../../lib/easyshopper/extract-jobs';
 import { planShoppingList, rerankWithHistory } from '../../lib/easyshopper/list';
 import { toCandidate, type MatchCandidate } from '../../lib/easyshopper/match';
 import { summarizePurchases } from '../../lib/easyshopper/insights';
@@ -191,48 +192,83 @@ async function ensureSession(
 }
 
 const planSchema = z.object({
-  lines: z.array(z.string()).optional(),
-  /** Base64 image of the handwritten list; tesseract reads it locally. */
-  imageBase64: z.string().optional(),
+  // Cap the typed path to what a photo may yield (60 lines, 80-char lines in
+  // `extract.ts`, so 200 here is generous): a thousand lines would become a thousand
+  // store searches.
+  lines: z.array(z.string().min(1).max(200)).min(1).max(60),
   storeGuid: z.string().optional(),
   attributes: z.array(z.string()).optional(),
+  // `false` forces the instant rules plan, e.g. when opencode is slow or the shopper
+  // does not want a model call at all.
+  useModel: z.boolean().optional(),
 });
 
+/** Trim the typed lines; the photo is a separate, asynchronous step. */
 function linesFromRequest(body: z.infer<typeof planSchema>): string[] {
-  const lines = [...(body.lines ?? [])];
-  if (body.imageBase64) {
-    if (!isTesseractAvailable()) {
-      throw new Error('tesseract is not installed on the server; send text lines instead');
-    }
-    const cleaned = body.imageBase64.replace(/^data:[^;]+;base64,/, '');
-    lines.push(...ocrImageBuffer(Buffer.from(cleaned, 'base64')));
-  }
-  return lines.map((line) => line.trim()).filter(Boolean);
+  return body.lines.map((line) => line.trim()).filter(Boolean);
 }
 
-/** POST /api/easyshopper/list/plan — OCR + search + match, no writes. */
+const extractSchema = z.object({
+  // The real ceiling is express.json({limit:'2mb'}) in app.ts; keep the schema below it
+  // so an oversized photo fails here with a readable message instead of a bare 413.
+  imageBase64: z.string().min(64).max(2_000_000),
+});
+
+/** POST /api/easyshopper/list/extract — opencode reads the photo; returns a job id. */
+export async function handleExtractList(req: Request, res: Response) {
+  const parsed = extractSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
+  if (!isOpencodeConfigured()) {
+    return res.status(503).json({ error: 'reading a photo needs opencode (OPENCODE_BASE_URL / OPENCODE_API_KEY)' });
+  }
+
+  const job = startExtractJob(req.userId, parsed.data.imageBase64);
+  if (!job) {
+    // One read per user, so a second chain cannot burn a second model call.
+    return res.status(429).json({ error: 'a photo is already being read — wait for it to finish' });
+  }
+  res.status(202).json({ jobId: job.id });
+}
+
+/** GET /api/easyshopper/list/extract/:id — poll one photo read. */
+export async function handleExtractStatus(req: Request, res: Response) {
+  const { id } = req.params;
+  const job = typeof id === 'string' ? getExtractJob(req.userId, id) : null;
+  if (!job) return res.status(404).json({ error: 'that photo read was lost — read the photo again' });
+  res.json({
+    status: job.status,
+    // Nothing is known before the answer: report `null`, not "no lines" and not "free".
+    lines: job.lines ?? null,
+    model: job.model ?? null,
+    paid: job.paid ?? null,
+    error: job.error ?? null,
+  });
+}
+
+/** POST /api/easyshopper/list/plan — search + (opencode) match, no writes. */
 export async function handlePlanList(req: Request, res: Response) {
   const key = req.derivedKey;
   if (!key) return res.status(401).json({ error: 'Session key missing — please log in again' });
   const parsed = planSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
 
-  let lines: string[];
-  try {
-    lines = linesFromRequest(parsed.data);
-  } catch (err: unknown) {
-    return res.status(400).json({ error: err instanceof Error ? err.message : 'could not read the list' });
-  }
+  const lines = linesFromRequest(parsed.data);
+  // Typed lines are thin: a body of nothing but blanks must still be refused.
   if (lines.length === 0) return res.status(400).json({ error: 'no lines to plan' });
 
   try {
     const { client, session, storeGuid } = await ensureSession(req.userId, key, parsed.data.storeGuid);
-    const plan = await planShoppingList(client, session, {
-      lines,
-      storeGuid,
-      attributes: parsed.data.attributes,
-      extraCandidates: await recentlyBoughtCandidates(req.userId),
-    });
+    const plan = await planShoppingList(
+      client,
+      session,
+      {
+        lines,
+        storeGuid,
+        attributes: parsed.data.attributes,
+        extraCandidates: await recentlyBoughtCandidates(req.userId),
+      },
+      { useModel: parsed.data.useModel }
+    );
     res.json(plan);
   } catch (err: unknown) {
     console.error('EASY Shopper plan failed:', err);
@@ -271,24 +307,27 @@ export async function handleCreateList(req: Request, res: Response) {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
 
-  let lines: string[];
-  try {
-    lines = linesFromRequest(parsed.data);
-  } catch (err: unknown) {
-    return res.status(400).json({ error: err instanceof Error ? err.message : 'could not read the list' });
-  }
+  const lines = linesFromRequest(parsed.data);
+  // Typed lines are thin: a body of nothing but blanks must still be refused.
   if (lines.length === 0) return res.status(400).json({ error: 'no lines to plan' });
 
   try {
     const { client, session, storeGuid } = await ensureSession(req.userId, key, parsed.data.storeGuid);
     const bought = await recentlyBoughtCandidates(req.userId);
+    // The shopper's preview is advisory: this handler plans again, so a re-roll may pick
+    // differently. Accepting the client's own plan back is a follow-up.
     const plan = rerankWithHistory(
-      await planShoppingList(client, session, {
-        lines,
-        storeGuid,
-        attributes: parsed.data.attributes,
-        extraCandidates: bought,
-      }),
+      await planShoppingList(
+        client,
+        session,
+        {
+          lines,
+          storeGuid,
+          attributes: parsed.data.attributes,
+          extraCandidates: bought,
+        },
+        { useModel: parsed.data.useModel }
+      ),
       bought
     );
 

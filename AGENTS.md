@@ -21,6 +21,7 @@ npm run dev:frontend # Vite only
 npm run dev:backend  # Express with tsx watch
 npm test             # NODE_ENV=test vitest run (in-memory MongoDB)
 npm run lint         # oxlint
+npm run typecheck    # tsc over the in-store/opencode surface (build does not check types)
 npm run build        # production frontend + bundled server
 npm run start:prod   # run dist-server/server.js
 npm run easyshopper:capture   # sidecar: read EASY Shopper purchases off the phone (adb)
@@ -28,9 +29,15 @@ npm run easyshopper:sync      # sidecar worker: run capture when the UI asks for
 ```
 
 `npm test`, `npm run lint` and `npm run build` must all pass before a change is
-considered done. `npx tsc --noEmit` is not usable in this repo: TypeScript 7
-rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
-`baseUrl`). Use `npm run build` for type-checking.
+considered done. `npm run build` is **not** a type check — vite and esbuild strip
+types without looking at them. `npx tsc --noEmit` cannot read this repo's
+`tsconfig.json` under TypeScript 7 (`moduleResolution=node10` and `baseUrl` were
+removed), so `npm run typecheck` runs `tsc --ignoreConfig` twice over the
+in-store/opencode surface (lib + api modules, then the page with Solid's JSX
+settings). CI does not type-check yet; run it yourself. The rest of the tree
+(`src/api/app.ts`, the bot/order controllers, `src/models`) still has
+`--strict` errors from before this script existed, which is why the scope is
+narrow.
 
 ## Architecture
 
@@ -47,8 +54,10 @@ rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
 
 1. **Statistics do the learning; the LLM only does language.** Patterns,
    quantities, product grouping, occasion detection and every cart mutation are
-   deterministic, testable code. opencode gets text only, no tools and no DB
-   access, and must return JSON. Never let it invent product IDs.
+   deterministic, testable code. opencode gets text, no tools and no DB access,
+   and must return JSON. The one non-text input is a single inline photo for
+   shopping-list intake (invariant 6); that photo is transcribed into lines and
+   never reaches product matching. Never let the model invent product IDs.
 2. **Cart actions go straight into the Knuspr cart.** Guardrails (max €/run,
    max items) are the safety net; above them the bot asks for confirmation.
    Every added item is recorded in a `BotRun` so it can be undone.
@@ -59,9 +68,14 @@ rejects the existing `tsconfig.json` options (`moduleResolution=node10`,
 5. **In-store purchases are a separate source.** EASY Shopper sessions live in
    `PurchaseSession`, never in Knuspr `Order`; merging the two would double-count
    a week that contains both a delivery and a shop run.
-6. **Handwriting OCR is the one permitted non-text input.** A photo of a paper list
-   is read locally by tesseract; the LLM may clean lines but never sees the
-   catalogue and never chooses products. Matching stays in `easyshopper/match.ts`.
+6. **A photographed list is read by opencode vision, then matched inside our own
+   menu.** The image goes to a vision-capable opencode model that must answer JSON
+   list lines. Free vision models are tried first; a short, probed paid tier is the
+   last resort and the UI names it (`read by <model> (paid)`). Matching offers the
+   model candidate *names* with positional indices only — an index outside that
+   line's menu is discarded and the deterministic score stands — so it can point at
+   a product but never introduce one. The backend owns the catalogue ids and the
+   rule score. Local OCR is gone: nothing in the repo reads a photo offline any more.
 
 ## Environment
 
@@ -71,13 +85,29 @@ from the servyy-container Ansible role (`groceries/.env.j2`).
 Required in production: `MONGODB_URI`, `JWT_SECRET`.
 EASY Shopper (optional, in-store features): `EASYSHOPPER_API_URL`,
 `EASYSHOPPER_API_KEY`, `EASYSHOPPER_STORE_GUID` (defaults match the shipped app).
-List planning needs `tesseract` (with the `deu` language pack) on the host.
+List photo intake needs opencode with at least one `image`-capable cost-0 model in
+`GET /api/model` (the client discovers them from the registry, so no model name is
+configured). `OPENCODE_VISION_PAID` (default on) lets a curated paid tier answer when
+every free vision model has failed; `off|false|0|no` drops that tier, though a paid
+model pinned in `OPENCODE_VISION_MODELS` is still used. `OPENCODE_VISION_MODELS`
+(`provider:id,...`) pins the photo chain, never the text one. The photo read reserves
+**two free models, then one paid one** (`maxModels: 2`, `maxPaid: 1`): a hang costs
+2 × 38 s + 1 × 38 s = 114 s, inside the job deadline, and the paid budget is separate
+from the free one so a free failure never swallows the fallback. `maxPaid` defaults to
+0 everywhere else — appending the paid tier to a chain is not permission to buy it —
+except an operator pin, which is a deliberate choice. No other LLM call may use a paid
+model. The photo button is always shown: without opencode a click answers `503` with its
+own explanation, and typed lines still plan and match.
 
 Optional bot settings: `OPENCODE_BASE_URL`, `OPENCODE_API_KEY`,
 `OPENCODE_ALLOW_INSECURE_TLS` (only for a test host with a self-signed
-opencode certificate), `OPENCODE_MODELS` (`provider:id,...` override; normally
-unset, because the client picks active cost-0 models from `GET /api/model`). Without opencode, simple commands still work because
-`src/lib/bot/intent.ts` has a regex parser.
+opencode certificate), `OPENCODE_MODELS` (`provider:id,...` override for text
+calls; normally unset, because the client picks active cost-0 models from
+`GET /api/model`). A pinned model the registry cannot vouch for is tagged
+billable — it gets a single attempt instead of three and logs `paid fallback
+used` when it answers — so a text pin carries the same "prove it is free or
+treat it as paid" rule as a vision one. Without opencode, simple commands still
+work because `src/lib/bot/intent.ts` has a regex parser.
 
 ## Testing notes
 

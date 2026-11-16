@@ -31,4 +31,6 @@
 
 ## Checks
 
-`npm run build` is the type/build check. `npm run lint` catches lint issues.
+`npm run typecheck` is the type check (`npm run build` only builds: vite and
+esbuild strip types without checking them, and CI does not type-check yet).
+`npm run lint` catches lint issues.

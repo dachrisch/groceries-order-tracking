@@ -1,16 +1,23 @@
 /**
- * Plan a shopping list from text lines: search the store catalogue per line, then
- * match deterministically. No writes happen here, so the plan can be previewed and
- * corrected before anything reaches the EASY Shopper list.
+ * Plan a shopping list from text lines: search the store catalogue per line, let
+ * opencode pick among those candidates, and fall back to the deterministic score when
+ * it cannot answer. No writes happen here, so the plan can be previewed and corrected
+ * before anything reaches the EASY Shopper list.
  */
+import { deumlaut } from '../bot/product-groups';
+import { chooseWithModel, MAX_CANDIDATES, type LineCandidates } from './choose';
 import { EasyShopperClient, type EasyShopperSession, type SearchProduct } from './client';
 import { matchLines, parseListLine, scoreCandidate, toCandidate, type LineMatch, type ListLine, type MatchCandidate } from './match';
+import { isOpencodeConfigured } from '../opencode-client';
 
 export interface PlanInput {
   lines: string[];
   storeGuid: string;
   userGuid?: string;
-  /** Extra catalogue products to consider (e.g. recently bought items). */
+  /**
+   * Recent purchases, offered to the model as extra menu rows. Rows that duplicate a
+   * catalogue item are dropped, so a pick always keeps the catalogue's id and price.
+   */
   extraCandidates?: MatchCandidate[];
   /** Attributes passed to search, e.g. `organic`. */
   attributes?: string[];
@@ -21,6 +28,8 @@ export interface PlannedLine {
   match: LineMatch;
   /** `product` = add the matched catalogue product; `text` = add as a free-text row. */
   action: 'product' | 'text';
+  /** Who chose the product: opencode, or the deterministic scorer. */
+  chooser: 'model' | 'rules';
 }
 
 export interface PlannedList {
@@ -28,6 +37,8 @@ export interface PlannedList {
   lines: PlannedLine[];
   matched: number;
   unmatched: number;
+  /** `model` when at least one line was chosen by opencode. */
+  source: 'model' | 'rules';
 }
 
 function productKey(product: SearchProduct): string {
@@ -35,21 +46,37 @@ function productKey(product: SearchProduct): string {
   return candidate ? `${candidate.id ?? ''}|${candidate.name}` : JSON.stringify(product).slice(0, 120);
 }
 
-/** Search once per distinct line and keep the best candidates for scoring. */
-export async function planShoppingList(
+/**
+ * Who a candidate *is*, however it reached us: a history row and a catalogue item for
+ * the same product must collapse to one menu row — but only the *same* product. Sizes,
+ * percentages and parentheticals are part of a product's identity ("H-Milch 1,5%" is not
+ * "H-Milch 3,5%", "laktosefrei" is not the ordinary carton), so only a brand the name
+ * repeats as a whole word is stripped; everything else is merely case- and
+ * umlaut-normalised.
+ */
+function candidateKey(candidate: MatchCandidate): string {
+  const brand = deumlaut(candidate.brand ?? '').toLowerCase().trim();
+  const name = deumlaut(candidate.name).toLowerCase().replace(/\s+/g, ' ').trim();
+  // Whole-word only: brand "Bio" must not turn "Biokäse Natur" into "käse natur".
+  const stripped = brand && name.startsWith(`${brand} `) ? name.slice(brand.length).trim() : name;
+  return `${brand}|${stripped}`;
+}
+
+/**
+ * Search once per list line, in input order. Identical typed lines are searched again
+ * rather than merged: the plan mirrors the input row for row, and merging would silently
+ * drop a row the shopper typed.
+ */
+export async function searchListCandidates(
   client: EasyShopperClient,
   session: EasyShopperSession,
   input: PlanInput
-): Promise<PlannedList> {
-  const parsed = input.lines
-    .map((raw) => parseListLine(raw))
-    .filter((line): line is ListLine => line !== null);
-
-  const extra = input.extraCandidates ?? [];
-  const planned: PlannedLine[] = [];
+): Promise<LineCandidates[]> {
+  const parsed = input.lines.map((raw) => parseListLine(raw)).filter((line): line is ListLine => line !== null);
+  const entries: LineCandidates[] = [];
 
   for (const line of parsed) {
-    let candidates: MatchCandidate[] = [];
+    let catalogue: MatchCandidate[] = [];
     try {
       const response = await client.searchProducts(session.token, {
         queryText: line.text,
@@ -58,7 +85,7 @@ export async function planShoppingList(
         attributes: input.attributes,
       });
       const seen = new Set<string>();
-      candidates = response.items
+      catalogue = response.items
         .map((item) => toCandidate(item))
         .filter((candidate): candidate is MatchCandidate => candidate !== null)
         .filter((candidate) => {
@@ -69,39 +96,147 @@ export async function planShoppingList(
         });
     } catch {
       // A failed search must not lose the line: it is planned as free text instead.
-      candidates = [];
+      catalogue = [];
     }
 
-    const pool = [...candidates, ...extra];
-    const [match] = matchLines([line], pool);
-    planned.push({
-      line,
-      match: match ?? {
-        line,
-        candidate: null,
-        score: 0,
-        reason: 'no candidates',
-        alternatives: [],
-      },
-      action: match?.candidate ? 'product' : 'text',
-    });
-  }
+    // History rows are candidates too — the model may choose them — but never a second
+    // copy of a product the catalogue already lists: that copy has no id and no price.
+    const known = new Set(catalogue.map(candidateKey));
+    const history: MatchCandidate[] = [];
+    for (const candidate of input.extraCandidates ?? []) {
+      const key = candidateKey(candidate);
+      if (known.has(key)) continue;
+      known.add(key);
+      history.push(candidate);
+    }
 
-  const matched = planned.filter((entry) => entry.action === 'product').length;
-  return {
-    storeGuid: input.storeGuid,
-    lines: planned,
-    matched,
-    unmatched: planned.length - matched,
-  };
+    // One ordered menu: the model's positions, `readPicks`' bounds and `applyPicks`'
+    // index all refer to this array. Best score first, so the cap keeps what matters.
+    // A purchase with evidence ranks beside the catalogue; one without evidence is only
+    // admitted into the slots the catalogue left over — never enough to evict a catalogue
+    // row, but enough to reach the model when the search found nothing for the line
+    // ("Klopapier" vs a bought "Toilettenpapier 3-lagig" is a bridge only it can make).
+    const ranked = [...catalogue, ...history]
+      .map((candidate) => ({ candidate, score: scoreCandidate(line.text, candidate).score }))
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          Number(b.candidate.id !== undefined) - Number(a.candidate.id !== undefined) ||
+          a.candidate.name.length - b.candidate.name.length
+      );
+    const admitted = ranked.filter((entry) => entry.candidate.id !== undefined || entry.score > 0);
+    const spare = ranked.filter((entry) => entry.candidate.id === undefined && entry.score === 0);
+    const pool = [...admitted, ...spare].slice(0, MAX_CANDIDATES).map((entry) => entry.candidate);
+
+    entries.push({ line, candidates: pool });
+  }
+  return entries;
+}
+
+/** Deterministic plan from candidate pools. */
+export function buildPlan(entries: LineCandidates[], storeGuid: string): PlannedList {
+  const lines: PlannedLine[] = entries.map((entry) => {
+    const [match] = matchLines([entry.line], entry.candidates);
+    return {
+      line: entry.line,
+      match: match ?? { line: entry.line, candidate: null, score: 0, reason: 'no candidates', alternatives: [] },
+      action: match?.candidate ? 'product' : 'text',
+      chooser: 'rules',
+    };
+  });
+  const matched = lines.filter((entry) => entry.action === 'product').length;
+  return { storeGuid, lines, matched, unmatched: lines.length - matched, source: 'rules' };
+}
+
+/** Let opencode choose among the candidates we fetched; never outside them. */
+export function applyPicks(
+  plan: PlannedList,
+  entries: LineCandidates[],
+  picks: Array<number | null>
+): PlannedList {
+  const lines = plan.lines.map((entry, index) => {
+    const pool = entries[index];
+    const pick = picks[index];
+    // The candidate object always comes from the menu this backend built — catalogue
+    // search plus recent purchases, never the model. A made-up index has nothing here,
+    // and a pool that does not belong to this line cannot answer it.
+    const candidate =
+      pick === null || pick === undefined || pool?.line.text !== entry.line.text
+        ? undefined
+        : pool.candidates[pick];
+    if (!candidate) return entry;
+
+    const rules = scoreCandidate(entry.line.text, candidate);
+    return {
+      ...entry,
+      match: {
+        line: entry.line,
+        candidate,
+        score: Number(rules.score.toFixed(3)),
+        reason: `opencode pick (rules: ${rules.reason})`,
+        alternatives: entry.match.alternatives,
+      },
+      action: 'product' as const,
+      chooser: 'model' as const,
+    };
+  });
+  const matched = lines.filter((entry) => entry.action === 'product').length;
+  const source = lines.some((entry) => entry.chooser === 'model') ? 'model' : 'rules';
+  return { ...plan, lines, matched, unmatched: lines.length - matched, source };
+}
+
+export interface PlanOptions {
+  /** Ask opencode to choose among the candidates. Default true. */
+  useModel?: boolean;
 }
 
 /**
- * Re-rank a plan against items the user actually bought before. A previous in-store
- * purchase is the strongest signal for "this is the exact product I mean".
+ * One pick is one cheap text call on a user-facing request, so it is bounded on both
+ * axes: two free models at 15 s each. A timeout is not retried, so a chain that hangs
+ * costs 2 × 15 s = 30 s. The 3-attempt retry only applies to fast transport errors, so
+ * the worst realistic path is 2 × 3 × 15 s = 90 s of real wall clock — and the UI gives
+ * up first: `/list/plan` and `/list/create` abort the fetch at 45 s (`InStore.tsx`),
+ * which covers the normal case and leaves the rules plan in place.
+ *
+ * No `maxPaid`: the matcher must never buy a model, so the paid tier is unreachable
+ * from here by construction, not by an unreachable branch in the chain.
+ */
+const MATCH_CALL = { timeoutMs: 15_000, maxModels: 2 } as const;
+
+/** Search, then let opencode pick, then keep the rules result if it could not. */
+export async function planShoppingList(
+  client: EasyShopperClient,
+  session: EasyShopperSession,
+  input: PlanInput,
+  options: PlanOptions = {}
+): Promise<PlannedList> {
+  const entries = await searchListCandidates(client, session, input);
+  const plan = buildPlan(entries, input.storeGuid);
+  if (options.useModel === false) return plan;
+
+  try {
+    return applyPicks(plan, entries, await chooseWithModel(entries, MATCH_CALL));
+  } catch (err) {
+    // With opencode switched off the rules plan is not a failure — planning must work
+    // without it — so only a real call failure is worth a log line.
+    if (isOpencodeConfigured()) {
+      console.warn(
+        '[easyshopper] opencode matching unavailable, using the rules score:',
+        err instanceof Error ? err.message : err
+      );
+    }
+    return plan;
+  }
+}
+
+/**
+ * Re-rank a plan against items the user actually bought before. Recent purchases are
+ * already in the model's menu, so this only corrects a *rules* line whose score is an
+ * approximation: a model pick is deliberate and is never second-guessed.
  */
 export function rerankWithHistory(plan: PlannedList, recent: MatchCandidate[]): PlannedList {
   const lines = plan.lines.map((entry) => {
+    if (entry.chooser === 'model') return entry;
     if (entry.match.candidate && entry.match.score >= 0.8) return entry;
     const againstHistory = recent
       .map((candidate) => ({ candidate, ...scoreCandidate(entry.line.text, candidate) }))

@@ -1,6 +1,13 @@
-import { createSignal, onMount, Show, For } from 'solid-js';
-import { ShoppingBasket, Sparkles, Share2, RefreshCw, ImageUp, TriangleAlert } from 'lucide-solid';
+import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
+import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert } from 'lucide-solid';
 import QRCode from 'qrcode';
+import {
+  FULL_LIST_MESSAGE,
+  listLinesFromText,
+  listOverflows,
+  listRefusalMessage,
+  mergeExtractedLines,
+} from '../lib/listForm';
 
 interface PlannedLine {
   line: { text: string; quantity: number };
@@ -10,6 +17,8 @@ interface PlannedLine {
     reason: string;
   };
   action: 'product' | 'text';
+  /** `model` = opencode chose the product; `rules` = the deterministic score did. */
+  chooser: 'model' | 'rules';
 }
 
 interface Plan {
@@ -17,6 +26,15 @@ interface Plan {
   lines: PlannedLine[];
   matched: number;
   unmatched: number;
+}
+
+/** What `GET /list/extract/:id` answers while a photo read is in flight or settled. */
+interface ExtractStatus {
+  status: 'pending' | 'running' | 'done' | 'error';
+  lines: Array<{ text: string; quantity: number }> | null;
+  model: string | null;
+  paid: boolean | null;
+  error: string | null;
 }
 
 interface SyncStatus {
@@ -42,9 +60,8 @@ interface Insights {
   topProducts: Array<{ brand: string | null; name: string; units: number; spend: number; trips: number; lastBoughtAt: string }>;
 }
 
-/** Downscale a photo before upload: a 2 MB JSON body will not take a 12 MP original. */
-async function toBase64Jpeg(file: File, maxEdge = 1600): Promise<string> {
-  const bitmap = await createImageBitmap(file);
+/** Draw an already-decoded photo onto a canvas and return a JPEG data URL. */
+function toBase64Jpeg(bitmap: ImageBitmap, maxEdge = 1600, quality = 0.8): string {
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale);
@@ -52,7 +69,91 @@ async function toBase64Jpeg(file: File, maxEdge = 1600): Promise<string> {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('canvas unavailable');
   context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.8);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+/** The extract schema rejects anything longer, and `express.json` caps the body at 2 MB. */
+const MAX_IMAGE_CHARS = 2_000_000;
+/** Smaller and more compressed in turn, so a dense page still fits without a 400/413. */
+const IMAGE_ATTEMPTS = [
+  { edge: 1600, quality: 0.8 },
+  { edge: 1280, quality: 0.8 },
+  { edge: 1280, quality: 0.6 },
+] as const;
+
+/** Encode until the data URL fits the backend's schema, then fail in words it can show. */
+async function prepareImage(file: File): Promise<string> {
+  // Decode once and reuse the bitmap: a 12 MP decode is expensive, and it is ours to release.
+  const bitmap = await createImageBitmap(file);
+  try {
+    for (const attempt of IMAGE_ATTEMPTS) {
+      const dataUrl = toBase64Jpeg(bitmap, attempt.edge, attempt.quality);
+      if (dataUrl.length <= MAX_IMAGE_CHARS) return dataUrl;
+    }
+  } finally {
+    bitmap.close();
+  }
+  throw new Error('that photo is too large to read — take a closer shot or type the list');
+}
+
+/**
+ * The plan route is bounded at 2 models × 3 attempts × 15 s ≈ 90 s on repeated fast
+ * errors (`MATCH_CALL`), and the photo read is bounded server-side at 120 s. Waiting
+ * that long in a button is not an option, so both calls carry a client budget and
+ * report it as a sentence rather than as "aborted".
+ */
+const POST_TIMEOUT_MS = 45_000;
+const EXTRACT_POST_TIMEOUT_MS = 20_000;
+/** Well under the server's 120 s deadline, so the shopper learns first. */
+const EXTRACT_POLL_BUDGET_MS = 110_000;
+/** One hung poll must not eat the whole budget; the loop's deadline stays the ceiling. */
+const EXTRACT_POLL_TIMEOUT_MS = 10_000;
+/** 1 s, growing ×1.5 up to 5 s: ~27 polls, not the 90 a fixed 2 s would spend against
+ * the 100 requests / 15 min limiter. */
+const EXTRACT_POLL_START_MS = 1000;
+const EXTRACT_POLL_GROWTH = 1.5;
+const EXTRACT_POLL_MAX_MS = 5000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+interface ApiReply {
+  error?: string;
+}
+
+/** POST JSON with a hard client budget, returning the status so callers can be specific. */
+async function postJson<T>(
+  path: string,
+  payload: unknown,
+  options: { timeoutMs?: number; timeoutMessage?: string } = {}
+): Promise<{ ok: boolean; status: number; data: T & ApiReply }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? POST_TIMEOUT_MS);
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    // A rate-limit rejection is plain text, so a failed parse must not hide the status.
+    const data = (await res.json().catch(() => ({}))) as T & ApiReply;
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    if (controller.signal.aborted) throw new Error(options.timeoutMessage ?? 'matching took too long — try again');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The shopper's half of every refusal: the backend's own text when it has one. */
+function replyMessage(status: number, data: ApiReply, fallback: string): string {
+  // Two different 429s exist: the per-user "a photo is already being read" refusal carries
+  // an `error`, while the app-wide limiter answers 429 in plain text with no body. Only the
+  // former is about a running read; blaming it for a rate limit would send the shopper
+  // hunting for a job that does not exist.
+  if (status === 429) return data.error ?? 'too many requests — wait a minute and try again';
+  return data.error ?? fallback;
 }
 
 export function InStore() {
@@ -60,13 +161,38 @@ export function InStore() {
   const [lines, setLines] = createSignal('');
   const [imageName, setImageName] = createSignal<string | null>(null);
   const [imageBase64, setImageBase64] = createSignal<string | null>(null);
+  const [readBy, setReadBy] = createSignal<string | null>(null);
+  const [readPaid, setReadPaid] = createSignal(false);
   const [plan, setPlan] = createSignal<Plan | null>(null);
   const [shareLink, setShareLink] = createSignal<string | null>(null);
   const [qr, setQr] = createSignal<string | null>(null);
-  const [busy, setBusy] = createSignal<'plan' | 'create' | 'sync' | 'share' | null>(null);
+  const [busy, setBusy] = createSignal<'plan' | 'create' | 'sync' | 'share' | 'extract' | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [syncStatus, setSyncStatus] = createSignal<SyncStatus | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<string | null>(null);
+
+  /**
+   * Which photo and which read the UI currently cares about. Every pick and every read
+   * bumps it; a settled or finishing step that no longer owns the number stops instead of
+   * writing over newer state — a stale read must never clear the photo picked after it.
+   */
+  let photoGeneration = 0;
+
+  /**
+   * Add the read lines to whatever the shopper already typed, without duplicating any.
+   * The merge is capped at the schema's 60 lines: a photo alone may return 60, so
+   * appending without a cap would turn the next "Match products" into a raw 400.
+   */
+  const appendLines = (extracted: Array<{ text: string; quantity: number }>) => {
+    const { text, truncated } = mergeExtractedLines(lines(), extracted);
+    setLines(text);
+    if (truncated) setError(FULL_LIST_MESSAGE);
+  };
+
+  onCleanup(() => {
+    // Navigating away ends a running poll loop instead of letting it spend its budget.
+    photoGeneration += 1;
+  });
 
   const loadPurchases = async () => {
     try {
@@ -130,13 +256,89 @@ export function InStore() {
     }
   };
 
-  const body = () => ({
-    lines: lines()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean),
-    ...(imageBase64() ? { imageBase64: imageBase64() } : {}),
-  });
+  /**
+   * The request body, already inside the schema (`listLinesFromText` clamps each line
+   * to 200 characters and the list to 60), so a click can never send a `400` for its
+   * own size. A textarea that outgrew the cap is reported rather than silently cut.
+   */
+  const body = () => {
+    if (listOverflows(lines())) setError(FULL_LIST_MESSAGE);
+    return { lines: listLinesFromText(lines()) };
+  };
+
+  /**
+   * Hand the photo to opencode, then poll the job until it settles. The image never
+   * reaches the matcher: the lines come back into the box, so the shopper can correct a
+   * misread before anything is matched.
+   */
+  const readPhoto = async () => {
+    const image = imageBase64();
+    if (!image) return;
+    const generation = ++photoGeneration;
+    setBusy('extract');
+    setError(null);
+    try {
+      const started = await postJson<{ jobId: string }>('/api/easyshopper/list/extract', { imageBase64: image }, {
+        timeoutMs: EXTRACT_POST_TIMEOUT_MS,
+        timeoutMessage: 'the photo upload took too long — try again',
+      });
+      // A newer pick or read owns the UI now; this one must not touch it.
+      if (generation !== photoGeneration) return;
+      if (!started.ok) {
+        // 400 only happens for a photo we already shrank or an unreadable payload, so the
+        // zod detail would be noise; 429 and 503 say something the shopper can act on.
+        throw new Error(
+          started.status === 400
+            ? 'that photo could not be read — take another shot or type the list'
+            : replyMessage(started.status, started.data, 'could not read the photo')
+        );
+      }
+
+      const jobId = started.data.jobId;
+      const began = Date.now();
+      let wait = EXTRACT_POLL_START_MS;
+      while (Date.now() - began < EXTRACT_POLL_BUDGET_MS) {
+        await sleep(wait);
+        if (generation !== photoGeneration) return;
+        wait = Math.min(EXTRACT_POLL_MAX_MS, Math.round(wait * EXTRACT_POLL_GROWTH));
+
+        const poll = await fetch(`/api/easyshopper/list/extract/${jobId}`, {
+          // A poll that hangs is retried by the loop; the budget below is the real ceiling.
+          signal: AbortSignal.timeout(EXTRACT_POLL_TIMEOUT_MS),
+        }).catch(() => null);
+        if (generation !== photoGeneration) return;
+        if (!poll) continue;
+
+        const data = (await poll.json().catch(() => ({}))) as ExtractStatus & ApiReply;
+        // A 404 already says what to do ("that photo read was lost — read the photo
+        // again"); passing it through verbatim is the point.
+        if (!poll.ok) throw new Error(replyMessage(poll.status, data, 'could not read the photo'));
+
+        // `lines`, `model` and `paid` are null until the job settles.
+        if (data.status === 'done') {
+          appendLines(data.lines ?? []);
+          setReadBy(data.model ?? null);
+          setReadPaid(data.paid === true);
+          setImageBase64(null);
+          setImageName(null);
+          // The matches and the share card were built from the old lines.
+          setPlan(null);
+          setShareLink(null);
+          setQr(null);
+          setExpiresAt(null);
+          return;
+        }
+        if (data.status === 'error') throw new Error(data.error ?? 'could not read the photo');
+      }
+      throw new Error('reading the photo took too long — type the list instead');
+    } catch (err) {
+      if (generation !== photoGeneration) return;
+      setError(err instanceof Error ? err.message : 'could not read the photo');
+    } finally {
+      // A superseding pick already released the button; a stale read must not grab it back.
+      if (generation === photoGeneration) setBusy(null);
+    }
+  };
 
   const runPlan = async () => {
     setBusy('plan');
@@ -144,14 +346,9 @@ export function InStore() {
     setShareLink(null);
     setQr(null);
     try {
-      const res = await fetch('/api/easyshopper/list/plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body()),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'planning failed');
-      setPlan(data as Plan);
+      const { ok, status, data } = await postJson<Plan>('/api/easyshopper/list/plan', body());
+      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'planning failed'));
+      setPlan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'planning failed');
     } finally {
@@ -163,14 +360,13 @@ export function InStore() {
     setBusy('create');
     setError(null);
     try {
-      const res = await fetch('/api/easyshopper/list/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body()),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'list creation failed');
-      setPlan(data.plan as Plan);
+      const { ok, status, data } = await postJson<{ plan: Plan; shareLink?: string | null; added: number }>(
+        '/api/easyshopper/list/create',
+        body(),
+        { timeoutMessage: 'creating the list took too long — try again' }
+      );
+      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'list creation failed'));
+      setPlan(data.plan);
       setShareLink(data.shareLink ?? null);
       setExpiresAt(null);
       if (data.shareLink) setQr(await QRCode.toDataURL(String(data.shareLink), { width: 320, margin: 1 }));
@@ -185,8 +381,26 @@ export function InStore() {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    // Reset the input so picking the same file again still fires a change event.
+    input.value = '';
+    const generation = ++photoGeneration;
+    // This pick supersedes any read still in flight, including its busy flag.
+    setBusy(null);
+    setError(null);
+    setReadBy(null);
+    setReadPaid(false);
     setImageName(file.name);
-    setImageBase64(await toBase64Jpeg(file));
+    try {
+      const prepared = await prepareImage(file);
+      // A later pick won the race: its photo is the one to keep.
+      if (generation !== photoGeneration) return;
+      setImageBase64(prepared);
+    } catch (err) {
+      if (generation !== photoGeneration) return;
+      setImageBase64(null);
+      setImageName(null);
+      setError(err instanceof Error ? err.message : 'that photo could not be read');
+    }
   };
 
   const totals = () => {
@@ -342,7 +556,8 @@ export function InStore() {
           <h2 class="card-title text-base">1 · The list</h2>
           <p class="text-sm opacity-70">
             Photograph the handwritten list, type it, or both. One item per line — “2x Milch” sets the
-            quantity.
+            quantity. Read photo passes the picture to opencode's vision model; the lines land in the box so
+            you can correct them before anything is matched.
           </p>
 
           <textarea
@@ -356,14 +571,37 @@ export function InStore() {
             <label class="btn btn-outline btn-sm gap-2">
               <ImageUp class="w-4 h-4" />
               Photo
-              <input type="file" accept="image/*" class="hidden" onChange={onFile} />
+              <input type="file" accept="image/*" class="hidden" disabled={busy() !== null} onChange={onFile} />
             </label>
             <Show when={imageName()}>
               <span class="badge badge-ghost">{imageName()}</span>
             </Show>
+            <Show when={readBy()}>
+              <span
+                class={`badge badge-sm ${readPaid() ? 'badge-warning' : 'badge-ghost'}`}
+                title={
+                  readPaid()
+                    ? 'the free vision models were unavailable, so a paid model read this photo'
+                    : 'the model that read the photo'
+                }
+              >
+                read by {readBy()}
+                {readPaid() ? ' (paid)' : ''}
+              </span>
+            </Show>
+            <button
+              class="btn btn-outline btn-sm gap-2"
+              disabled={busy() !== null || !imageBase64()}
+              onClick={readPhoto}
+            >
+              <Show when={busy() === 'extract'} fallback={<ScanText class="w-4 h-4" />}>
+                <span class="loading loading-spinner loading-xs" />
+              </Show>
+              Read photo
+            </button>
             <button
               class="btn btn-primary btn-sm gap-2"
-              disabled={busy() !== null || (!lines().trim() && !imageBase64())}
+              disabled={busy() !== null || !lines().trim()}
               onClick={runPlan}
             >
               <Show when={busy() === 'plan'} fallback={<Sparkles class="w-4 h-4" />}>
@@ -406,7 +644,7 @@ export function InStore() {
                       <th>List line</th>
                       <th>Product</th>
                       <th class="text-right">Price</th>
-                      <th class="text-right">Score</th>
+                      <th class="text-right">Matched by</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -436,11 +674,22 @@ export function InStore() {
                             {entry.match.candidate?.price ? `€${entry.match.candidate.price.toFixed(2)}` : '—'}
                           </td>
                           <td class="text-right">
-                            <span
-                              class={`badge badge-sm ${entry.action === 'product' ? 'badge-success' : 'badge-ghost'}`}
+                            <Show
+                              when={entry.chooser === 'model'}
+                              fallback={
+                                <span
+                                  class={`badge badge-sm ${entry.action === 'product' ? 'badge-success' : 'badge-ghost'}`}
+                                >
+                                  {entry.match.score.toFixed(2)}
+                                </span>
+                              }
                             >
-                              {entry.match.score.toFixed(2)}
-                            </span>
+                              {/* A model pick is deliberate: its rules score can be low, so
+                                  showing "0.31" in green would claim a certainty it lacks. */}
+                              <span class="badge badge-info badge-sm" title={entry.match.reason}>
+                                opencode
+                              </span>
+                            </Show>
                           </td>
                         </tr>
                       )}

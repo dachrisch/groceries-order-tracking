@@ -18,7 +18,8 @@ anything.
 - `adb` on PATH, host authorised, wireless or USB debugging on.
 - Phone **unlocked** (a secure lockscreen cannot be dismissed over adb).
 - The EASY Shopper app installed (`com.pentlandfirth.whizcart`).
-- `tesseract` with `deu` only matters for the OCR list path, not for capture.
+- Capture needs neither OCR tooling nor opencode: it reads the screen over adb. The
+  list-photo path on the EDEKA page needs opencode with a vision model.
 
 ## Run
 

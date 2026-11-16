@@ -4,13 +4,14 @@ import { Agent, fetch as undiciFetch } from 'undici';
  * Minimal opencode client: one prompt in, one JSON object out.
  *
  * The bot never gives opencode tools or database access. The backend computes
- * everything from MongoDB and hands opencode only text (intent classification,
- * occasion naming, reply wording). Replies are polled because opencode's
- * session API acknowledges a prompt before the model has answered.
+ * everything from MongoDB and hands opencode text (intent classification,
+ * occasion naming, reply wording) — plus, for a photographed paper list, one
+ * inline image. Replies are polled because opencode's session API acknowledges
+ * a prompt before the model has answered.
  *
  * Contract (opencode 2.1.2, V2 API), same as dontforget's client:
  *   POST   /api/session               -> {"data": {"id": "ses_..."}}
- *   POST   /api/session/:id/prompt    -> {"text": "..."} in, ack out (not the reply)
+ *   POST   /api/session/:id/prompt    -> {"text": "...", "files": [...]} in, ack out (not the reply)
  *   GET    /api/session/:id/message   -> {"data": [...]}, newest first;
  *                                        ?limit=N&order=desc pages it
  *   POST   /api/session/:id/interrupt -> stops the run (V2 has no /abort)
@@ -28,12 +29,27 @@ const RETRY_DELAY_MS = 1000;
 export interface ModelRef {
   id: string;
   providerID: string;
+  /**
+   * This model bills tokens: a registry entry that is not cost 0, a curated paid
+   * fallback, or a pin for one. A paid model gets a single attempt and is logged
+   * when it answers. Callers that pass `models` themselves own this tagging.
+   */
+  paid?: boolean;
+  /**
+   * The entry came from an operator pin (`OPENCODE_MODELS` / `OPENCODE_VISION_MODELS`)
+   * instead of discovery. A pin is a deliberate choice, so the paid reservation
+   * (`maxPaid`) does not drop it: that budget bounds the *curated fallback tier*, not a
+   * model an operator named by hand. Pinned models are still paid models — one attempt.
+   */
+  pinned?: boolean;
 }
 
 export interface RegistryModel extends ModelRef {
   status?: string;
   enabled?: boolean;
   cost?: Array<{ input?: number; output?: number }>;
+  /** Input modalities from `capabilities.input`: text, image, video, audio, pdf. */
+  input?: string[];
 }
 
 // GET /api/model is the truth for which models are servable. A pinned model
@@ -41,9 +57,10 @@ export interface RegistryModel extends ModelRef {
 // "Model unavailable" (how mimo-v2.5-free died), so never trust a hard-coded
 // name without checking it against the registry first.
 //
-// Preference among discovered free models, best first. Other active cost-0
-// `opencode` models follow in registry order. Used as-is only when discovery
-// itself is down.
+// Both lists below are used as-is only when discovery itself is down; otherwise
+// the registry decides which models exist and these supply the order.
+
+/** Free text models, best first; other active cost-0 models follow in registry order. */
 const FREE_PREFERENCE = [
   'mimo-v2.6-flash-free',
   'big-pickle',
@@ -51,12 +68,50 @@ const FREE_PREFERENCE = [
   'nemotron-3-ultra-free',
   'ling-3.1-flash-free',
 ];
+
+/** Free vision models, best first; used when discovery itself is down. */
+const VISION_PREFERENCE = [
+  'mimo-v2.6-flash-free',
+  'inkling-2-small-free',
+  'nemotron-3.5-super-vl-free',
+  'longcat-2.5-free',
+  'glm-5.3-flash-free',
+  'deepseek-v4.1-flash-free',
+  'minimax-m3.1-flash-free',
+];
+
+/**
+ * Verified paid vision fallbacks, best first — used only when every free model failed.
+ * Each was probed with a real photo through this exact endpoint; a registry `image`
+ * capability is NOT proof the image arrives (gemini-2.5-flash-lite and
+ * gemma-3-27b-it answered happily without ever seeing it). Keep the list short, and
+ * re-probe before adding or reordering an entry.
+ *
+ * Worst case, by design: only a quota error sets a cooldown, so while the free tier
+ * is out (provider errors, not 429s) every upload re-buys this whole list — one
+ * attempt each, unbounded per day. A spend counter is deliberately out of scope.
+ */
+const PAID_VISION_PREFERENCE: ModelRef[] = [
+  { id: 'gpt-6-luna', providerID: 'opencode-go', paid: true },
+  { id: 'qwen/qwen3.7-flash', providerID: 'openrouter', paid: true },
+  { id: 'qwen-vl-ocr', providerID: 'alibaba', paid: true },
+];
 const MODELS_TTL_MS = 10 * 60 * 1000;
 // A failed discovery suppresses re-probing briefly and never replaces a good list.
 const MODELS_FAILURE_TTL_MS = 30 * 1000;
 // A model that answered with a quota/rate-limit error is skipped this long.
 const EXHAUSTED_COOLDOWN_MS = 15 * 60 * 1000;
 const QUOTA_ERROR = /\b429\b|FreeUsageLimitError|rate limit|quota/i;
+// A hung generation on the same payload rarely recovers, so a timeout fails over to
+// the next model instead of spending two more attempts on the one that hung.
+const TIMEOUT_ERROR = /timed out/i;
+/**
+ * A reply that parsed but is not an answer: the model read this exact prompt and gave
+ * nothing usable, and the same prompt on the same image cannot produce a different
+ * answer. Kept distinct from a transport failure, which may well be transient. Exported
+ * because a caller must map it to wording its own user can act on.
+ */
+export const NOT_AN_ANSWER = 'opencode reply was not an answer';
 
 let lastGoodModels: RegistryModel[] | null = null;
 let lastGoodAtMs = 0;
@@ -88,6 +143,11 @@ export function isFree(model: RegistryModel): boolean {
   return Array.isArray(model.cost) && model.cost.length > 0 && model.cost.every((c) => !c.input && !c.output);
 }
 
+/** The registry says this model accepts image input. */
+export function isVision(model: RegistryModel): boolean {
+  return Array.isArray(model.input) && model.input.includes('image');
+}
+
 interface OpencodeMessage {
   type: 'user' | 'assistant' | 'idle' | 'system' | 'synthetic';
   finish?: string;
@@ -96,9 +156,52 @@ interface OpencodeMessage {
   error?: { message: string };
 }
 
+/**
+ * A prompt attachment; an inline image needs a vision-capable model. `uri` is
+ * posted verbatim: it must already be a downscaled, approved image, because this
+ * layer validates neither size nor content type.
+ */
+export interface PromptFile {
+  uri: string;
+  name?: string;
+  description?: string;
+  source?: { type: 'inline' } | { type: 'uri'; uri: string };
+}
+
 export interface RunPromptOptions {
+  /** Explicit chain, used as given — the caller owns its `paid` tagging. The caps below still apply. */
   models?: ModelRef[];
+  /** Per attempt, not per call: the whole chain is (free models + paid fallbacks) × attempts × this. */
   timeoutMs?: number;
+  /**
+   * How many *free* models to try before giving up or falling back. Unset = every free
+   * model in the chain. It bounds wall clock and quota on a latency-sensitive call, and
+   * it bounds only the free part: the paid fallback is reserved separately, so a free
+   * cap can never swallow the fallback the caller asked for. An explicit `0` still means
+   * one free model, because a caller asking for "none" is a bug, not a boundary.
+   */
+  maxModels?: number;
+  /**
+   * How many *curated* paid fallback models may be tried after the free ones. Default 0:
+   * spend has to be asked for, exactly like `allowPaid`, so a chain that merely happens
+   * to contain a paid entry cannot start buying tokens. `0` means none. An operator pin
+   * is exempt — naming a model by hand is not an accident.
+   */
+  maxPaid?: number;
+  /** Attachments posted with the prompt. */
+  files?: PromptFile[];
+  /** Only models whose registry capabilities include this input modality. */
+  require?: 'image';
+  /** Append the verified paid vision tier. Only photo intake sets this. */
+  allowPaid?: boolean;
+  /** Called with the model that answered, so a paid fallback is visible. */
+  onModelUsed?: (model: ModelRef) => void;
+  /**
+   * Reject a parsed reply that is not an answer, so the next model is tried. A
+   * rejected reply is a failed attempt: it is never reported through `onModelUsed`
+   * and never logged as a paid fallback, because it did no useful work.
+   */
+  accept?: (raw: unknown) => boolean;
 }
 
 export interface OpencodeConfig {
@@ -139,7 +242,8 @@ async function createSession(config: OpencodeConfig, model: ModelRef): Promise<s
   const response = await undiciFetch(`${config.baseUrl}/api/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey },
-    body: JSON.stringify({ model }),
+    // Only the model's identity goes out; `paid` and `pinned` are our bookkeeping.
+    body: JSON.stringify({ model: { id: model.id, providerID: model.providerID } }),
     dispatcher: dispatcherFor(config),
   });
   if (!response.ok) {
@@ -149,11 +253,16 @@ async function createSession(config: OpencodeConfig, model: ModelRef): Promise<s
   return data.data.id;
 }
 
-async function sendPrompt(config: OpencodeConfig, sessionId: string, text: string): Promise<void> {
+async function sendPrompt(
+  config: OpencodeConfig,
+  sessionId: string,
+  text: string,
+  files?: PromptFile[]
+): Promise<void> {
   const response = await undiciFetch(`${config.baseUrl}/api/session/${sessionId}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(files && files.length > 0 ? { text, files } : { text }),
     dispatcher: dispatcherFor(config),
   });
   if (!response.ok) {
@@ -219,6 +328,9 @@ async function discoverModels(config: OpencodeConfig): Promise<RegistryModel[] |
         status: typeof m.status === 'string' ? m.status : undefined,
         enabled: typeof m.enabled === 'boolean' ? m.enabled : undefined,
         cost: Array.isArray(m.cost) ? (m.cost as RegistryModel['cost']) : undefined,
+        input: Array.isArray((m.capabilities as { input?: unknown } | undefined)?.input)
+          ? ((m.capabilities as { input: unknown[] }).input.filter((v) => typeof v === 'string') as string[])
+          : undefined,
       }));
   } catch {
     return null;
@@ -243,47 +355,141 @@ async function getRegistry(config: OpencodeConfig): Promise<RegistryModel[] | nu
   return lastGoodModels;
 }
 
-const preferenceRank = (id: string) => {
-  const index = FREE_PREFERENCE.indexOf(id);
-  return index === -1 ? FREE_PREFERENCE.length : index;
+const preferenceRank = (id: string, preferences: string[]) => {
+  const index = preferences.indexOf(id);
+  return index === -1 ? preferences.length : index;
 };
 
+function preferenceChain(models: string[]): ModelRef[] {
+  return models.map((id) => ({ id, providerID: 'opencode' }));
+}
+
+// Curated ids are known to bill tokens even when discovery is down.
+const PAID_VISION_KEYS = new Set(PAID_VISION_PREFERENCE.map(modelKey));
+
+export interface ModelChainOptions {
+  require?: 'image';
+  /** Append the verified paid vision tier after every free model. Default false. */
+  allowPaid?: boolean;
+}
+
 /**
- * Free models to try, best first: OPENCODE_MODELS ("provider:id,...") if set,
- * else the registry's active cost-0 `opencode` models, else (discovery down)
- * the pinned preference list. Models the registry cannot serve are dropped;
- * quota-exhausted models are skipped while their cooldown lasts.
+ * Models to try, best first: OPENCODE_MODELS ("provider:id,...") if set, else the
+ * registry's active cost-0 `opencode` models, else (discovery down) the pinned
+ * preference list. Models the registry cannot serve are dropped; quota-exhausted
+ * models are skipped while their cooldown lasts.
+ *
+ * `require: 'image'` keeps text-only models out of the chain — including a pinned
+ * OPENCODE_MODELS entry, because a text-only model cannot read a photo at all.
+ * `allowPaid` appends the curated paid vision tier after every free model; only
+ * photo intake asks for it, so every other call stays cost 0. Appending is not
+ * spending: `runPrompt` tries only the paid entries its caller reserved with
+ * `maxPaid` (default 0), so a chain can carry the fallback without buying it. Photo
+ * calls read OPENCODE_VISION_MODELS instead of OPENCODE_MODELS.
+ *
+ * OPENCODE_VISION_PAID=off|false|0|no drops the curated tier only: an explicit pin
+ * is still used, and still gets its single attempt, because a pin is a deliberate
+ * operator choice. Remove the pin to stop buying that model.
  */
-export async function getModelChain(): Promise<ModelRef[]> {
+export async function getModelChain(options: ModelChainOptions = {}): Promise<ModelRef[]> {
   const config = getOpencodeConfig();
   if (!config) throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
 
+  const needsVision = options.require === 'image';
   const registry = await getRegistry(config);
+  const byKey = new Map((registry ?? []).map((model) => [modelKey(model), model]));
   const usable = registry ? new Set(registry.filter(isUsable).map(modelKey)) : null;
-  const servable = (m: ModelRef) => !usable || usable.has(modelKey(m));
+  const known = (m: ModelRef): RegistryModel | undefined => byKey.get(modelKey(m));
+  // A model the registry knows must advertise `image`; with discovery down nothing
+  // can be checked, so the pinned names are tried and a wrong guess fails one call.
+  const visionOk = (m: ModelRef) => !needsVision || !registry || isVision(known(m) ?? m);
+  const servable = (m: ModelRef) => (!usable || usable.has(modelKey(m))) && visionOk(m);
+  // Free is the default; the paid tier is opt-in per call and can be killed by ops.
+  // Accept the spellings an operator actually types, not just "off".
+  const paidKillSwitch = /^(off|false|0|no)$/i.test((process.env.OPENCODE_VISION_PAID ?? '').trim());
+  const paidEnabled = needsVision && options.allowPaid === true && !paidKillSwitch;
 
-  const override = (process.env.OPENCODE_MODELS ?? '')
+  // Vision has its own override so a pinned text model can never hijack a photo call.
+  const override = (process.env[needsVision ? 'OPENCODE_VISION_MODELS' : 'OPENCODE_MODELS'] ?? '')
     .split(',')
     .map(parseModelKey)
     .filter((m): m is ModelRef => m !== null);
 
+  // A pin carries its own billing marker; untagged, a paid pin would be retried
+  // three times and logged as free. A pin is billed when it is a curated id, when the
+  // registry prices it above zero, or when the registry cannot vouch for it at all:
+  // only an explicit all-zero cost array proves a model is free, because a missing price
+  // is not evidence of free — and that holds for the pin too.
+  //
+  // This is not vision-only. A pinned text model (OPENCODE_MODELS) that the registry
+  // does not know is tagged the same way, so it gets one attempt instead of three and
+  // logs `paid fallback used` when it answers. The alternative — trusting an unpriced
+  // pin — is what turns a typo'd id into a retry storm on someone's bill.
+  const billable = (m: ModelRef): ModelRef => {
+    const entry = known(m);
+    const paid = PAID_VISION_KEYS.has(modelKey(m)) || entry === undefined || !isFree(entry);
+    return paid ? { ...m, paid: true } : m;
+  };
+
   let chain: ModelRef[];
   if (override.length > 0) {
-    chain = override.filter(servable);
+    // Marked so the chain bound in `runPrompt` never silently drops the model an
+    // operator pinned by hand.
+    chain = override.filter(servable).map((m) => billable({ ...m, pinned: true }));
   } else if (registry) {
+    const preferences = needsVision ? VISION_PREFERENCE : FREE_PREFERENCE;
     chain = registry
-      .filter((m) => m.providerID === 'opencode' && isUsable(m) && isFree(m))
+      .filter((m) => m.providerID === 'opencode' && isUsable(m) && isFree(m) && visionOk(m))
       .map((m, order) => ({ m, order }))
-      .sort((a, b) => preferenceRank(a.m.id) - preferenceRank(b.m.id) || a.order - b.order)
+      .sort((a, b) => preferenceRank(a.m.id, preferences) - preferenceRank(b.m.id, preferences) || a.order - b.order)
       .map(({ m }) => ({ id: m.id, providerID: m.providerID }));
   } else {
-    chain = FREE_PREFERENCE.map((id) => ({ id, providerID: 'opencode' }));
+    chain = preferenceChain(needsVision ? VISION_PREFERENCE : FREE_PREFERENCE);
   }
 
   const now = Date.now();
   const available = chain.filter((m) => (exhaustedUntil.get(modelKey(m)) ?? 0) <= now);
   // Everything cooling down: try the full chain rather than fail without asking.
-  return available.length > 0 ? available : chain;
+  let result = available.length > 0 ? available : chain;
+
+  if (paidEnabled) {
+    // The curated tier never replaces the free one, it only follows it, and a model
+    // the chain already names is not bought a second time. The registry is used to
+    // skip a curated name that was deprecated or went free — never to widen the
+    // list, because a registry `image` capability does not prove delivery.
+    const curated = PAID_VISION_PREFERENCE.filter((m) => {
+      if (!servable(m)) return false;
+      if (!registry) return true;
+      // Narrowed in one place: two separate `known(m)` calls do not share narrowing.
+      const entry = known(m);
+      return entry !== undefined && !isFree(entry);
+    });
+    if (curated.length === 0) {
+      console.warn('[opencode] paid vision fallback was requested but no curated model is servable');
+    }
+    const seen = new Set(result.map(modelKey));
+    result = [
+      ...result,
+      ...curated.filter(
+        (m) => !seen.has(modelKey(m)) && (exhaustedUntil.get(modelKey(m)) ?? 0) <= now
+      ),
+    ];
+  }
+
+  if (needsVision && result.length === 0) {
+    // Name the real blocker: a bad pin needs a different fix from a registry that
+    // offers no vision model at all.
+    const reason =
+      override.length > 0
+        ? `OPENCODE_VISION_MODELS pins ${override.map(modelKey).join(', ')}, which the registry cannot serve for images`
+        : 'GET /api/model lists no active cost-0 model with image input';
+    throw new Error(
+      `no vision-capable opencode model is available (${reason}${
+        paidEnabled ? '; the curated paid tier is unavailable too' : ''
+      })`
+    );
+  }
+  return result;
 }
 
 /**
@@ -309,6 +515,18 @@ async function discardSession(config: OpencodeConfig, sessionId: string): Promis
 /**
  * Run one prompt and parse the first JSON object in the reply. Retries on the
  * same model with exponential backoff, then fails over to the next model tier.
+ *
+ * The resolved chain is free models first, then the paid tier (a pin or the curated
+ * fallback). `maxModels` bounds only the free part and `maxPaid` only the curated paid
+ * part, so a caller can reserve "two free models, then one paid" — the free cap cannot
+ * swallow the fallback it was asked for. `maxPaid` defaults to 0: spend is asked for,
+ * never inherited from a chain that happened to contain a paid entry. A pin is the one
+ * exception (see `ModelRef.pinned`).
+ *
+ * A paid fallback model gets a single attempt. A reply that does not parse, or that
+ * `accept` rejects, is a failed attempt: it is never reported as the answer. A timeout
+ * is non-retryable for every caller — intent, occasions and the bot included — because
+ * a call that hung on one payload rarely answers on a retry, so the chain moves on.
  */
 export async function runPrompt<T = unknown>(prompt: string, options: RunPromptOptions = {}): Promise<T> {
   const config = getOpencodeConfig();
@@ -316,33 +534,73 @@ export async function runPrompt<T = unknown>(prompt: string, options: RunPromptO
     throw new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)');
   }
 
-  const models = options.models ?? (await getModelChain());
+  const resolved =
+    options.models ??
+    (await getModelChain({ require: options.require, allowPaid: options.allowPaid }));
+  // Three buckets, in the order they are tried: free models, an operator's paid pin, and
+  // the curated paid tier. Only the free bucket takes `maxModels` (never empty: an
+  // explicit 0 still means one model) and only the curated bucket takes `maxPaid`
+  // (`0` really means none). A pin is exempt from both, because an operator who names a
+  // model in an env var has already decided to spend on it.
+  const free = resolved.filter((model) => model.paid !== true);
+  const pinned = resolved.filter((model) => model.paid === true && model.pinned === true);
+  const curated = resolved.filter((model) => model.paid === true && model.pinned !== true);
+  const freeBudget =
+    options.maxModels === undefined ? free : free.slice(0, Math.max(1, options.maxModels));
+  const paidBudget = curated.slice(0, Math.max(0, options.maxPaid ?? 0));
+  const models = [...freeBudget, ...pinned, ...paidBudget];
   if (models.length === 0) {
-    throw new Error('no free opencode model is available (GET /api/model lists none active at cost 0)');
+    throw new Error(
+      resolved.length === 0
+        ? 'no free opencode model is available (GET /api/model lists none active at cost 0)'
+        : 'no model may be tried: the chain holds only paid fallbacks and this call reserved none (maxPaid)'
+    );
   }
   const timeoutMs = options.timeoutMs ?? POLL_TIMEOUT_MS;
   let lastError: unknown;
 
   for (const model of models) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // A paid fallback gets one attempt: a retry storm on the owner's bill is worse
+    // than a failed read. Free models keep the normal three tries.
+    const attempts = model.paid ? 1 : MAX_ATTEMPTS;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       let sessionId: string | undefined;
       try {
         sessionId = await createSession(config, model);
-        await sendPrompt(config, sessionId, prompt);
+        await sendPrompt(config, sessionId, prompt, options.files);
         const replyText = await pollForReply(config, sessionId, timeoutMs);
-        return JSON.parse(extractFirstJsonObject(replyText)) as T;
+        // Only a parsed reply that is also an answer counts: prose that fails to
+        // parse, or a well-formed non-answer such as {"lines":[]}, is a failed
+        // attempt and must not be reported as the model that answered.
+        const parsed = JSON.parse(extractFirstJsonObject(replyText)) as T;
+        if (options.accept && !options.accept(parsed)) {
+          // A paid read that failed is still worth seeing in the log; the success warn
+          // stays below, and neither fires `onModelUsed` for a rejected model.
+          if (model.paid) console.warn(`[opencode] paid attempt rejected: ${modelKey(model)}`);
+          throw new Error(NOT_AN_ANSWER);
+        }
+        if (model.paid) console.warn(`[opencode] paid fallback used: ${modelKey(model)}`);
+        options.onModelUsed?.(model);
+        return parsed;
       } catch (error) {
         if (sessionId) {
           await discardSession(config, sessionId);
         }
         lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
         // Quota/rate limit: retrying the same model won't help for minutes.
         // Cool it down and move straight to the next model.
-        if (QUOTA_ERROR.test(error instanceof Error ? error.message : String(error))) {
+        if (QUOTA_ERROR.test(message)) {
           exhaustedUntil.set(modelKey(model), Date.now() + EXHAUSTED_COOLDOWN_MS);
           break;
         }
-        if (attempt < MAX_ATTEMPTS) {
+        // A timeout or a reply this caller will not accept is about this model on this
+        // payload; retrying it cannot change the answer. Transport errors keep their
+        // retries, because a 500 or a truncated reply can be transient.
+        if (TIMEOUT_ERROR.test(message) || message === NOT_AN_ANSWER) {
+          break;
+        }
+        if (attempt < attempts) {
           await sleep(RETRY_DELAY_MS * 2 ** (attempt - 1));
         }
       }

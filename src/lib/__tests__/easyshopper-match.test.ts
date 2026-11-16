@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../opencode-client', () => ({ runPrompt: vi.fn(), isOpencodeConfigured: vi.fn(() => true) }));
+
+import { isOpencodeConfigured, runPrompt } from '../opencode-client';
 import {
   parseListLine,
   scoreCandidate,
@@ -6,6 +10,11 @@ import {
   toCandidate,
   type MatchCandidate,
 } from '../easyshopper/match';
+import { MAX_CANDIDATES } from '../easyshopper/choose';
+import { applyPicks, buildPlan, planShoppingList, rerankWithHistory, searchListCandidates } from '../easyshopper/list';
+import type { EasyShopperClient, EasyShopperSession } from '../easyshopper/client';
+
+const mockRunPrompt = vi.mocked(runPrompt);
 
 const products: MatchCandidate[] = [
   { id: '1', name: 'Weihenstephan H-Milch 1,5% 1l', brand: 'Weihenstephan', price: 1.19 },
@@ -98,3 +107,313 @@ describe('toCandidate', () => {
     expect(toCandidate({ price: 1 })).toBeNull();
   });
 });
+
+const session = { token: 't', userGuid: 'u', storeGuid: 's' } as unknown as EasyShopperSession;
+
+const client = {
+  searchProducts: async (_token: string, input: { queryText: string }) => ({
+    items: input.queryText.startsWith('Zahn')
+      ? []
+      : input.queryText.startsWith('Wasch')
+        ? [
+            { product: { id: 'w1', name: 'Frosch Waschmittel Sensitiv Pulver', brand: 'Frosch' } },
+            { product: { id: 'w2', name: 'Weichspüler Sensitiv 1l', brand: 'Domol' } },
+          ]
+        : [{ product: { id: 'm1', name: 'Weihenstephan H-Milch 1,5% 1l', brand: 'Weihenstephan' } }],
+    count: 2,
+    groups: [],
+  }),
+} as unknown as EasyShopperClient;
+
+describe('planShoppingList', () => {
+  beforeEach(() => mockRunPrompt.mockReset());
+
+  it("takes the model's pick", async () => {
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index: 1 }, { line: 1, index: 0 }] });
+    const plan = await planShoppingList(client, session, { lines: ['Waschmittel sensitiv', 'Milch 1,5'], storeGuid: 's' });
+    expect(plan.lines[0].match.candidate?.id).toBe('w2');
+    expect(plan.lines[0].chooser).toBe('model');
+    expect(plan.lines[1].match.candidate?.id).toBe('m1');
+    expect(plan.source).toBe('model');
+    expect(plan.matched).toBe(2);
+  });
+
+  it('falls back to the rules score when opencode fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockRunPrompt.mockRejectedValueOnce(new Error('opencode reply timed out'));
+    const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    expect(plan.lines[0].match.candidate?.id).toBe('m1');
+    expect(plan.lines[0].chooser).toBe('rules');
+    expect(plan.source).toBe('rules');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('using the rules score'), 'opencode reply timed out');
+    warn.mockRestore();
+  });
+
+  it('stays quiet when opencode is simply not configured', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(isOpencodeConfigured).mockReturnValueOnce(false);
+    mockRunPrompt.mockRejectedValueOnce(new Error('opencode is not configured (OPENCODE_BASE_URL / OPENCODE_API_KEY)'));
+    const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    expect(plan.lines[0].chooser).toBe('rules');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('does not ask the model when the caller turned it off', async () => {
+    const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' }, { useModel: false });
+    expect(mockRunPrompt).not.toHaveBeenCalled();
+    expect(plan.lines[0].chooser).toBe('rules');
+  });
+
+  it('trusts the index, not the model’s own words', async () => {
+    // The "why" names the product the rules scorer would have taken; only the
+    // index into the list we sent may decide.
+    mockRunPrompt.mockResolvedValueOnce({
+      picks: [{ line: 0, index: 1, why: 'Frosch Waschmittel Sensitiv Pulver' }],
+    });
+    const plan = await planShoppingList(client, session, { lines: ['Waschmittel sensitiv'], storeGuid: 's' });
+    expect(plan.lines[0].match.candidate?.id).toBe('w2');
+    expect(plan.lines[0].match.reason).toContain('opencode pick');
+  });
+
+  it('keeps the rules result when the model answers with an index it was not given', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index: 9 }] });
+    const plan = await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    expect(plan.lines[0].match.candidate?.id).toBe('m1');
+    expect(plan.lines[0].chooser).toBe('rules');
+  });
+
+  it('never marks a line as a product without a real candidate', async () => {
+    const entries = await searchListCandidates(client, session, { lines: ['Zahnpasta'], storeGuid: 's' });
+    const plan = applyPicks(buildPlan(entries, 's'), entries, [0]);
+    expect(plan.lines[0].action).toBe('text');
+    expect(plan.lines[0].match.candidate).toBeNull();
+    expect(plan.lines[0].chooser).toBe('rules');
+    expect(plan.matched).toBe(0);
+  });
+
+  it('applies no pick when the pool does not belong to the line', async () => {
+    const entries = await searchListCandidates(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    const foreign = [{ ...entries[0], line: { text: 'Brot', quantity: 1 } }];
+    const applied = applyPicks(buildPlan(entries, 's'), foreign, [0]);
+    expect(applied.lines[0].line.text).toBe('Milch 1,5');
+    expect(applied.lines[0].chooser).toBe('rules');
+  });
+
+  it('asks for one cheap text call inside a time budget, never the paid photo path', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ picks: [] });
+    await planShoppingList(client, session, { lines: ['Milch 1,5'], storeGuid: 's' });
+    expect(mockRunPrompt).toHaveBeenCalledTimes(1);
+    for (const [, options] of mockRunPrompt.mock.calls) {
+      expect(options).not.toHaveProperty('allowPaid');
+      expect(options).not.toHaveProperty('require');
+      // A synchronous request cannot wait out the whole chain: two models at 15 s, and
+      // a timeout is not retried, so a hang costs 2 × 15 s = 30 s — the client aborts
+      // at 45 s. The retry path (2 × 3 × 15 s) only applies to fast transport errors.
+      expect(options).toMatchObject({ timeoutMs: 15_000, maxModels: 2 });
+      // No paid reservation: the matcher must never buy a model.
+      expect(options).not.toHaveProperty('maxPaid');
+    }
+  });
+});
+
+describe('searchListCandidates', () => {
+  beforeEach(() => mockRunPrompt.mockReset());
+
+  it('offers a history row that duplicates a catalogue item only once', async () => {
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [
+        { name: 'Frosch Waschmittel Sensitiv Pulver', brand: 'Frosch', raw: { name: 'history row' } },
+        { name: 'Frosch Waschmittel Sensitiv Pulver', brand: 'Frosch' },
+      ],
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.name)).toEqual([
+      'Frosch Waschmittel Sensitiv Pulver',
+      'Weichspüler Sensitiv 1l',
+    ]);
+    // The surviving copy is the catalogue's, so the preview still has an id.
+    expect(entries[0].candidates[0].id).toBe('w1');
+  });
+
+  it('offers a recent purchase the catalogue does not list, without inventing an id', async () => {
+    const history = { name: 'Waschmittel Sensitiv Pulver 20WL', brand: 'Domol' };
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [history],
+    });
+    const index = entries[0].candidates.findIndex((candidate) => candidate.name === history.name);
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index }] });
+    const plan = await planShoppingList(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: [history],
+    });
+    expect(plan.lines[0].chooser).toBe('model');
+    expect(plan.lines[0].match.candidate?.name).toBe(history.name);
+    expect(plan.lines[0].match.candidate?.id).toBeUndefined();
+  });
+
+  it('keeps a purchase whose pack size differs from the catalogue row', async () => {
+    // The shopper bought 3,5 %; the catalogue lists 1,5 %. Both belong in the menu —
+    // collapsing them deletes the row the shopper actually bought.
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Milch 1,5'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Weihenstephan H-Milch 3,5% 1l', brand: 'Weihenstephan' }],
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.name).sort()).toEqual([
+      'Weihenstephan H-Milch 1,5% 1l',
+      'Weihenstephan H-Milch 3,5% 1l',
+    ]);
+  });
+
+  it('does not merge products that differ in a parenthetical', async () => {
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Milch'],
+      storeGuid: 's',
+      extraCandidates: [
+        { name: 'Müllermilch Milch', brand: 'Müllermilch' },
+        { name: 'Müllermilch Milch (laktosefrei)', brand: 'Müllermilch' },
+      ],
+    });
+    const names = entries[0].candidates.map((candidate) => candidate.name);
+    expect(names).toContain('Müllermilch Milch');
+    expect(names).toContain('Müllermilch Milch (laktosefrei)');
+  });
+
+  it('offers a purchase in a spare slot when the catalogue found nothing', async () => {
+    // "Klopapier" is not the catalogue's word for the product the shopper bought; only
+    // the model can bridge that, so the purchase must still reach the menu.
+    const emptyCatalogue = {
+      searchProducts: async () => ({ items: [], count: 0, groups: [] }),
+    } as unknown as EasyShopperClient;
+    const input = {
+      lines: ['Klopapier'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Toilettenpapier 3-lagig', brand: 'Gut & Günstig' }],
+    };
+
+    const entries = await searchListCandidates(emptyCatalogue, session, input);
+    expect(entries[0].candidates.map((candidate) => candidate.name)).toEqual(['Toilettenpapier 3-lagig']);
+    // Zero overlap with the line is exactly why the call has to happen at all.
+    expect(scoreCandidate('Klopapier', entries[0].candidates[0]).score).toBe(0);
+
+    mockRunPrompt.mockResolvedValueOnce({ picks: [{ line: 0, index: 0 }] });
+    const plan = await planShoppingList(emptyCatalogue, session, input);
+    expect(mockRunPrompt).toHaveBeenCalledTimes(1);
+    expect(plan.lines[0].match.candidate?.name).toBe('Toilettenpapier 3-lagig');
+  });
+
+  it('merges a brand only when the name repeats it as a whole word', async () => {
+    const cheese = {
+      searchProducts: async () => ({
+        items: [{ product: { id: 'cheese', name: 'Käse Natur', brand: 'Bio' } }],
+        count: 1,
+        groups: [],
+      }),
+    } as unknown as EasyShopperClient;
+
+    // "Biokäse Natur" is a different word, not the brand "Bio" plus "Käse Natur".
+    const distinct = await searchListCandidates(cheese, session, {
+      lines: ['Käse'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Biokäse Natur', brand: 'Bio' }],
+    });
+    expect(distinct[0].candidates.map((candidate) => candidate.name)).toEqual(['Käse Natur', 'Biokäse Natur']);
+
+    // A separated brand prefix is the same product, so the catalogue row wins alone.
+    const merged = await searchListCandidates(cheese, session, {
+      lines: ['Käse'],
+      storeGuid: 's',
+      extraCandidates: [{ name: 'Bio Käse Natur', brand: 'Bio' }],
+    });
+    expect(merged[0].candidates.map((candidate) => candidate.name)).toEqual(['Käse Natur']);
+  });
+
+  it('keeps zero-score purchases out of the menu, so catalogue rows are not evicted', async () => {
+    // Eight catalogue rows for a line no purchase relates to: unrelated purchases must
+    // not take menu slots just because their names are short.
+    const unrelatedCatalogue = {
+      searchProducts: async () => ({
+        items: Array.from({ length: 8 }, (_unused, i) => ({
+          product: { id: `k${i}`, name: `Testmarke Katalogprodukt Nummer ${i} 1l`, brand: 'Testmarke' },
+        })),
+        count: 8,
+        groups: [],
+      }),
+    } as unknown as EasyShopperClient;
+
+    const entries = await searchListCandidates(unrelatedCatalogue, session, {
+      lines: ['Kaugummi'],
+      storeGuid: 's',
+      extraCandidates: ['Ei', 'Brot', 'Salz', 'Öl', 'Reis', 'Mehl'].map((name) => ({ name })),
+    });
+    expect(entries[0].candidates.map((candidate) => candidate.id)).toEqual([
+      'k0',
+      'k1',
+      'k2',
+      'k3',
+      'k4',
+      'k5',
+      'k6',
+      'k7',
+    ]);
+  });
+
+  it('orders the menu by score and caps it, so the cap keeps what matters', async () => {
+    // Mixed evidence: some purchases share both query words, some one, some none — with
+    // equal scores any permutation would pass, and a missing sort would go unnoticed.
+    const extras = [
+      { name: 'Domol Waschmittel Sensitiv Pulver', brand: 'Domol' },
+      { name: 'Waschmittel Color Pulver', brand: 'Ariel' },
+      { name: 'Sensitiv Spüler Zitrone', brand: 'Pril' },
+      { name: 'Waschmittel', brand: 'Persil' },
+      { name: 'Waschmittel Pulver Sensitiv', brand: 'Ariel' },
+      { name: 'Sensitiv Pulver', brand: 'Domol' },
+      { name: 'Waschmittel Flüssig', brand: 'Domol' },
+      { name: 'Sensitiv Zusatz', brand: 'Domol' },
+      { name: 'Eier 10er' },
+      { name: 'Brot Vollkorn' },
+      { name: 'Salz' },
+      { name: 'Öl' },
+    ];
+    const entries = await searchListCandidates(client, session, {
+      lines: ['Waschmittel sensitiv'],
+      storeGuid: 's',
+      extraCandidates: extras,
+    });
+    const scores = entries[0].candidates.map((candidate) => scoreCandidate('Waschmittel sensitiv', candidate).score);
+    expect(entries[0].candidates).toHaveLength(MAX_CANDIDATES);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    expect(new Set(scores).size).toBeGreaterThan(1);
+    // The unrelated purchases stay out; the menu is catalogue + evidence-carrying history.
+    expect(entries[0].candidates.map((candidate) => candidate.name)).not.toContain('Eier 10er');
+  });
+});
+
+describe('rerankWithHistory', () => {
+  it('never lets history override a deliberate model pick', () => {
+    const plan = { storeGuid: 's', matched: 1, unmatched: 0, source: 'model' as const, lines: [
+      { line: { text: 'Milch 1,5', quantity: 1 }, chooser: 'model' as const, action: 'product' as const,
+        match: { line: { text: 'Milch 1,5', quantity: 1 }, candidate: { id: 'm2', name: 'Fettarme H-Milch 1,5%' }, score: 0.4, reason: 'pick: powder', alternatives: [] } },
+    ]};
+    const reranked = rerankWithHistory(plan, [{ id: 'h1', name: 'Vollmilch 3,5%' }]);
+    expect(reranked.lines[0].match.candidate?.id).toBe('m2');
+  });
+
+  it('still corrects a weak rules match', () => {
+    const plan = { storeGuid: 's', matched: 1, unmatched: 0, source: 'rules' as const, lines: [
+      { line: { text: 'Milch 1,5', quantity: 1 }, chooser: 'rules' as const, action: 'product' as const,
+        match: { line: { text: 'Milch 1,5', quantity: 1 }, candidate: { id: 'm1', name: 'Weihenstephan H-Milch 1,5% 1l' }, score: 0.6, reason: '1/2 words', alternatives: [] } },
+    ]};
+    const reranked = rerankWithHistory(plan, [{ id: 'h1', name: 'Weihenstephan H-Milch 1,5% 1l' }]);
+    expect(reranked.lines[0].chooser).toBe('rules');
+    expect(reranked.lines[0].match.reason).toContain('bought before');
+  });
+});
+

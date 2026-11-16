@@ -2,10 +2,13 @@
  * Deterministic matching of handwritten shopping-list lines to real EDEKA products.
  *
  * No LLM here: the list text is normalised with the same rules the bot uses for
- * product groups, and each line is scored against catalogue search results.
- * The LLM's only job upstream is turning a photo into lines of text.
+ * product groups, and each line is scored against catalogue search results. This score
+ * is the baseline and the fallback. Upstream, opencode may read a photo into list lines
+ * and, in `choose.ts`, pick among the candidates this module ranked — but only inside
+ * that menu: it never introduces a product id, and a pick it cannot justify is dropped
+ * in favour of the score below.
  */
-import { deumlaut, normalizeName, parseSize, sizeCompatible } from '../bot/product-groups';
+import { normalizeName, parseSize, sizeCompatible } from '../bot/product-groups';
 
 export interface ListLine {
   text: string;
@@ -34,7 +37,7 @@ export interface LineMatch {
 
 const STOPWORDS = new Set(['und', 'oder', 'mit', 'ohne', 'der', 'die', 'das', 'ein', 'eine', 'etwas', 'bitte', 'ca']);
 
-/** Split a raw OCR/typed line into a quantity and the product text. */
+/** Split a raw line — typed by the shopper or transcribed from a photo — into a quantity and the product text. */
 export function parseListLine(raw: string): ListLine | null {
   const text = raw.trim().replace(/\s+/g, ' ');
   if (!text) return null;
@@ -162,8 +165,12 @@ export function toCandidate(item: Record<string, unknown>): MatchCandidate | nul
   };
 }
 
-/** Human label for a line, e.g. "2x Milch". */
+/**
+ * Human label for a line, e.g. "2x Milch". The text is kept exactly as the shopper
+ * wrote it — umlauts included — because it is also what the model reads, and "Müsli"
+ * and "Muesli" are not the same word to it.
+ */
 export function describeLine(line: ListLine): string {
   if (line.quantity > 1) return `${line.quantity}x ${line.text}`;
-  return deumlaut(line.text);
+  return line.text;
 }
