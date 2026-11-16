@@ -42,6 +42,28 @@ describe('resolveLinks', () => {
     expect(links.get(1001)).toBeNull();
   });
 
+  it('keeps fat percentages apart even when the pack size matches', () => {
+    const links = resolveLinks(
+      [{ productId: 1001, name: 'Vollmilch 1,5 %' }],
+      [{ textKey: 'milk-35', name: 'Vollmilch 3,5 %' }]
+    );
+
+    expect(links.get(1001)).toBeNull();
+  });
+
+  it('links when the percentages agree', () => {
+    const links = resolveLinks(
+      [{ productId: 1001, name: 'Vollmilch 1,5 %' }],
+      [{ textKey: 'milk-15', name: 'Vollmilch 1.5 %' }]
+    );
+
+    expect(links.get(1001)).toEqual({
+      edekaTextKey: 'milk-15',
+      confidence: 1,
+      source: 'auto',
+    });
+  });
+
   it('lets a manual correction beat the name matcher, with confidence 1', () => {
     const links = resolveLinks(
       [{ productId: 1001, name: 'Vollmilch 1l' }],

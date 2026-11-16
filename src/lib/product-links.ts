@@ -58,6 +58,31 @@ export interface ResolvedProductLink {
  */
 export const LINK_SIMILARITY_FLOOR = 0.8;
 
+/**
+ * Percentages and similar figures that make two products different even though
+ * their names look the same. `normalizeName` strips them, so "Vollmilch 1,5 %"
+ * and "Vollmilch 3,5 %" would otherwise score as one product — which is the
+ * kind of wrong link that reads as a merged habit.
+ */
+function figures(name: string): Set<string> {
+  const found = new Set<string>();
+  for (const match of name.matchAll(/(\d+(?:[.,]\d+)?)\s*%/g)) {
+    found.add(`pct:${match[1].replace(',', '.')}`);
+  }
+  return found;
+}
+
+/** True only when both names carry a figure and they disagree. */
+function conflictingFigures(a: string, b: string): boolean {
+  const left = figures(a);
+  const right = figures(b);
+  if (left.size === 0 || right.size === 0) return false;
+  for (const figure of left) {
+    if (!right.has(figure)) return true;
+  }
+  return false;
+}
+
 function roundConfidence(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -116,10 +141,10 @@ export function resolveLinks(
   // its own field while Knuspr folds it into the name, and `normalizeName` already
   // drops the brands both stores share. Comparing names only avoids penalising a
   // shop brand we do not know.
-  const buckets: Array<{ textKey: string; parsed: ParsedProductName }> = [];
+  const buckets: Array<{ textKey: string; name: string; parsed: ParsedProductName }> = [];
   for (const bucket of edekaBuckets) {
     if (claimedBuckets.has(bucket.textKey)) continue;
-    buckets.push({ textKey: bucket.textKey, parsed: normalizeName(bucket.name) });
+    buckets.push({ textKey: bucket.textKey, name: bucket.name, parsed: normalizeName(bucket.name) });
   }
 
   const candidates: Candidate[] = [];
@@ -127,6 +152,7 @@ export function resolveLinks(
     const parsed = normalizeName(product.name);
     for (const bucket of buckets) {
       if (!sizeCompatible(parsed.size, bucket.parsed.size)) continue;
+      if (conflictingFigures(product.name, bucket.name)) continue;
       const similarity = nameSimilarity(parsed, bucket.parsed);
       if (similarity < LINK_SIMILARITY_FLOOR) continue;
       candidates.push({
