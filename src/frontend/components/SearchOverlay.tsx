@@ -6,11 +6,20 @@
  * explicitly "later" until a catalogue search exists. No product navigation
  * yet — the sheet is here so the destination question never comes before the
  * query.
+ *
+ * The API answers history and catalogue in one response, so the history cannot
+ * land before the catalogue does. While that one request is in flight the
+ * sections show skeleton rows: they say what is still coming instead of
+ * replacing the sheet with a blank spinner, which is what made a slow
+ * catalogue look like a broken search (note S2).
  */
 import { createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
 import { Search } from 'lucide-solid';
 import { Sheet } from './Sheet';
+import { StatePanel } from './StatePanel';
 import { closeSearch, searchOpen } from '../lib/overlays';
+import { fetchWithTimeout, loadFailureCopy } from '../lib/request';
 import type { Provider } from '../lib/location';
 
 interface SearchHistoryEntry {
@@ -65,7 +74,25 @@ function Section(props: { title: string; meta?: string; children: JSX.Element })
   );
 }
 
+/** Placeholder rows for a section that has not answered yet. */
+function SkeletonRows(props: { count?: number }) {
+  return (
+    <div class="overflow-hidden rounded-xl border border-base-300 bg-base-100" aria-hidden="true">
+      <For each={Array.from({ length: props.count ?? 3 })}>
+        {() => (
+          <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2.5 last:border-b-0">
+            <span class="h-4 w-4 shrink-0 animate-pulse rounded bg-base-300" />
+            <span class="h-3 flex-1 animate-pulse rounded bg-base-300" />
+            <span class="h-3 w-10 shrink-0 animate-pulse rounded bg-base-300" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
 export function SearchOverlay() {
+  const navigate = useNavigate();
   const [query, setQuery] = createSignal('');
   const [result, setResult] = createSignal<SearchResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -83,7 +110,7 @@ export function SearchOverlay() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(needle)}`);
+      const res = await fetchWithTimeout(`/api/search?q=${encodeURIComponent(needle)}`);
       const body = await res.json().catch(() => ({}));
       if (id !== requestId) return;
       if (!res.ok) {
@@ -95,7 +122,7 @@ export function SearchOverlay() {
     } catch (failure) {
       if (id !== requestId) return;
       console.error('Search failed', failure);
-      setError('Could not reach the search service.');
+      setError(loadFailureCopy(failure));
       setResult(null);
     } finally {
       if (id === requestId) setLoading(false);
@@ -117,6 +144,37 @@ export function SearchOverlay() {
     // Invalidate an answer already in flight for the previous keystroke.
     requestId++;
     debounce = setTimeout(() => void run(needle), 250);
+  };
+
+  /** An answer belongs to the text in the box; anything else is stale. */
+  const answered = () => {
+    const body = result();
+    return body !== null && body.query.trim().toLowerCase() === query().trim().toLowerCase();
+  };
+
+  const emptyQuery = () => query().trim().length < 2;
+
+  const nothingFound = () =>
+    answered() &&
+    !loading() &&
+    result()!.history.length === 0 &&
+    result()!.edeka.state === 'ok' &&
+    result()!.edeka.items.length === 0;
+
+  const goToSettings = () => {
+    closeSearch();
+    navigate('/settings');
+  };
+
+  const edekaAction = () => {
+    const edeka = result()?.edeka;
+    if (edeka?.state === 'error') {
+      return { label: 'Try again', onClick: () => void run(query().trim()) };
+    }
+    if (edeka?.state === 'unavailable' && edeka.reason.toLowerCase().includes('not connected')) {
+      return { label: 'Connect EDEKA', onClick: goToSettings };
+    }
+    return { label: 'Check your location', onClick: goToSettings };
   };
 
   return (
@@ -142,115 +200,159 @@ export function SearchOverlay() {
           </Show>
         </label>
 
-        <Show when={query().trim().length < 2}>
-          <p class="text-sm text-base-content/60">Type at least two characters.</p>
-        </Show>
-
-        <Show when={error()}>
-          <div class="alert alert-error">
-            <span class="text-sm">{error()}</span>
+        {/* Empty query: say what the box will do instead of leaving it blank. */}
+        <Show when={emptyQuery()}>
+          <div class="space-y-1.5 rounded-xl border border-base-300 bg-base-200/40 p-3">
+            <p class="text-sm font-semibold">Your own history answers first.</p>
+            <p class="text-xs text-base-content/65">
+              Search looks at what you have already bought — deliveries and in-store receipts —
+              then at the EDEKA catalogue for your store. Two letters are enough.
+            </p>
+            <p class="text-[11px] text-base-content/45">
+              Knuspr catalogue search is not connected yet; its purchase history is still searched.
+            </p>
           </div>
         </Show>
 
-        <Show when={result()}>
-          {(body) => (
-            <>
-              <Section title="In your history" meta={`${body().history.length}`}>
+        <Show when={error()}>
+          <StatePanel
+            compact
+            tone="error"
+            title="That search did not finish"
+            body={error()!}
+            action={{ label: 'Try again', onClick: () => void run(query().trim()) }}
+          />
+        </Show>
+
+        <Show when={!emptyQuery()}>
+          <Section
+            title="In your history"
+            meta={answered() && !loading() ? `${result()!.history.length}` : 'searching'}
+          >
+            <Show when={answered() && !loading()} fallback={<SkeletonRows count={2} />}>
+              <Show
+                when={result()!.history.length > 0}
+                fallback={
+                  <p class="text-sm text-base-content/55">Nothing you have bought matches.</p>
+                }
+              >
+                <div class="overflow-hidden rounded-xl border border-base-300 bg-base-100">
+                  <For each={result()!.history}>
+                    {(entry) => (
+                      <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2 last:border-b-0">
+                        <span
+                          class={`badge badge-sm font-bold ${
+                            entry.provider === 'knuspr' ? 'badge-primary' : 'badge-secondary'
+                          }`}
+                        >
+                          {entry.provider === 'knuspr' ? 'K' : 'E'}
+                        </span>
+                        <div class="min-w-0 flex-1">
+                          <div class="truncate text-sm font-semibold">{entry.name}</div>
+                          <div class="text-[11px] text-base-content/55">
+                            {entry.purchases}× bought
+                            {entry.lastBought
+                              ? ` · last ${new Date(entry.lastBought).toLocaleDateString()}`
+                              : ''}
+                          </div>
+                        </div>
+                        <span class="font-mono text-xs text-base-content/70">
+                          {money(entry.price)}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </Show>
+          </Section>
+
+          <Section
+            title="EDEKA"
+            meta={answered() && !loading() ? 'live catalogue' : 'asking the store…'}
+          >
+            <Show when={answered() && !loading()} fallback={<SkeletonRows count={3} />}>
+              <Show
+                when={result()!.edeka.state === 'ok'}
+                fallback={
+                  <StatePanel
+                    compact
+                    tone={result()!.edeka.state === 'error' ? 'error' : 'warning'}
+                    title={
+                      result()!.edeka.state === 'error'
+                        ? 'The EDEKA catalogue did not answer'
+                        : 'EDEKA is not searchable here'
+                    }
+                    body={result()!.edeka.reason}
+                    action={edekaAction()}
+                  />
+                }
+              >
                 <Show
-                  when={body().history.length > 0}
-                  fallback={<p class="text-sm text-base-content/55">Nothing you have bought matches.</p>}
+                  when={result()!.edeka.items.length > 0}
+                  fallback={
+                    <p class="text-sm text-base-content/55">
+                      {result()!.edeka.reason || 'Nothing in the catalogue for that.'}
+                    </p>
+                  }
                 >
                   <div class="overflow-hidden rounded-xl border border-base-300 bg-base-100">
-                    <For each={body().history}>
-                      {(entry) => (
+                    <For each={result()!.edeka.items}>
+                      {(item) => (
                         <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2 last:border-b-0">
-                          <span
-                            class={`badge badge-sm font-bold ${
-                              entry.provider === 'knuspr' ? 'badge-primary' : 'badge-secondary'
-                            }`}
-                          >
-                            {entry.provider === 'knuspr' ? 'K' : 'E'}
-                          </span>
+                          <span class="badge badge-secondary badge-sm font-bold">E</span>
                           <div class="min-w-0 flex-1">
-                            <div class="truncate text-sm font-semibold">{entry.name}</div>
-                            <div class="text-[11px] text-base-content/55">
-                              {entry.purchases}× bought
-                              {entry.lastBought
-                                ? ` · last ${new Date(entry.lastBought).toLocaleDateString()}`
-                                : ''}
-                            </div>
+                            <div class="truncate text-sm font-semibold">{item.name}</div>
+                            <Show when={item.brand}>
+                              <div class="text-[11px] text-base-content/55">{item.brand}</div>
+                            </Show>
                           </div>
                           <span class="font-mono text-xs text-base-content/70">
-                            {money(entry.price)}
+                            {money(item.price)}
                           </span>
                         </div>
                       )}
                     </For>
                   </div>
-                </Show>
-              </Section>
-
-              <Section title="EDEKA" meta="live catalogue">
-                <Show
-                  when={body().edeka.state === 'ok'}
-                  fallback={
-                    <div
-                      class={`alert ${
-                        body().edeka.state === 'error' ? 'alert-error' : 'alert-warning'
-                      }`}
-                    >
-                      <span class="text-sm">{body().edeka.reason}</span>
-                    </div>
-                  }
-                >
-                  <Show
-                    when={body().edeka.items.length > 0}
-                    fallback={
-                      <p class="text-sm text-base-content/55">
-                        {body().edeka.reason || 'Nothing in the catalogue for that.'}
-                      </p>
-                    }
-                  >
-                    <div class="overflow-hidden rounded-xl border border-base-300 bg-base-100">
-                      <For each={body().edeka.items}>
-                        {(item) => (
-                          <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2 last:border-b-0">
-                            <span class="badge badge-secondary badge-sm font-bold">E</span>
-                            <div class="min-w-0 flex-1">
-                              <div class="truncate text-sm font-semibold">{item.name}</div>
-                              <Show when={item.brand}>
-                                <div class="text-[11px] text-base-content/55">{item.brand}</div>
-                              </Show>
-                            </div>
-                            <span class="font-mono text-xs text-base-content/70">
-                              {money(item.price)}
-                            </span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                    <Show when={body().edeka.truncated}>
-                      <p class="text-[11px] text-base-content/50">
-                        More matches than fit here — refine the query.
-                      </p>
-                    </Show>
+                  <Show when={result()!.edeka.truncated}>
+                    <p class="text-[11px] text-base-content/50">
+                      More matches than fit here — refine the query.
+                    </p>
                   </Show>
                 </Show>
-              </Section>
+              </Show>
+            </Show>
+          </Section>
 
-              <Section title="Knuspr" meta="live catalogue">
-                <div class="alert alert-info">
-                  <span class="text-sm">{body().knuspr.reason}</span>
-                </div>
-                <Show when={!body().knuspr.available}>
-                  <p class="text-[11px] text-base-content/50">
-                    Knuspr is not available where you are, so a catalogue match would not be
-                    orderable anyway.
-                  </p>
-                </Show>
-              </Section>
-            </>
-          )}
+          {/* Knuspr is a planned state, not a failure, so it gets no action. */}
+          <Show when={answered() && !loading()}>
+            <Section title="Knuspr" meta="later">
+              <StatePanel
+                compact
+                tone="info"
+                title="Knuspr catalogue search is not connected yet"
+                body={
+                  result()!.knuspr.available
+                    ? 'Its purchase history is searched above; a live catalogue needs its own endpoint.'
+                    : 'Its purchase history is searched above. It also does not deliver where you are, so a catalogue hit would not be orderable.'
+                }
+              />
+            </Section>
+          </Show>
+
+          <Show when={nothingFound()}>
+            <StatePanel
+              tone="neutral"
+              title={`Nothing found for “${query().trim()}”`}
+              body="Not in what you have bought, and not in the EDEKA catalogue at this store."
+              hint="Search does not add anything; basket and list actions stay in the product sheet."
+              action={{
+                label: 'Add as free text',
+                disabledReason:
+                  'A free-text line is written to the EDEKA list, and this search sheet cannot write to it.',
+              }}
+            />
+          </Show>
         </Show>
 
         <p class="pt-1 text-[11px] text-base-content/45">

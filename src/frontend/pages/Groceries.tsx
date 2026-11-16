@@ -5,14 +5,19 @@
  * shopper; here a character has one row, one `+` and one detail sheet, and the
  * sheet keeps a separate stat row per store. The source and "due" filters are
  * the server's own parameters, so the page never re-implements the learning.
+ *
+ * The four ways this list can be empty are separate states, not one fallback:
+ * nothing bought yet, nothing due, nothing from the chosen store, nothing
+ * matching the filter. Each names its reason and offers the one way out.
  */
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
-import { Package, Search } from 'lucide-solid';
+import { Link2Off, MapPin, Package, Search } from 'lucide-solid';
 import { BasketAddButton } from '../components/BasketAddButton';
 import { ProviderBadges } from '../components/ProviderBadges';
 import { ProductSheet } from '../components/ProductSheet';
-import { providerLabel, useLocation, type Provider } from '../lib/location';
+import { StatePanel, type StateAction } from '../components/StatePanel';
+import { providerLabel, useLocation, type Provider, type ProviderStatus } from '../lib/location';
 import {
   addTargetFor,
   offerFor,
@@ -24,6 +29,7 @@ import {
   type ProductsResponse,
 } from '../lib/browse';
 import { euro, relativeDays } from '../lib/format';
+import { fetchWithTimeout, loadFailureCopy } from '../lib/request';
 
 type SourceFilter = 'both' | 'knuspr' | 'edeka';
 
@@ -32,6 +38,13 @@ const SOURCES: Array<{ id: SourceFilter; label: string }> = [
   { id: 'knuspr', label: 'Knuspr' },
   { id: 'edeka', label: 'EDEKA' },
 ];
+
+interface EmptyState {
+  title: string;
+  body: string;
+  hint?: string;
+  action?: StateAction;
+}
 
 function initialSource(value: unknown): SourceFilter {
   return value === 'knuspr' || value === 'edeka' ? value : 'both';
@@ -57,7 +70,7 @@ export function Groceries() {
     const params = new URLSearchParams();
     if (source() !== 'both') params.set('source', source());
     if (dueOnly()) params.set('due', '1');
-    const res = await fetch(`/api/products?${params.toString()}`);
+    const res = await fetchWithTimeout(`/api/products?${params.toString()}`);
     const body = (await res.json().catch(() => ({}))) as ProductsResponse & { error?: string };
     if (!res.ok) {
       setError(body.error ?? 'Could not read the product list.');
@@ -74,14 +87,14 @@ export function Groceries() {
    * pickers of an open sheet.
    */
   const loadCatalog = async () => {
-    const res = await fetch('/api/products');
+    const res = await fetchWithTimeout('/api/products');
     if (!res.ok) return;
     const body = (await res.json()) as ProductsResponse;
     setCatalog(body.items);
   };
 
   const loadGroups = async () => {
-    const res = await fetch('/api/bot/groups');
+    const res = await fetchWithTimeout('/api/bot/groups');
     if (!res.ok) return;
     setGroups((await res.json()) as ProductGroup[]);
   };
@@ -90,11 +103,23 @@ export function Groceries() {
     await Promise.all([loadList(), loadCatalog(), loadGroups()]);
   };
 
+  const retry = async () => {
+    setLoading(true);
+    try {
+      await refresh();
+    } catch (failure) {
+      console.error('Groceries load failed', failure);
+      setError(loadFailureCopy(failure));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   onMount(() => {
     void Promise.all([loadList(), loadCatalog(), loadGroups()])
       .catch((failure) => {
         console.error('Groceries load failed', failure);
-        setError('Could not reach the server.');
+        setError(loadFailureCopy(failure));
       })
       .finally(() => setLoading(false));
 
@@ -125,6 +150,64 @@ export function Groceries() {
     const id = selectedId();
     if (!id) return undefined;
     return list()?.items.find((item) => item.id === id) ?? catalog().find((item) => item.id === id);
+  };
+
+  const statusOf = (provider: Provider): ProviderStatus | undefined =>
+    location.state()?.providers.find((entry) => entry.provider === provider);
+
+  const knusprStatus = () => statusOf('knuspr');
+
+  /**
+   * Why the list is empty. The order matters: a brand-new account explains the
+   * first sync, then a filter is offered as the way back, and only then does a
+   * single store get blamed.
+   */
+  const emptyState = (): EmptyState | null => {
+    if (!list()) return null;
+    if (list()!.counts.total === 0) {
+      return {
+        title: 'No products yet',
+        body: 'Groceries learns from your purchases. Connect Knuspr in Settings and press Sync now there, or run the capture app on your phone for EDEKA receipts — the first list appears after that.',
+        hint: 'The first sync imports the history and rebuilds the learning, so it can take a moment.',
+        action: { label: 'Connect a store', href: '/settings' },
+      };
+    }
+    if (query().trim()) {
+      return {
+        title: `No match for “${query().trim()}”`,
+        body: 'The filter only looks at the rows loaded for this store and window.',
+        action: { label: 'Clear the filter', onClick: () => setQuery('') },
+      };
+    }
+    if (dueOnly()) {
+      // Due is gated by availability server-side, so an away shopper gets an
+      // empty list although the weekly basket exists. Naming that beats
+      // "nothing is due", which would be wrong about their groceries.
+      if (
+        source() !== 'edeka' &&
+        knusprStatus()?.connected === true &&
+        knusprStatus()?.available === false
+      ) {
+        return {
+          title: 'Due items are out of reach here',
+          body: 'Knuspr does not deliver where you are, so its due items are hidden from this list. Your stock has not changed.',
+          action: { label: 'Show all groceries', onClick: () => changeWindow(false) },
+        };
+      }
+      return {
+        title: 'Nothing is due',
+        body: 'Every product has enough stock for the planned days.',
+        action: { label: 'Show all groceries', onClick: () => changeWindow(false) },
+      };
+    }
+    if (source() !== 'both') {
+      return {
+        title: `No ${providerLabel(source() as Provider)} products yet`,
+        body: 'Nothing has been bought at this store, or this store has no account connected.',
+        action: { label: 'Show both stores', onClick: () => changeSource('both') },
+      };
+    }
+    return null;
   };
 
   /** EDEKA buckets without a Knuspr row: the only ones a match can claim. */
@@ -161,9 +244,7 @@ export function Groceries() {
           <h1 class="page-title">Groceries</h1>
           <p class="mt-1 text-base-content/85">
             <Show when={counts()} fallback="Reading your list">
-              {(data) =>
-                `${data().total} products · ${data().due} due · ${data().empty} empty`
-              }
+              {(data) => `${data().total} products · ${data().due} due · ${data().empty} empty`}
             </Show>
           </p>
         </div>
@@ -202,129 +283,131 @@ export function Groceries() {
         </div>
       </div>
 
+      {/* A missing account is worth saying even when the list still has rows. */}
+      <Show when={knusprStatus()?.connected === false && (list()?.counts.total ?? 0) > 0}>
+        <StatePanel
+          compact
+          tone="warning"
+          icon={<Link2Off size={18} />}
+          title="Knuspr is not connected"
+          body="No new deliveries will be imported. The Knuspr rows stay listed from what was already learned; connecting again resumes it."
+          action={{ label: 'Connect Knuspr', href: '/settings' }}
+        />
+      </Show>
+
+      {/* Reach, not the account: the rows stay, the destination already follows. */}
+      <Show
+        when={
+          knusprStatus()?.connected === true &&
+          knusprStatus()?.available === false &&
+          source() !== 'edeka'
+        }
+      >
+        <StatePanel
+          compact
+          tone="info"
+          icon={<MapPin size={18} />}
+          title="Knuspr does not deliver here"
+          body={knusprStatus()!.reason}
+          hint="The Knuspr rows stay visible; a + already writes to the destination your location allows."
+          action={{ label: 'Show the EDEKA list', onClick: () => changeSource('edeka') }}
+        />
+      </Show>
+
       <Show when={error()}>
-        <div class="alert alert-error shadow-sm">
-          <span>{error()}</span>
-        </div>
+        <StatePanel
+          tone="error"
+          title="Could not read the product list"
+          body={error()!}
+          action={{ label: 'Try again', onClick: () => void retry(), busy: loading() }}
+        />
       </Show>
 
       <Show
         when={!loading()}
         fallback={
-          <div class="flex justify-center py-24">
+          <div class="flex flex-col items-center gap-2 py-24">
             <span class="loading loading-spinner loading-lg text-primary" />
+            <span class="text-xs text-base-content/55">Reading your list…</span>
           </div>
         }
       >
-        <Show
-          when={visible().length > 0}
-          fallback={
-            <div class="rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
-              <Show
-                when={query().trim().length > 0}
-                fallback={
-                  <Show
-                    when={dueOnly()}
-                    fallback={
-                      <Show
-                        when={source() !== 'both'}
-                        fallback={
-                          <>
-                            <h2 class="text-lg font-bold">No products yet</h2>
-                            <p class="mt-1 text-sm text-base-content/65">
-                              Connect Knuspr in Settings or import an in-store receipt to start the
-                              list.
-                            </p>
-                          </>
-                        }
-                      >
-                        <h2 class="text-lg font-bold">
-                          No {providerLabel(source() as Provider)} products yet
-                        </h2>
-                        <p class="mt-1 text-sm text-base-content/65">
-                          Switch to Both to see the other store's list.
-                        </p>
-                        <button class="btn btn-ghost btn-sm mt-3" onClick={() => changeSource('both')}>
-                          Show both stores
-                        </button>
-                      </Show>
-                    }
-                  >
-                    <h2 class="text-lg font-bold">Nothing is due</h2>
-                    <p class="mt-1 text-sm text-base-content/65">
-                      Your stock covers the next few days.
-                    </p>
-                    <button class="btn btn-ghost btn-sm mt-3" onClick={() => changeWindow(false)}>
-                      Show all groceries
-                    </button>
-                  </Show>
-                }
-              >
-                <h2 class="text-lg font-bold">No match for “{query()}”</h2>
-                <p class="mt-1 text-sm text-base-content/65">
-                  Clear the filter to see the whole list.
-                </p>
+        <Show when={!error() || list()}>
+          <Show
+            when={visible().length > 0}
+            fallback={
+              <Show when={emptyState()}>
+                {(state) => (
+                  <StatePanel
+                    title={state().title}
+                    body={state().body}
+                    hint={state().hint}
+                    action={state().action}
+                  />
+                )}
               </Show>
-            </div>
-          }
-        >
-          <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm">
-            <For each={visible()}>
-              {(item) => (
-                <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2.5 last:border-b-0">
-                  <button
-                    class="flex min-w-0 flex-1 items-center gap-3 text-left"
-                    onClick={() => setSelectedId(item.id)}
-                  >
-                    <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-base-200">
-                      <Show
-                        when={item.image}
-                        fallback={<Package size={18} class="text-base-content/40" />}
-                      >
-                        {(image) => (
-                          <img
-                            src={image()}
-                            alt=""
-                            loading="lazy"
-                            class="h-full w-full object-cover"
-                          />
-                        )}
-                      </Show>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm font-bold">{item.name}</div>
-                      <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-base-content/60">
-                        <ProviderBadges providers={providersOf(item)} />
-                        <For each={providersOf(item)}>
-                          {(provider) => {
-                            const stat = item.statsByProvider[provider];
-                            return (
-                              <span>
-                                {providerLabel(provider)}
-                                {stat?.cadenceDays
-                                  ? ` · every ~${Math.round(stat.cadenceDays)} d`
-                                  : (item.outsideWindow && provider === 'knuspr'
-                                    ? ` · last bought ${relativeDays(stat?.lastBought)}`
-                                    : '')}
-                                {stat ? ` · ${stat.purchases}×` : ''}
-                              </span>
-                            );
-                          }}
-                        </For>
+            }
+          >
+            <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm">
+              <For each={visible()}>
+                {(item) => (
+                  <div class="flex items-center gap-3 border-b border-base-200 px-3 py-2.5 last:border-b-0">
+                    <button
+                      class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      onClick={() => setSelectedId(item.id)}
+                    >
+                      <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-base-200">
+                        <Show
+                          when={item.image}
+                          fallback={<Package size={18} class="text-base-content/40" />}
+                        >
+                          {(image) => (
+                            <img
+                              src={image()}
+                              alt=""
+                              loading="lazy"
+                              class="h-full w-full object-cover"
+                            />
+                          )}
+                        </Show>
                       </div>
-                    </div>
-                    <div class="hidden shrink-0 flex-col items-end text-[11px] sm:flex">
-                      <span class="text-sm font-extrabold text-primary">{euro(priceOf(item))}</span>
-                      <span class="text-base-content/55">{stockLabel(item)}</span>
-                    </div>
-                  </button>
-                  <Show when={addTargetFor(item, destination())}>
-                    {(target) => <BasketAddButton item={target()} destination={destination()} />}
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-bold">{item.name}</div>
+                        <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-base-content/60">
+                          <ProviderBadges providers={providersOf(item)} />
+                          <For each={providersOf(item)}>
+                            {(provider) => {
+                              const stat = item.statsByProvider[provider];
+                              return (
+                                <span>
+                                  {providerLabel(provider)}
+                                  {stat?.cadenceDays
+                                    ? ` · every ~${Math.round(stat.cadenceDays)} d`
+                                    : (item.outsideWindow && provider === 'knuspr'
+                                      ? ` · last bought ${relativeDays(stat?.lastBought)}`
+                                      : '')}
+                                  {stat ? ` · ${stat.purchases}×` : ''}
+                                </span>
+                              );
+                            }}
+                          </For>
+                        </div>
+                      </div>
+                      <div class="hidden shrink-0 flex-col items-end text-[11px] sm:flex">
+                        <span class="text-sm font-extrabold text-primary">{euro(priceOf(item))}</span>
+                        <span class="text-base-content/55">{stockLabel(item)}</span>
+                      </div>
+                    </button>
+                    <Show when={addTargetFor(item, destination())}>
+                      {(target) => (
+                        <BasketAddButton item={target()} destination={destination()} />
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </Show>
       </Show>
 
@@ -336,7 +419,6 @@ export function Groceries() {
             edekaBuckets={edekaBuckets()}
             knusprVariants={knusprVariants()}
             destination={destination()}
-            windowDays={list()?.windowDays ?? 182}
             onClose={() => setSelectedId(null)}
             onChanged={refresh}
           />

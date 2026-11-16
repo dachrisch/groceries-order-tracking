@@ -10,15 +10,15 @@
  */
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import {
-  AlertCircle,
   Bot as BotIcon,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
   Undo2,
-} from 'lucide-solid';
+} from 'lucide-solid';import { CapturePanel } from '../components/CapturePanel';
 import { Sheet } from '../components/Sheet';
+import { StatePanel } from '../components/StatePanel';
 import { ProviderChip } from '../components/ProviderBadges';
 import { destinationLabel, type Destination, type Provider } from '../lib/location';
 import { openAsk } from '../lib/overlays';
@@ -32,8 +32,19 @@ import {
   type ActivitySummary,
 } from '../lib/activity';
 import { dateTime, euro, monthLabel } from '../lib/format';
+import { fetchWithTimeout, loadFailureCopy } from '../lib/request';
 
 type SourceFilter = 'all' | Provider;
+
+/**
+ * A month is the default window because spend is a monthly figure; "wide" is
+ * the answer to an empty month, so the shopper does not have to press the
+ * arrows twelve times to find out whether there is anything at all.
+ */
+type Span = 'month' | 'wide';
+
+const WIDE_DAYS = 90;
+
 
 const SOURCES: Array<{ id: SourceFilter; label: string }> = [
   { id: 'all', label: 'All' },
@@ -87,6 +98,7 @@ export function Activity() {
   const [tab, setTab] = createSignal<'timeline' | 'runs'>('timeline');
   const [source, setSource] = createSignal<SourceFilter>('all');
   const [cursor, setCursor] = createSignal(monthStart());
+  const [span, setSpan] = createSignal<Span>('month');
 
   const [data, setData] = createSignal<ActivityResponse | null>(null);
   const [loading, setLoading] = createSignal(true);
@@ -104,18 +116,32 @@ export function Activity() {
   const [expandedRun, setExpandedRun] = createSignal<string | null>(null);
   const [runError, setRunError] = createSignal<string | null>(null);
 
+  const range = () => {
+    if (span() === 'wide') {
+      const to = new Date();
+      return { from: new Date(to.getTime() - WIDE_DAYS * 86_400_000), to };
+    }
+    return monthRange(cursor());
+  };
+
+  const rangeLabel = () => (span() === 'wide' ? `Last ${WIDE_DAYS} days` : monthLabel(cursor()));
+
+  /** The same range inside a sentence, where a leading capital reads wrong. */
+  const rangeSentence = () =>
+    span() === 'wide' ? `the last ${WIDE_DAYS} days` : monthLabel(cursor());
+
   const load = async () => {
     setLoading(true);
     setError(null);
-    const range = monthRange(cursor());
+    const { from, to } = range();
     const params = new URLSearchParams({
-      from: range.from.toISOString(),
-      to: range.to.toISOString(),
+      from: from.toISOString(),
+      to: to.toISOString(),
       limit: '300',
     });
     if (source() !== 'all') params.set('provider', source());
     try {
-      const res = await fetch(`/api/activity?${params.toString()}`);
+      const res = await fetchWithTimeout(`/api/activity?${params.toString()}`);
       const body = (await res.json().catch(() => ({}))) as ActivityResponse & { error?: string };
       if (!res.ok) {
         setError(body.error ?? 'Could not read your activity.');
@@ -124,7 +150,7 @@ export function Activity() {
       setData(body);
     } catch (failure) {
       console.error('Activity load failed', failure);
-      setError('Could not reach the server.');
+      setError(loadFailureCopy(failure));
     } finally {
       setLoading(false);
     }
@@ -132,13 +158,18 @@ export function Activity() {
 
   const loadRuns = async () => {
     setRunsLoading(true);
+    setRunError(null);
     try {
-      const res = await fetch('/api/bot/runs');
-      if (res.ok) setRuns((await res.json()) as BotRun[]);
-      setRunsLoaded(true);
+      const res = await fetchWithTimeout('/api/bot/runs');
+      if (res.ok) {
+        setRuns((await res.json()) as BotRun[]);
+        setRunsLoaded(true);
+      } else {
+        setRunError('Could not read the bot runs.');
+      }
     } catch (failure) {
       console.error('Could not load bot runs', failure);
-      setRunError('Could not load bot runs.');
+      setRunError(loadFailureCopy(failure));
     } finally {
       setRunsLoading(false);
     }
@@ -162,7 +193,20 @@ export function Activity() {
   };
 
   const changeMonth = (offset: number) => {
+    setSpan('month');
     setCursor((current) => shiftMonth(current, offset));
+    void load();
+  };
+
+  /** "Widen the range": three months back from today, ignoring the month cursor. */
+  const widen = () => {
+    setSpan('wide');
+    void load();
+  };
+
+  const backToMonth = () => {
+    setSpan('month');
+    setCursor(monthStart());
     void load();
   };
 
@@ -177,15 +221,15 @@ export function Activity() {
     setDetailError(null);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/activity/${encodeURIComponent(entry.id)}`);
+      const res = await fetchWithTimeout(`/api/activity/${encodeURIComponent(entry.id)}`);
       const body = (await res.json().catch(() => ({}))) as ActivityDetail & { error?: string };
       if (!res.ok) {
         setDetailError(body.error ?? 'Could not read that entry.');
         return;
       }
       setDetail(body);
-    } catch {
-      setDetailError('Could not reach the server.');
+    } catch (failure) {
+      setDetailError(loadFailureCopy(failure));
     } finally {
       setDetailLoading(false);
     }
@@ -197,7 +241,7 @@ export function Activity() {
     setUndoBusy(true);
     setDetailError(null);
     try {
-      const res = await fetch(`/api/basket/undo/${encodeURIComponent(entry.runId)}`, {
+      const res = await fetchWithTimeout(`/api/basket/undo/${encodeURIComponent(entry.runId)}`, {
         method: 'POST',
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -224,7 +268,7 @@ export function Activity() {
   const undoRun = async (run: BotRun) => {
     setRunError(null);
     try {
-      const res = await fetch(`/api/bot/runs/${run._id}/undo`, { method: 'POST' });
+      const res = await fetchWithTimeout(`/api/bot/runs/${run._id}/undo`, { method: 'POST' });
       const body = (await res.json().catch(() => ({}))) as { error?: string; cartUrl?: string };
       if (!res.ok) {
         setRunError(body.error ?? 'Undo failed.');
@@ -244,6 +288,9 @@ export function Activity() {
     events().filter((event) => event.provider === provider).length;
 
   const totals = () => data()?.totals;
+
+  /** An empty range has no figures to show; the empty state already says so. */
+  const shownTotals = () => (events().length > 0 ? totals() : undefined);
 
   const chip = (active: boolean) =>
     `btn btn-sm border-none rounded-xl px-4 ${active ? 'btn-primary shadow-sm' : 'btn-ghost opacity-80'}`;
@@ -272,7 +319,11 @@ export function Activity() {
           </div>
           <button
             class="btn btn-ghost btn-sm btn-square"
-            title="Refresh"
+            title={
+              loading() || runsLoading()
+                ? 'Already reading — wait for this answer'
+                : 'Refresh'
+            }
             onClick={() => (tab() === 'runs' ? void loadRuns() : void load())}
             disabled={loading() || runsLoading()}
           >
@@ -293,28 +344,54 @@ export function Activity() {
             </For>
           </div>
           <div class="flex items-center gap-1">
-            <button class="btn btn-ghost btn-sm btn-square" onClick={() => changeMonth(-1)} title="Previous month">
-              <ChevronLeft size={16} />
-            </button>
-            <span class="min-w-[9rem] text-center text-sm font-bold">{monthLabel(cursor())}</span>
-            <button
-              class="btn btn-ghost btn-sm btn-square"
-              onClick={() => changeMonth(1)}
-              disabled={isCurrentMonth()}
-              title="Next month"
+            <Show
+              when={span() === 'month'}
+              fallback={
+                <>
+                  <span class="min-w-[9rem] text-center text-sm font-bold">{rangeLabel()}</span>
+                  <button class="btn btn-ghost btn-sm rounded-xl" onClick={backToMonth}>
+                    This month
+                  </button>
+                </>
+              }
             >
-              <ChevronRight size={16} />
-            </button>
+              <button
+                class="btn btn-ghost btn-sm btn-square"
+                onClick={() => changeMonth(-1)}
+                title="Previous month"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span class="min-w-[9rem] text-center text-sm font-bold">{rangeLabel()}</span>
+              <button
+                class="btn btn-ghost btn-sm btn-square"
+                onClick={() => changeMonth(1)}
+                disabled={isCurrentMonth()}
+                title={
+                  isCurrentMonth()
+                    ? 'This is the newest month; there is nothing after it'
+                    : 'Next month'
+                }
+              >
+                <ChevronRight size={16} />
+              </button>
+            </Show>
           </div>
         </div>
 
         <Show when={error()}>
-          <div class="alert alert-error shadow-sm">
-            <span>{error()}</span>
-          </div>
+          <StatePanel
+            tone="error"
+            title="Could not read your activity"
+            body={error()!}
+            action={{ label: 'Try again', onClick: () => void load() }}
+          />
         </Show>
 
-        <Show when={totals()}>
+        {/* The phone is the one source that stops on its own; say so here too. */}
+        <CapturePanel onSynced={() => void load()} />
+
+        <Show when={shownTotals()}>
           {(summary) => (
             <div class="grid grid-cols-2 gap-3 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-sm sm:grid-cols-4">
               <div class="rounded-xl bg-base-200/50 p-3">
@@ -336,7 +413,8 @@ export function Activity() {
                 </div>
               </div>
               <div class="col-span-2 flex items-center justify-end rounded-xl bg-base-200/30 p-3 text-[11px] text-base-content/55">
-                {summary().count} entries this month, each in its own store
+                {summary().count} entries in {span() === 'wide' ? 'this range' : 'this month'}, each
+                in its own store
               </div>
             </div>
           )}
@@ -345,21 +423,32 @@ export function Activity() {
         <Show
           when={!loading()}
           fallback={
-            <div class="flex justify-center py-24">
+            <div class="flex flex-col items-center gap-2 py-24">
               <span class="loading loading-spinner loading-lg text-primary" />
+              <span class="text-xs text-base-content/55">Reading your activity…</span>
             </div>
           }
         >
           <Show
             when={events().length > 0}
             fallback={
-              <div class="rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
-                <h2 class="text-lg font-bold">No purchases in {monthLabel(cursor())}</h2>
-                <p class="mt-1 text-sm text-base-content/65">
-                  Deliveries and in-store receipts both land here. Use the arrows to look further
-                  back.
-                </p>
-              </div>
+              <Show when={!error()}>
+                <StatePanel
+                  tone="neutral"
+                  title={`No purchases in ${rangeSentence()}`}
+                  body="Deliveries and in-store receipts both land here. A quiet range is a real answer, not a failed read."
+                  hint={
+                    span() === 'month'
+                      ? 'The arrows above step back one month at a time.'
+                      : undefined
+                  }
+                  action={
+                    span() === 'month'
+                      ? { label: 'Widen the range', onClick: widen }
+                      : { label: 'Back to this month', onClick: backToMonth }
+                  }
+                />
+              </Show>
             }
           >
             <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm">
@@ -406,36 +495,33 @@ export function Activity() {
 
       <Show when={tab() === 'runs'}>
         <Show when={runError()}>
-          <div class="alert alert-error shadow-sm">
-            <AlertCircle size={18} />
-            <span class="text-sm font-semibold">{runError()}</span>
-            <button class="btn btn-sm" onClick={() => setRunError(null)}>
-              Dismiss
-            </button>
-          </div>
+          <StatePanel
+            tone="error"
+            title="Could not read the bot runs"
+            body={runError()!}
+            action={{ label: 'Try again', onClick: () => void loadRuns(), busy: runsLoading() }}
+          />
         </Show>
 
         <Show
           when={!runsLoading()}
           fallback={
-            <div class="flex justify-center py-24">
+            <div class="flex flex-col items-center gap-2 py-24">
               <span class="loading loading-spinner loading-lg text-primary" />
+              <span class="text-xs text-base-content/55">Reading the run history…</span>
             </div>
           }
         >
           <Show
             when={runs().length > 0}
             fallback={
-              <div class="rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
-                <h2 class="text-lg font-bold">No bot runs yet</h2>
-                <p class="mt-1 text-sm text-base-content/65">
-                  Ask for a weekly fill, or press + on a due card. Every run that writes a basket is
-                  recorded here.
-                </p>
-                <button class="btn btn-primary btn-sm mt-3" onClick={() => openAsk('chat')}>
-                  <BotIcon size={15} /> Ask
-                </button>
-              </div>
+              <Show when={!runError()}>
+                <StatePanel
+                  title="No bot runs yet"
+                  body="Ask for a weekly fill, or press + on a due card. Every run that writes a basket is recorded here, with its destination and an undo."
+                  action={{ label: 'Open Ask', onClick: () => openAsk('chat') }}
+                />
+              </Show>
             }
           >
             <div class="space-y-3">
@@ -524,17 +610,27 @@ export function Activity() {
             subtitle={`${dateTime(entry().at)} · ${entry().itemCount} items · ${euro(entry().total)}`}
           >
             <Show when={detailError()}>
-              <div class="alert alert-error mb-3 shadow-sm">
-                <AlertCircle size={16} />
-                <span class="text-xs font-semibold">{detailError()}</span>
+              <div class="mb-3">
+                <StatePanel
+                  compact
+                  tone="error"
+                  title="Could not read that entry"
+                  body={detailError()!}
+                  action={{
+                    label: 'Try again',
+                    onClick: () => void openDetail(entry()),
+                    busy: detailLoading(),
+                  }}
+                />
               </div>
             </Show>
 
             <Show
               when={!detailLoading()}
               fallback={
-                <div class="flex justify-center py-12">
+                <div class="flex flex-col items-center gap-2 py-12">
                   <span class="loading loading-spinner loading-md text-primary" />
+                  <span class="text-xs text-base-content/55">Reading the lines…</span>
                 </div>
               }
             >

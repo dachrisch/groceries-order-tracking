@@ -8,7 +8,7 @@
  *    refresh (T4), so the card shows "waiting for phone" or "phone not
  *    connected" instead of pretending the data has arrived.
  */
-import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, For, Index, onCleanup, onMount, Show } from 'solid-js';
 import {
   Bot,
   Link2,
@@ -21,8 +21,18 @@ import {
   Smartphone,
   Trash2,
 } from 'lucide-solid';
+import { StatePanel } from '../components/StatePanel';
 import { destinationLabel, providerLabel, useLocation } from '../lib/location';
-import { daysSince, relativeDays } from '../lib/format';
+import { relativeDays } from '../lib/format';
+import { fetchWithTimeout } from '../lib/request';
+import {
+  captureLabel,
+  captureState as captureStateOf,
+  readSyncStatus,
+  requestCaptureSync,
+  STALE_CAPTURE_DAYS,
+  type SyncStatus,
+} from '../lib/sync';
 
 interface Integration {
   _id: string;
@@ -39,21 +49,11 @@ interface BotSettings {
   opencodeEnabled: boolean;
 }
 
-interface SyncStatus {
-  requestedAt: string | null;
-  lastImportAt: string | null;
-  lastPurchaseAt: string | null;
-  sessions: number;
-}
-
 interface WindowRow {
   from: string;
   to: string;
   city: string;
 }
-
-/** A capture older than this is not "a bit stale", it is a phone that is not connected. */
-const STALE_CAPTURE_DAYS = 7;
 
 export function Settings() {
   const location = useLocation();
@@ -119,8 +119,10 @@ export function Settings() {
 
   const fetchIntegrations = async () => {
     try {
-      const res = await fetch('/api/settings/integrations');
+      const res = await fetchWithTimeout('/api/settings/integrations');
       if (res.ok) setIntegrations(await res.json());
+    } catch (failure) {
+      console.error('Could not read integrations', failure);
     } finally {
       setLoading(false);
     }
@@ -128,7 +130,7 @@ export function Settings() {
 
   const fetchBotSettings = async () => {
     try {
-      const res = await fetch('/api/bot/settings');
+      const res = await fetchWithTimeout('/api/bot/settings');
       if (res.ok) setBotSettings(await res.json());
     } catch {
       // The bot card is optional; leave it hidden if the request fails.
@@ -136,12 +138,10 @@ export function Settings() {
   };
 
   const loadSyncStatus = async () => {
-    try {
-      const res = await fetch('/api/easyshopper/sync/status');
-      if (res.ok) setSync((await res.json()) as SyncStatus);
-    } catch {
-      // The capture card is optional chrome; the rest of Settings still works.
-    }
+    // Settings is where the phone's state is reported, so a failed read is
+    // visible instead of silently pretending the phone is connected.
+    const next = await readSyncStatus();
+    if (next) setSync(next);
   };
 
   onMount(() => {
@@ -177,7 +177,7 @@ export function Settings() {
     if (!current) return;
     setSavingBot(true);
     try {
-      const res = await fetch('/api/bot/settings', {
+      const res = await fetchWithTimeout('/api/bot/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(current),
@@ -202,7 +202,7 @@ export function Settings() {
     e.preventDefault();
     setConnecting(true);
     try {
-      const res = await fetch('/api/settings/integrations/knuspr', {
+      const res = await fetchWithTimeout('/api/settings/integrations/knuspr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: knusprEmail(), password: knusprPassword() }),
@@ -226,7 +226,7 @@ export function Settings() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/settings/integrations/knuspr/sync', { method: 'POST' });
+      const res = await fetchWithTimeout('/api/settings/integrations/knuspr/sync', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         showMessage('success', `Sync complete — ${data.importedCount} new orders imported`);
@@ -245,7 +245,7 @@ export function Settings() {
     if (!confirm('Disconnect Knuspr? Your imported order history will remain.')) return;
     setDisconnecting(true);
     try {
-      const res = await fetch('/api/settings/integrations/knuspr', { method: 'DELETE' });
+      const res = await fetchWithTimeout('/api/settings/integrations/knuspr', { method: 'DELETE' });
       if (res.ok) {
         showMessage('success', 'Knuspr disconnected');
         await fetchIntegrations();
@@ -257,43 +257,36 @@ export function Settings() {
     }
   };
 
-  /** Ask the sidecar for a capture and keep polling while it is pending. */
+  /** Ask the sidecar for a capture; the phone answers on its own schedule. */
   const requestCapture = async () => {
     setEdekaBusy(true);
     try {
-      const res = await fetch('/api/easyshopper/sync/request', { method: 'POST' });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        showMessage('error', body.error ?? 'Could not request a capture');
+      const result = await requestCaptureSync();
+      if (!result.ok) {
+        showMessage('error', result.error ?? 'Could not request a capture');
         return;
       }
       await loadSyncStatus();
-      // The phone is a separate device: "waiting" is a real state, and it ends
-      // only when the sidecar uploads. Poll so the label cannot lie.
-      for (let attempt = 0; attempt < 30 && !disposed; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-        await loadSyncStatus();
-        if (!sync()?.requestedAt) break;
-      }
-      if (!sync()?.requestedAt && !disposed) showMessage('success', 'Purchase history updated');
-    } catch {
-      showMessage('error', 'Network error while requesting a capture');
+      showMessage('success', 'Capture requested — waiting for the phone');
     } finally {
-      setEdekaBusy(false);
+      if (!disposed) setEdekaBusy(false);
+    }
+
+    // Poll for a bounded while after the request, but never hold the button in
+    // a spinner: the phone is a separate device and may answer much later.
+    for (let attempt = 0; attempt < 15 && !disposed; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await loadSyncStatus();
+      if (!sync()?.requestedAt) {
+        if (!disposed) showMessage('success', 'Purchase history updated');
+        break;
+      }
     }
   };
 
-  const captureState = (): 'waiting' | 'connected' | 'offline' => {
-    if (sync()?.requestedAt) return 'waiting';
-    const days = daysSince(sync()?.lastImportAt);
-    return days === null || days > STALE_CAPTURE_DAYS ? 'offline' : 'connected';
-  };
+  const captureState = () => captureStateOf(sync());
 
-  const captureLabel = () => {
-    if (captureState() === 'waiting') return 'waiting for phone';
-    if (captureState() === 'connected') return 'phone connected';
-    return 'phone not connected';
-  };
+  const captureLabelText = () => captureLabel(captureState());
 
   const addWindow = () => setWindows((previous) => [...previous, { from: '', to: '', city: '' }]);
 
@@ -348,6 +341,27 @@ export function Settings() {
         >
           <span>{message()!.text}</span>
         </div>
+      </Show>
+
+      {/* First run: neither source has ever reported anything. The cards below
+          are the fix, so the action goes to them rather than to another page. */}
+      <Show when={!loading() && !knusprIntegration() && (sync()?.sessions ?? 0) === 0}>
+        <StatePanel
+          compact
+          tone="info"
+          icon={<ShoppingCart size={18} />}
+          title="No store connected yet"
+          body="Connect Knuspr below for deliveries, or run the capture app on your phone for EDEKA receipts. Each card reports its own state."
+          hint="A connection only reads your history; nothing is ordered on your behalf."
+          action={{
+            label: 'Set up Knuspr',
+            onClick: () => {
+              const field = document.getElementById('knuspr-email');
+              field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              field?.focus();
+            },
+          }}
+        />
       </Show>
 
       <div class="card rounded-2xl border border-base-300 bg-base-100 shadow-xl">
@@ -479,18 +493,19 @@ export function Settings() {
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-lg font-semibold">EDEKA</span>
                     <span
-                      class={`badge badge-sm ${
+                      class={`badge badge-sm gap-1 ${
                         captureState() === 'waiting'
-                          ? 'badge-warning gap-1'
+                          ? 'badge-warning'
                           : captureState() === 'connected'
-                            ? 'badge-success gap-1'
+                            ? 'badge-success'
                             : 'badge-ghost'
                       }`}
                     >
+                      {/* A request in flight is a queued message, not a download: no spinner. */}
                       <Show when={captureState() === 'waiting'}>
-                        <span class="loading loading-spinner loading-xs" />
+                        <Smartphone size={11} />
                       </Show>
-                      {captureLabel()}
+                      {captureLabelText()}
                     </span>
                   </div>
                   <div class="text-xs opacity-85">
@@ -501,34 +516,44 @@ export function Settings() {
 
               <p class="text-sm opacity-70">
                 <Show
-                  when={sync()?.lastImportAt}
-                  fallback={
-                    <Show
-                      when={sync()?.requestedAt}
-                      fallback="No capture yet. Run the capture app on your phone to import a receipt."
-                    >
-                      The request is queued. It lands here as soon as the phone uploads its history.
-                    </Show>
-                  }
+                  when={captureState() !== 'waiting'}
+                  fallback="The capture request is queued. The phone has not uploaded yet, and this page cannot make it do so — the request stays queued until the capture app runs."
                 >
-                  {(lastImport) => (
-                    <>
-                      Last capture {relativeDays(lastImport())} · {sync()?.sessions ?? 0} receipts saved.
-                      <Show when={captureState() === 'offline'}>
-                        {' '}
-                        Nothing arrived for over {STALE_CAPTURE_DAYS} days — check that the capture
-                        app still runs on the phone.
-                      </Show>
-                    </>
-                  )}
+                  <Show
+                    when={sync()?.lastImportAt}
+                    fallback="No capture yet. Run the capture app on your phone to import a receipt."
+                  >
+                    {(lastImport) => (
+                      <>
+                        Last capture {relativeDays(lastImport())} · {sync()?.sessions ?? 0} receipts
+                        saved.
+                        <Show when={captureState() === 'offline'}>
+                          {' '}
+                          Nothing arrived for over {STALE_CAPTURE_DAYS} days — check that the
+                          capture app still runs on the phone.
+                        </Show>
+                      </>
+                    )}
+                  </Show>
                 </Show>
               </p>
 
-              <button class="btn btn-outline btn-sm gap-2" onClick={requestCapture} disabled={edekaBusy()}>
+              <button
+                class="btn btn-outline btn-sm gap-2"
+                onClick={() => void requestCapture()}
+                disabled={edekaBusy()}
+                title={
+                  edekaBusy()
+                    ? 'The request is on its way to the server'
+                    : captureState() === 'waiting'
+                      ? 'Ask again; a queued request stays queued until the phone uploads'
+                      : 'Ask the phone sidecar for a capture'
+                }
+              >
                 <Show when={edekaBusy()} fallback={<RefreshCw size={14} />}>
                   <span class="loading loading-spinner loading-xs" />
                 </Show>
-                {captureState() === 'waiting' ? 'Waiting for phone…' : 'Request a capture'}
+                {captureState() === 'waiting' ? 'Request again' : 'Request a capture'}
               </button>
               <p class="text-[11px] opacity-55">
                 A capture is a request to the sidecar, not an instant refresh. Until the phone
@@ -610,7 +635,13 @@ export function Settings() {
                 No away windows. Your home city applies every day.
               </p>
             </Show>
-            <For each={windows()}>
+            {/*
+              `Index`, not `For`: editing a city builds a new row object, and
+              `For` keys by object identity, so every keystroke would recreate
+              the input and steal the focus after one character. `Index` keys by
+              position, so the fields survive the edit.
+            */}
+            <Index each={windows()}>
               {(row, index) => (
                 <div class="flex flex-wrap items-end gap-2 rounded-xl border border-base-300 p-2">
                   <div class="form-control">
@@ -620,8 +651,8 @@ export function Settings() {
                     <input
                       type="date"
                       class="input input-bordered input-sm"
-                      value={row.from}
-                      onInput={(event) => updateWindow(index(), 'from', event.currentTarget.value)}
+                      value={row().from}
+                      onInput={(event) => updateWindow(index, 'from', event.currentTarget.value)}
                     />
                   </div>
                   <div class="form-control">
@@ -631,8 +662,8 @@ export function Settings() {
                     <input
                       type="date"
                       class="input input-bordered input-sm"
-                      value={row.to}
-                      onInput={(event) => updateWindow(index(), 'to', event.currentTarget.value)}
+                      value={row().to}
+                      onInput={(event) => updateWindow(index, 'to', event.currentTarget.value)}
                     />
                   </div>
                   <div class="form-control min-w-[8rem] flex-1">
@@ -642,20 +673,20 @@ export function Settings() {
                     <input
                       class="input input-bordered input-sm w-full"
                       placeholder="e.g. Berlin"
-                      value={row.city}
-                      onInput={(event) => updateWindow(index(), 'city', event.currentTarget.value)}
+                      value={row().city}
+                      onInput={(event) => updateWindow(index, 'city', event.currentTarget.value)}
                     />
                   </div>
                   <button
                     class="btn btn-ghost btn-sm btn-square text-error"
-                    onClick={() => removeWindow(index())}
+                    onClick={() => removeWindow(index)}
                     aria-label="Remove away window"
                   >
                     <Trash2 size={15} />
                   </button>
                 </div>
               )}
-            </For>
+            </Index>
           </div>
 
           <Show when={locationError()}>
@@ -700,7 +731,7 @@ export function Settings() {
             )}
           </Show>
 
-          <div class="flex justify-end">
+          <div class="flex flex-col items-end gap-1">
             <button
               class="btn btn-primary btn-sm gap-2"
               onClick={saveLocation}
@@ -711,6 +742,11 @@ export function Settings() {
               </Show>
               Save location
             </button>
+            <Show when={location.loading() && !savingLocation()}>
+              <p class="text-[11px] opacity-60">
+                Reading your saved location first; saving unlocks when it arrives.
+              </p>
+            </Show>
           </div>
         </div>
       </div>
