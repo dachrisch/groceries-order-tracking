@@ -75,7 +75,10 @@ narrow.
    model candidate *names* with positional indices only — an index outside that
    line's menu is discarded and the deterministic score stands — so it can point at
    a product but never introduce one. The backend owns the catalogue ids and the
-   rule score. Local OCR is gone: nothing in the repo reads a photo offline any more.
+   rule score. Struck-through items are the shopper's own ticks: they are left out of the
+   lines and counted, and a list where every item is ticked is a successful read with
+   nothing to add — not an unreadable photo. Local OCR is gone: nothing in the repo reads
+   a photo offline any more.
 
 ## Environment
 

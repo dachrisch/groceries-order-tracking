@@ -32,6 +32,8 @@ export interface ExtractJob {
   createdAt: number;
   finishedAt?: number;
   lines?: ListLine[];
+  /** Struck-through items the model skipped: > 0 with no lines means "all bought". */
+  ticked?: number;
   /** `provider:id` that answered, so a paid fallback is visible. */
   model?: string;
   /** True when the curated paid tier answered instead of a free model. */
@@ -145,6 +147,7 @@ export function startExtractJob(
     try {
       const extracted = await withDeadline(extractListLines(imageBase64), deadlineMs);
       job.lines = extracted.lines;
+      job.ticked = extracted.ticked;
       job.model = extracted.model;
       job.paid = extracted.paid;
       job.status = 'done';

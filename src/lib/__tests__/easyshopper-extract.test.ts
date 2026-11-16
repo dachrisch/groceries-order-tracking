@@ -11,7 +11,7 @@ vi.mock('../opencode-client', async (importOriginal) => {
 });
 
 import { NOT_AN_ANSWER, runPrompt } from '../opencode-client';
-import { extractListLines, normalizeExtractedLines } from '../easyshopper/extract';
+import { extractListLines, normalizeExtractedLines, normalizeTickedCount } from '../easyshopper/extract';
 
 const mockRunPrompt = vi.mocked(runPrompt);
 
@@ -152,6 +152,7 @@ describe('extractListLines', () => {
         { text: 'Milch 1,5', quantity: 2 },
         { text: 'Brot', quantity: 1 },
       ],
+      ticked: 0,
       model: 'opencode:mimo-v2.6-flash-free',
       paid: false,
     });
@@ -185,6 +186,8 @@ describe('extractListLines', () => {
     expect(accept?.({ lines: [] })).toBe(false);
     expect(accept?.({ lines: ['---'] })).toBe(false);
     expect(accept?.({ lines: [{ text: 'Brot', quantity: 2 }] })).toBe(true);
+    // A read that found every item ticked off is an answer, not an unreadable photo.
+    expect(accept?.({ lines: [], ticked: 4 })).toBe(true);
   });
 
   it('reports a paid fallback as the answering model', async () => {
@@ -195,6 +198,7 @@ describe('extractListLines', () => {
 
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).resolves.toEqual({
       lines: [{ text: 'Butter', quantity: 1 }],
+      ticked: 0,
       model: 'opencode-go:gpt-6-luna',
       paid: true,
     });
@@ -263,20 +267,38 @@ describe('extractListLines', () => {
     mockRunPrompt.mockRejectedValueOnce(new Error('no vision-capable opencode model is available'));
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/vision-capable/);
   });
+
+  it('reports an all-ticked list as nothing to add, not as a failure', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ lines: [], ticked: 4 });
+
+    await expect(extractListLines('data:image/jpeg;base64,AAAA')).resolves.toMatchObject({
+      lines: [],
+      ticked: 4,
+    });
+  });
+
+  it('treats a garbage ticked count as none', () => {
+    expect(normalizeTickedCount(undefined)).toBe(0);
+    expect(normalizeTickedCount({ ticked: '4' })).toBe(0);
+    expect(normalizeTickedCount({ ticked: -1 })).toBe(0);
+    expect(normalizeTickedCount({ ticked: 999 })).toBe(0);
+    expect(normalizeTickedCount({ ticked: 3 })).toBe(3);
+  });
 });
 
 describe('the extraction prompt', () => {
-  it('keeps struck-through items instead of calling the list empty', async () => {
-    // A real "Notizen" pad had every item ticked off with a pen stroke. The prompt used
-    // to say "ignore crossed-out words", so a compliant model answered {"lines":[]} and
-    // the shopper was told their readable list was unreadable.
+  it('skips struck-through items and asks the model to count them', async () => {
+    // On a shopping list a pen stroke means "already in the trolley", so those items are
+    // deliberately left out. What must not happen is the two empty answers — "all bought"
+    // and "could not read" — being indistinguishable, which is what told a shopper their
+    // readable list was unreadable.
     mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
 
     await extractListLines('data:image/jpeg;base64,AAAA');
 
     const prompt = String(mockRunPrompt.mock.calls[0][0]);
-    expect(prompt).toMatch(/struck-through items too/i);
-    expect(prompt).not.toMatch(/crossed-out words/i);
+    expect(prompt).toMatch(/already ticked off/i);
+    expect(prompt).toMatch(/"ticked"/i);
   });
 
   it('does not put a real list into the JSON example', async () => {
