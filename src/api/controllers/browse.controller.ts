@@ -1,16 +1,20 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
+import { z } from 'zod';
 import BotSettings, { BOT_SETTINGS_DEFAULTS } from '../../models/BotSettings';
 import Integration, { IntegrationProvider } from '../../models/Integration';
 import Order from '../../models/Order';
+import ProductLink from '../../models/ProductLink';
 import PurchaseSession from '../../models/PurchaseSession';
 import { getWeeklyConsumption } from '../../lib/bot/consumption';
 import { getLocationSettings } from '../../lib/bot/location-settings';
-import { aggregateEdeka, edekaDue } from '../../lib/product-stats';
+import { aggregateEdeka, edekaDue, edekaStat } from '../../lib/product-stats';
 import { getProductGroupMap } from '../../lib/bot/product-groups';
+import { resolveLinks, type ProductLinkSource } from '../../lib/product-links';
 import { availability, derivedDestination, resolveLocation, type ProductStat } from '../../lib/providers';
 import { toCandidate } from '../../lib/easyshopper/match';
 import { ensureSession } from './easyshopper.controller';
+import { formatZodError } from '../utils';
 import '../utils';
 
 /**
@@ -49,6 +53,11 @@ interface BrowseItem {
    * "last bought <date>" instead of a cadence for these.
    */
   outsideWindow: boolean;
+  /**
+   * Set when an EDEKA bucket was folded into this row. Display only: no number on
+   * this item is derived from the EDEKA side, and the shopper can unlink it.
+   */
+  linked?: { confidence: number; source: ProductLinkSource };
 }
 
 /** A receipt row as the model stores it; annotated so `lean()` arrays stay typed. */
@@ -75,6 +84,8 @@ interface LifetimeGroup {
   name: string;
   image: string | null;
   productId: number;
+  /** Every product id of the group, so a manual link survives an id rotation. */
+  productIds: number[];
   /** Every purchase ever, not just the ones inside the rate window. */
   purchases: number;
   qty: number;
@@ -131,6 +142,7 @@ async function loadKnusprLifetime(userId: string): Promise<LifetimeGroup[]> {
         name: row.name,
         image: row.image ?? null,
         productId: row._id,
+        productIds: group?.productIds?.length ? [...group.productIds] : [row._id],
         purchases: row.purchases,
         qty: row.qty,
         lastBought: row.lastBought,
@@ -141,6 +153,7 @@ async function loadKnusprLifetime(userId: string): Promise<LifetimeGroup[]> {
 
     existing.purchases += row.purchases;
     existing.qty += row.qty;
+    if (!existing.productIds.includes(row._id)) existing.productIds.push(row._id);
     if (row.avgPrice !== null) {
       existing.avgPrice = existing.avgPrice === null
         ? Number(row.avgPrice.toFixed(2))
@@ -162,10 +175,11 @@ async function loadKnusprLifetime(userId: string): Promise<LifetimeGroup[]> {
 export async function handleGetProducts(req: Request, res: Response) {
   try {
     const now = new Date();
-    const [location, settingsDoc, sessions] = await Promise.all([
+    const [location, settingsDoc, sessions, manualLinks] = await Promise.all([
       getLocationSettings(req.userId),
       BotSettings.findOne({ userId: req.userId }).lean(),
       PurchaseSession.find({ userId: req.userId }).sort({ purchasedAt: 1 }).lean(),
+      ProductLink.find({ userId: req.userId }).lean(),
     ]);
 
     const horizonDays = settingsDoc?.horizonDays ?? BOT_SETTINGS_DEFAULTS.horizonDays;
@@ -204,6 +218,27 @@ export async function handleGetProducts(req: Request, res: Response) {
 
     const items: BrowseItem[] = [];
 
+    // Manual corrections and automatic name matches, resolved on every read. A
+    // manual row beats the matcher (confidence 1); an automatic one is never
+    // stored, so it disappears with the receipts that justified it.
+    const links = resolveLinks(
+      lifetime.map((group) => ({
+        productId: group.productId,
+        productIds: group.productIds,
+        name: group.name,
+      })),
+      edekaStats.values(),
+      manualLinks.map((link) => ({
+        knusprProductId: link.knusprProductId,
+        edekaTextKey: link.edekaTextKey,
+        confidence: link.confidence,
+      }))
+    );
+
+    // An EDEKA bucket that backs a linked row is shown there instead of standing
+    // alone; every other bucket keeps its own row exactly as before.
+    const mergedTextKeys = new Set<string>();
+
     for (const group of lifetime) {
       const rate = inWindow.get(group.groupKey);
       const stat: ProductStat = {
@@ -215,8 +250,10 @@ export async function handleGetProducts(req: Request, res: Response) {
         lastBought: group.lastBought,
         avgPrice: rate ? Number(rate.avgPrice.toFixed(2)) : group.avgPrice,
       };
+      const link = links.get(group.productId) ?? null;
+      const linkedBucket = link ? edekaStats.get(link.edekaTextKey) ?? null : null;
 
-      items.push({
+      const browseItem: BrowseItem = {
         id: `knuspr:${group.groupKey}`,
         name: group.name,
         groupLabel: group.groupLabel,
@@ -229,13 +266,31 @@ export async function handleGetProducts(req: Request, res: Response) {
           price: stat.avgPrice,
           productId: group.productId,
         }],
+        /* `due` and `stockDays` stay Knuspr-only: an EDEKA cadence describes a
+           different shop run and must never make a delivery look due. */
         due: Boolean(rate?.due) && knusprReach.available,
         stockDays: rate ? Math.round(rate.stockDays * 10) / 10 : null,
         outsideWindow: rate === undefined,
-      });
+      };
+
+      if (link && linkedBucket) {
+        mergedTextKeys.add(linkedBucket.textKey);
+        browseItem.statsByProvider.edeka = edekaStat(linkedBucket);
+        browseItem.offers.push({
+          provider: 'edeka',
+          available: edekaReach.available,
+          reason: edekaReach.reason,
+          price: linkedBucket.lastPrice ?? linkedBucket.avgPrice,
+          textKey: linkedBucket.textKey,
+        });
+        browseItem.linked = { confidence: link.confidence, source: link.source };
+      }
+
+      items.push(browseItem);
     }
 
     for (const stat of edekaStats.values()) {
+      if (mergedTextKeys.has(stat.textKey)) continue;
       items.push({
         id: `edeka:${stat.textKey}`,
         name: stat.brand ? `${stat.brand} ${stat.name}` : stat.name,
@@ -285,6 +340,47 @@ export async function handleGetProducts(req: Request, res: Response) {
   } catch (error) {
     console.error('product list failed:', error);
     res.status(500).json({ error: 'failed to read products' });
+  }
+}
+
+const productLinkBodySchema = z.object({
+  knusprProductId: z.number().int().positive(),
+  /** `null` removes the correction, so the row falls back to the name matcher. */
+  edekaTextKey: z.string().trim().min(1).max(200).nullable(),
+});
+
+/**
+ * PUT /api/product-links — record or clear a manual cross-store correction.
+ *
+ * This is the "matched by name · change" action. It only ever writes the display
+ * link: no rate, stock or "due" flag reads `ProductLink`, and the learning code
+ * is lint-forbidden from importing it.
+ */
+export async function handleUpdateProductLink(req: Request, res: Response) {
+  const parsed = productLinkBodySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
+
+  const { knusprProductId, edekaTextKey } = parsed.data;
+
+  try {
+    if (edekaTextKey === null) {
+      await ProductLink.deleteOne({ userId: req.userId, knusprProductId });
+      return res.json({ knusprProductId, link: null });
+    }
+
+    await ProductLink.findOneAndUpdate(
+      { userId: req.userId, knusprProductId },
+      { $set: { edekaTextKey, confidence: 1, source: 'manual' } },
+      { upsert: true }
+    );
+
+    return res.json({
+      knusprProductId,
+      link: { edekaTextKey, confidence: 1, source: 'manual' as const },
+    });
+  } catch (error) {
+    console.error('product link write failed:', error);
+    return res.status(500).json({ error: 'failed to save the product link' });
   }
 }
 

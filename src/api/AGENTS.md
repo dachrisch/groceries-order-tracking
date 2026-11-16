@@ -39,6 +39,7 @@ Merged reads (both sources, `controllers/browse.controller.ts`,
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/products` | merged list; `statsByProvider` is keyed per provider and never averaged, `?due=1`, `?source=knuspr\|edeka` |
+| PUT | `/api/product-links` | `{ knusprProductId, edekaTextKey \| null }` — a manual cross-store correction; `null` deletes it |
 | GET | `/api/search?q=` | own history (instant) + EDEKA `searchMeta` (25 cap, `truncated`); `knuspr.state` is `later` until a catalogue search exists. Needs at least 2 characters |
 | GET | `/api/activity` | deliveries and in-store runs as one newest-first stream; `?from&to&provider&limit`, totals per source over the returned events |
 | GET | `/api/activity/:id` | one entry with lines; the id is `knuspr:<orderId>` or `edeka:<sessionId>` |
@@ -49,6 +50,32 @@ The merged read model lives in `src/lib/purchases.ts` (events) and
 `src/lib/providers.ts` (location and reach). `src/lib/product-stats.ts` builds
 one stat per provider. Search never calls `ensureSession` for a user with no
 integration row: typing a query must not sign an account up.
+
+### The cross-store link is display only
+
+`GET /api/products` can show "you also buy this at EDEKA" on a Knuspr row: the
+EDEKA `ProductStat` and offer are attached to that item and the bucket no longer
+appears as its own `edeka:` row. That is the *only* effect.
+
+- Two mechanisms, deliberately separate. A manual correction is a
+  `ProductLink` row (`{ userId, knusprProductId, edekaTextKey, confidence,
+  source: 'manual' }`, unique on `(userId, knusprProductId)`) written by
+  `PUT /api/product-links`; `edekaTextKey: null` removes it. An automatic match
+  is computed on every read by `resolveLinks` (`src/lib/product-links.ts`) from
+  `normalizeName` / `nameSimilarity` / `sizeCompatible`, accepted only at
+  similarity ≥ 0.8 with compatible pack sizes, and **never stored**. Below the
+  floor the row stays unlinked; the shopper can still link it by hand. A manual
+  row beats an automatic one and carries confidence 1.
+- One EDEKA bucket backs at most one Knuspr row, so the same receipt row cannot
+  appear twice.
+- **Nothing on the row is derived from the EDEKA side.** `due` and `stockDays`
+  stay Knuspr-only: an in-store cadence describes a different shop run and would
+  double-count a week that had both. No rate, stock, occasion or anything the bot
+  learned may read a `ProductLink` — `src/lib/bot/**` is lint-forbidden from
+  importing the model (invariant D5), and
+  `src/lib/__tests__/product-links.test.ts` asserts that
+  `getWeeklyConsumption` output is byte-identical before and after a link is
+  stored.
 
 Cart: `POST /api/cart/add` (thin wrapper around `addItems` in
 `src/lib/knuspr-cart.ts`).
@@ -130,6 +157,9 @@ detect occasions → match bot runs to orders → tag occasion orders.
   `botRunItemCount`, `botRunDeliveredCount`, `occasionIds[]`.
 - `Integration` — connected providers and last sync time.
 - `ProductGroup` — `{ userId, key, label, productIds[], manual }`.
+- `ProductLink` — a manual cross-store display correction
+  (`{ userId, knusprProductId, edekaTextKey, confidence, source: 'manual' }`).
+  Never read by learning code; see "The cross-store link is display only".
 - `Occasion` — learned occasion with per-serving items and source orders.
 - `BotRun` — exactly what the bot added and its delivery/undo status, plus
   `destination` (`knuspr-cart` default, `edeka-list`, `checklist`) and the

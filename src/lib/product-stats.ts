@@ -51,6 +51,21 @@ export interface EdekaProductAgg extends ProductStat {
 }
 
 /**
+ * The plain stat half of an EDEKA bucket, for `statsByProvider.edeka` on a merged
+ * row. Display only: the caller attaches it next to a Knuspr stat and still keeps
+ * the two apart, which is what makes "a rate is always attributable" mechanical.
+ */
+export function edekaStat(agg: EdekaProductAgg): ProductStat {
+  return {
+    provider: 'edeka',
+    purchases: agg.purchases,
+    cadenceDays: agg.cadenceDays,
+    lastBought: agg.lastBought,
+    avgPrice: agg.avgPrice,
+  };
+}
+
+/**
  * Collapse in-store receipts into one bucket per `productKey()`.
  *
  * `purchases` counts trips, not rows: buying the same milk twice in one run is

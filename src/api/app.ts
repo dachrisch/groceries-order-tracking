@@ -10,7 +10,7 @@ import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGet
 
 import { handleGetInventory } from './controllers/inventory.controller';
 import { handleGetLocation, handleUpdateLocation } from './controllers/location.controller';
-import { handleGetProducts, handleSearch } from './controllers/browse.controller';
+import { handleGetProducts, handleSearch, handleUpdateProductLink } from './controllers/browse.controller';
 import { handleGetActivity, handleGetActivityEntry } from './controllers/activity.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
@@ -124,6 +124,9 @@ app.get('/api/products/:id/price', auth, handleGetProductPrice);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
 app.get('/api/products', auth, handleGetProducts);
+// The cross-store link is a correction surface, not a merge: it changes what the
+// list displays and never what the bot learned.
+app.put('/api/product-links', auth, handleUpdateProductLink);
 app.get('/api/search', auth, handleSearch);
 app.get('/api/activity', auth, handleGetActivity);
 app.get('/api/activity/:id', auth, handleGetActivityEntry);
