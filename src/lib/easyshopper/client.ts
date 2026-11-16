@@ -357,6 +357,27 @@ export class EasyShopperClient {
   }
 
   /**
+   * Follow another account's shopping list, which is how the app's own Aztec share
+   * code works: the scanned payload is the owner's `userGuid`, and the follower's list
+   * then *becomes* the owner's (their own items are parked and return on unfollow).
+   *
+   * Verified live: 200 and the owner's items appear; unfollow restores the previous list.
+   */
+  async followByUserGuid(token: string, ownerUserGuid: string): Promise<void> {
+    await this.request('POST', '/v4/shoppingList/follow', {
+      body: { userGuid: ownerUserGuid },
+      authorization: `Bearer ${token}`,
+    });
+  }
+
+  async unfollowByUserGuid(token: string, ownerUserGuid: string): Promise<void> {
+    await this.request('POST', '/v4/shoppingList/unfollow', {
+      body: { userGuid: ownerUserGuid },
+      authorization: `Bearer ${token}`,
+    });
+  }
+
+  /**
    * Mint a share link — the only supported way to hand a list to another account.
    *
    * Verified live: the endpoint answers `text/plain` with the full invite URL

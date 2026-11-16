@@ -400,6 +400,26 @@ export async function handleSyncStatus(req: Request, res: Response) {
   }
 }
 
+/**
+ * GET /api/easyshopper/share-code — what the phone scans.
+ *
+ * The app's "Share Your Shopping List" screen shows an Aztec barcode whose payload is
+ * the owner's `userGuid`; the follower's scanner then calls
+ * `POST /v4/shoppingList/follow {userGuid}`. There is no link and no expiry on this
+ * path, so it is the one to use.
+ */
+export async function handleShareCode(req: Request, res: Response) {
+  const key = req.derivedKey;
+  if (!key) return res.status(401).json({ error: 'Session key missing — please log in again' });
+  try {
+    const { session, storeGuid } = await ensureSession(req.userId, key);
+    res.json({ userGuid: session.userGuid, storeGuid, format: 'aztec' });
+  } catch (err: unknown) {
+    console.error('EASY Shopper share code failed:', err);
+    res.status(502).json({ error: err instanceof Error ? err.message : 'share code failed' });
+  }
+}
+
 /** Share links live 24 h, so one is minted on demand rather than stored. */
 const SHARE_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 

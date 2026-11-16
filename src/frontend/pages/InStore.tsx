@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
 import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert, Info } from 'lucide-solid';
-import QRCode from 'qrcode';
+import { aztecSvg } from '../lib/aztec';
 import {
   FULL_LIST_MESSAGE,
   listLinesFromText,
@@ -167,7 +167,8 @@ export function InStore() {
   const [readPaid, setReadPaid] = createSignal(false);
   const [plan, setPlan] = createSignal<Plan | null>(null);
   const [shareLink, setShareLink] = createSignal<string | null>(null);
-  const [qr, setQr] = createSignal<string | null>(null);
+  /** The app shares by userGuid (Aztec barcode); this is what the phone scans. */
+  const [shareCode, setShareCode] = createSignal<{ path: string; size: number } | null>(null);
   const [busy, setBusy] = createSignal<'plan' | 'create' | 'sync' | 'share' | 'extract' | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [syncStatus, setSyncStatus] = createSignal<SyncStatus | null>(null);
@@ -219,6 +220,7 @@ export function InStore() {
   onMount(() => {
     void loadPurchases();
     void loadStatus();
+    void loadShareCode();
   });
 
   const requestSync = async () => {
@@ -243,6 +245,17 @@ export function InStore() {
     }
   };
 
+  const loadShareCode = async () => {
+    try {
+      const res = await fetch('/api/easyshopper/share-code');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.userGuid) setShareCode(aztecSvg(String(data.userGuid)));
+    } catch {
+      /* the link path still renders */
+    }
+  };
+
   const refreshShareLink = async () => {
     setBusy('share');
     setError(null);
@@ -252,7 +265,6 @@ export function InStore() {
       if (!res.ok) throw new Error(data.error ?? 'could not mint a share link');
       setShareLink(data.shareLink);
       setExpiresAt(data.expiresAt ?? null);
-      setQr(await QRCode.toDataURL(String(data.shareLink), { width: 320, margin: 1 }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'could not mint a share link');
     } finally {
@@ -336,7 +348,7 @@ export function InStore() {
           // The matches and the share card were built from the old lines.
           setPlan(null);
           setShareLink(null);
-          setQr(null);
+          setShareCode(null);
           setExpiresAt(null);
           return;
         }
@@ -356,7 +368,7 @@ export function InStore() {
     setBusy('plan');
     setError(null);
     setShareLink(null);
-    setQr(null);
+    setShareCode(null);
     try {
       const { ok, status, data } = await postJson<Plan>('/api/easyshopper/list/plan', body());
       if (!ok) throw new Error(listRefusalMessage(status, data.error, 'planning failed'));
@@ -381,7 +393,6 @@ export function InStore() {
       setPlan(data.plan);
       setShareLink(data.shareLink ?? null);
       setExpiresAt(null);
-      if (data.shareLink) setQr(await QRCode.toDataURL(String(data.shareLink), { width: 320, margin: 1 }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'list creation failed');
     } finally {
@@ -721,41 +732,72 @@ export function InStore() {
         )}
       </Show>
 
-      <Show when={shareLink()}>
-        {(link) => (
-          <section class="card bg-base-100 shadow">
-            <div class="card-body gap-4 items-start">
-              <h2 class="card-title text-base">
-                <Share2 class="w-4 h-4" /> 3 · Share with your phone
-              </h2>
-              <p class="text-sm opacity-70">
-                Scan with the phone's camera — it opens EASY Shopper and offers to follow the list.
-                Links expire after 24 hours, so mint a fresh one when you are about to use the list.
-              </p>
-              <Show when={expiresAt()}>
-                <span class="badge badge-warning badge-sm">
-                  valid until {new Date(expiresAt()!).toLocaleString()}
-                </span>
-              </Show>
-              <Show when={qr()}>
-                <img src={qr()!} alt="Share link QR code" class="rounded-box bg-white p-2" />
-              </Show>
-              <div class="flex w-full flex-wrap items-center gap-2">
-                <input class="input input-bordered input-sm flex-1 font-mono text-xs" readonly value={link()} />
-                <button class="btn btn-sm btn-outline gap-2" onClick={() => navigator.clipboard.writeText(link())}>
-                  <RefreshCw class="w-3.5 h-3.5" /> Copy
-                </button>
-                <button class="btn btn-sm btn-outline gap-2" disabled={busy() !== null} onClick={refreshShareLink}>
-                  <Show when={busy() === 'share'} fallback={<Share2 class="w-3.5 h-3.5" />}>
-                    <span class="loading loading-spinner loading-xs" />
-                  </Show>
-                  New link
-                </button>
+      <section class="card bg-base-100 shadow">
+        <div class="card-body gap-4 items-start">
+          <h2 class="card-title text-base">
+            <Share2 class="w-4 h-4" /> 3 · Share with your phone
+          </h2>
+          <p class="text-sm opacity-70">
+            In EASY Shopper: <strong>shopping list → ⋮ → “Connect to Another Shopping List”</strong> and
+            scan this code. Your phone then follows this list, so anything added here shows up there.
+          </p>
+
+          <Show
+            when={shareCode()}
+            fallback={
+              <span class="text-sm opacity-60">
+                No share code yet — it is created with the first list sync.
+              </span>
+            }
+          >
+            {(code) => (
+              <svg
+                class="rounded-box bg-white p-3"
+                width="260"
+                height="260"
+                viewBox={`0 0 ${code().size} ${code().size}`}
+                shape-rendering="crispEdges"
+                aria-label="Shopping list share code"
+              >
+                <rect width={code().size} height={code().size} fill="white" />
+                <path d={code().path} fill="black" />
+              </svg>
+            )}
+          </Show>
+
+          <p class="text-xs opacity-60">
+            Following swaps your phone's own list for this one; unfollowing in the app restores it.
+          </p>
+
+          <Show when={shareLink()}>
+            {(link) => (
+              <div class="w-full space-y-2 border-t border-base-300 pt-3">
+                <p class="text-xs opacity-60">
+                  Deep-link fallback (does not work in app 4.154.0 — its join screen still posts to the
+                  retired v4 endpoint):
+                </p>
+                <div class="flex w-full flex-wrap items-center gap-2">
+                  <input class="input input-bordered input-sm flex-1 font-mono text-xs" readonly value={link()} />
+                  <button class="btn btn-sm btn-outline gap-2" onClick={() => navigator.clipboard.writeText(link())}>
+                    <RefreshCw class="w-3.5 h-3.5" /> Copy
+                  </button>
+                  <button class="btn btn-sm btn-outline gap-2" disabled={busy() !== null} onClick={refreshShareLink}>
+                    <Show when={busy() === 'share'} fallback={<Share2 class="w-3.5 h-3.5" />}>
+                      <span class="loading loading-spinner loading-xs" />
+                    </Show>
+                    New link
+                  </button>
+                </div>
+                <Show when={expiresAt()}>
+                  <span class="badge badge-warning badge-sm">
+                    valid until {new Date(expiresAt()!).toLocaleString()}
+                  </span>
+                </Show>
               </div>
-            </div>
-          </section>
-        )}
-      </Show>
+            )}
+          </Show>
+        </div>
+      </section>
     </div>
   );
 }

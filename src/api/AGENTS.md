@@ -47,6 +47,7 @@ EASY Shopper (in-store, `src/lib/easyshopper/AGENTS.md`):
 | GET | `/api/easyshopper/list/extract/:id` | poll one photo read: `{status, lines, model, paid, error}`; `404` `that photo read was lost — read the photo again` |
 | POST | `/api/easyshopper/list/plan` | search + opencode match (rules fallback), no writes; `lines` max 60 × 200 chars, `useModel: false` forces the rules plan |
 | POST | `/api/easyshopper/list/create` | write the plan to the account's list, then mint a share link (plans again, so the preview is advisory) |
+| GET | `/api/easyshopper/share-code` | the account's `userGuid` — payload of the Aztec code the phone scans |
 | POST | `/api/easyshopper/list/share` | (re)mint the 24 h invite link |
 | POST | `/api/easyshopper/sync/request` | flag a capture for the laptop sidecar |
 | GET | `/api/easyshopper/sync/status` | pending request, last import, last purchase |
