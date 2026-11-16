@@ -15,7 +15,9 @@ import { BotPanel } from './components/BotPanel';
 import { AskHub } from './components/AskHub';
 import { SearchOverlay } from './components/SearchOverlay';
 import { LocationChip } from './components/LocationChip';
+import { StatePanel } from './components/StatePanel';
 import { LocationProvider } from './lib/location';
+import { fetchWithTimeout, loadFailureCopy } from './lib/request';
 import { askHubOpen, openAsk, openSearch } from './lib/overlays';
 
 /**
@@ -41,36 +43,37 @@ export function App(props: { children?: JSX.Element }) {
   const [loading, setLoading] = createSignal(true);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const [version, setVersion] = createSignal('');
-  /**
-   * A session read that failed for a reason other than "not logged in". A 429 is
-   * the obvious case: treating it as a logout threw the shopper onto the login
-   * screen for browsing a little too fast.
-   */
-  const [sessionIssue, setSessionIssue] = createSignal<string | null>(null);
+  /** A failed session read is not a logout: it is a read that has to be retried. */
+  const [sessionError, setSessionError] = createSignal<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
+  const isAuthPage = () => ['/login', '/register'].includes(location.pathname);
+
   const fetchUser = async () => {
+    setLoading(true);
+    setSessionError(null);
     try {
-      const res = await fetch('/api/session');
+      const res = await fetchWithTimeout('/api/session');
       if (res.ok) {
-        const data = await res.json();
-        setUser(data as { name: string; email: string });
-        setSessionIssue(null);
+        setUser((await res.json()) as { name: string; email: string });
         return;
       }
+      // Only an answered "no" is a logout. A 429 or a 5xx means the question was
+      // not answered, and showing the login screen would look like lost state.
       if (res.status === 401 || res.status === 403) {
-        if (location.pathname !== '/login' && location.pathname !== '/register') navigate('/login');
+        setUser(null);
+        if (!isAuthPage()) navigate('/login');
         return;
       }
-      setSessionIssue(
+      setSessionError(
         res.status === 429
-          ? 'Slow down for a moment — the app asked too many times in a row. Nothing was lost.'
-          : 'Could not check your session. This is not a logout.'
+          ? 'The server asked us to slow down (too many requests in a short time).'
+          : `The server answered ${res.status} instead of your session.`
       );
-    } catch (e) {
-      console.error('Session fetch failed', e);
-      setSessionIssue('Could not reach the server. This is not a logout.');
+    } catch (failure) {
+      console.error('Session fetch failed', failure);
+      setSessionError(loadFailureCopy(failure));
     } finally {
       setLoading(false);
     }
@@ -111,11 +114,22 @@ export function App(props: { children?: JSX.Element }) {
     navigate('/login');
   };
 
-  const isAuthPage = () => ['/login', '/register'].includes(location.pathname);
-
   return (
     <div class="min-h-screen bg-base-200">
       <Show when={!loading()}>
+        <Show when={sessionError() && !isAuthPage()}>
+          <div class="flex min-h-screen items-center justify-center p-6">
+            <div class="w-full max-w-md">
+              <StatePanel
+                tone="error"
+                title="Could not check your session"
+                body={sessionError()!}
+                hint="This is not a logout — nothing was cleared. The session is read again as soon as you retry."
+                action={{ label: 'Try again', onClick: () => void fetchUser() }}
+              />
+            </div>
+          </div>
+        </Show>
         <Show when={user() && !isAuthPage()}>
           {/* Mounted with the session so the first read is authenticated. */}
           <LocationProvider>
@@ -369,31 +383,12 @@ export function App(props: { children?: JSX.Element }) {
         </Show>
 
         {/*
-          A route must not mount while the session is unknown: the pages assume a
-          user and a location context. The retry is the only way out of this state.
+          Only the auth pages render outside the provider. A destination page
+          mounted without a session would call `useLocation()` outside
+          `<LocationProvider>` and throw, which is what a slow or rate-limited
+          session read used to do.
         */}
-        <Show when={!user() && sessionIssue() && !isAuthPage()}>
-          <div class="flex h-screen items-center justify-center p-6">
-            <div class="card w-full max-w-md bg-base-100 shadow-xl">
-              <div class="card-body gap-3 text-center">
-                <h2 class="card-title justify-center text-base">Not now</h2>
-                <p class="text-sm opacity-75">{sessionIssue()}</p>
-                <button
-                  class="btn btn-primary"
-                  onClick={() => {
-                    setSessionIssue(null);
-                    setLoading(true);
-                    void fetchUser();
-                  }}
-                >
-                  Try again
-                </button>
-              </div>
-            </div>
-          </div>
-        </Show>
-
-        <Show when={(!user() && !sessionIssue()) || isAuthPage()}>{props.children}</Show>
+        <Show when={isAuthPage()}>{props.children}</Show>
       </Show>
 
       <Show when={loading()}>
