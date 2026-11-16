@@ -14,6 +14,7 @@ import { handleGetProducts, handleSearch } from './controllers/browse.controller
 import { handleGetActivity, handleGetActivityEntry } from './controllers/activity.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
+import { handleAddToBasket, handleUndoBasketRun } from './controllers/basket.controller';
 import {
   handleImportPurchases,
   handleGetPurchases,
@@ -129,6 +130,10 @@ app.get('/api/location', auth, handleGetLocation);
 app.put('/api/location', auth, handleUpdateLocation);
 app.get('/api/cart', auth, handleGetCart);
 app.post('/api/cart/add', auth, handleAddToCart);
+// One basket contract, two adapters: the destination decides whether the write
+// lands in the Knuspr cart, on the EDEKA list, or stays a local checklist.
+app.post('/api/basket/add', auth, handleAddToBasket);
+app.post('/api/basket/undo/:runId', auth, handleUndoBasketRun);
 
 app.post('/api/bot/message', auth, handleBotMessage);
 app.get('/api/bot/jobs/:id', auth, handleGetJob);

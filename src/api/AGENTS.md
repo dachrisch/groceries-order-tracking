@@ -53,6 +53,23 @@ integration row: typing a query must not sign an account up.
 Cart: `POST /api/cart/add` (thin wrapper around `addItems` in
 `src/lib/knuspr-cart.ts`).
 
+Basket (`controllers/basket.controller.ts`, contract in `src/lib/basket.ts`):
+one request shape for both stores, with the server — not the UI — deciding
+whether the destination is reachable.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/basket/add` | `{ destination, items[] }` → `{ status, runId, added, skipped: [{ name, reason }], total, destination, guardrail }`; `409` when the provider cannot reach the location or the guardrails would be exceeded (nothing is written) |
+| POST | `/api/basket/undo/:runId` | undo in the store the run was written to → `{ undone, restored }`; `409` when the run is no longer open, `502` when the store did not remove every line |
+
+`items[]` is `{ provider, productId?, textKey?, name, qty }`. A Knuspr cart
+line needs `productId`; an EDEKA line may be free text (`textKey` + `name`).
+Guardrails (`maxEuro`, `maxItems` from `getBotSettings`) apply to both
+adapters; the EDEKA list carries no prices, so only `maxItems` can refuse it.
+Availability is checked with `getLocationSettings` + `resolveLocation` +
+`availability()`, so a hand-made request for an unreachable destination never
+reaches a basket.
+
 EASY Shopper (in-store, `src/lib/easyshopper/AGENTS.md`):
 
 | Method | Path | Purpose |
@@ -114,7 +131,11 @@ detect occasions → match bot runs to orders → tag occasion orders.
 - `Integration` — connected providers and last sync time.
 - `ProductGroup` — `{ userId, key, label, productIds[], manual }`.
 - `Occasion` — learned occasion with per-serving items and source orders.
-- `BotRun` — exactly what the bot added and its delivery/undo status.
+- `BotRun` — exactly what the bot added and its delivery/undo status, plus
+  `destination` (`knuspr-cart` default, `edeka-list`, `checklist`) and the
+  `locationContext` (`source`, `city`, `country`) it was derived from. The item
+  schema keeps the Knuspr `productId` but also allows an EDEKA `textKey` and the
+  returned `listItemGuid`, so undo can address a list row.
 - `BotSettings` — per-user guardrails and `opencodeEnabled`, plus the location
   half (`homeCity`, `homeCountry`, `awayWindows`) read by `/api/location`.
 
@@ -122,3 +143,6 @@ detect occasions → match bot runs to orders → tag occasion orders.
 
 `npm test`. Use `setupTestDB`/`clearDB`/`teardownTestDB` from
 `__tests__/helpers.ts`. Mock `knuspr-cart`/`knuspr-auth` — no network calls.
+`basket.test.ts` mocks both baskets (Knuspr cart helpers and the EASY Shopper
+client) and covers the location gate, the guardrails, CSRF and undo. The lib
+counterpart is `src/lib/__tests__/basket.test.ts`.
