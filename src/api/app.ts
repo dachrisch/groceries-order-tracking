@@ -9,6 +9,9 @@ import { handleLogin, handleRegister, handleSession, handleLogout } from './cont
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
 
 import { handleGetInventory } from './controllers/inventory.controller';
+import { handleGetLocation, handleUpdateLocation } from './controllers/location.controller';
+import { handleGetProducts, handleSearch } from './controllers/browse.controller';
+import { handleGetActivity, handleGetActivityEntry } from './controllers/activity.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
 import {
@@ -118,6 +121,12 @@ app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/products/:id/price', auth, handleGetProductPrice);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
+app.get('/api/products', auth, handleGetProducts);
+app.get('/api/search', auth, handleSearch);
+app.get('/api/activity', auth, handleGetActivity);
+app.get('/api/activity/:id', auth, handleGetActivityEntry);
+app.get('/api/location', auth, handleGetLocation);
+app.put('/api/location', auth, handleUpdateLocation);
 app.get('/api/cart', auth, handleGetCart);
 app.post('/api/cart/add', auth, handleAddToCart);
 

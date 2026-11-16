@@ -158,7 +158,7 @@ export async function handleGetInsights(req: Request, res: Response) {
 }
 
 /** Load or create the integration's own anonymous device account. */
-async function ensureSession(
+export async function ensureSession(
   userId: string,
   key: Buffer,
   preferredStoreGuid?: string
