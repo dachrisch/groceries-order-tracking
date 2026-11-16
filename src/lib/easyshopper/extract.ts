@@ -24,41 +24,70 @@ export const NO_READABLE_LIST = 'the photo contained no readable shopping list';
  * then one curated paid model.
  *
  * A timeout is non-retryable in `runPrompt` (it moves straight to the next model), so a
- * chain where every model *hangs* costs (2 free × 38 s) + (1 paid × 38 s) = 114 s. That
- * fits inside the job's 120 s deadline (`extract-jobs.ts`) and the UI's 110 s poll
+ * chain where every model *hangs* costs (2 free × 45 s) + (1 paid × 45 s) = 135 s. That
+ * fits inside the job's 160 s deadline (`extract-jobs.ts`) and the UI's 150 s poll
  * budget, so the shopper is never told "took too long" while a chain is still spending.
  * The three attempts per free model only apply to *fast* transport errors, so they add
- * seconds, not minutes. A slow-but-working model that needs more than 38 s per attempt
- * is treated as hung by design: one unreadable photo is worth less than anyone's
- * patience.
+ * seconds, not minutes.
+ *
+ * 45 s is measured, not guessed: the one reliable free vision model answered this
+ * project's real test photo in 7-26 s, while the models that hang never answered at all
+ * inside two minutes. A model that needs longer than this is not slow, it is broken.
  */
-const VISION_TIMEOUT_MS = 38_000;
+const VISION_TIMEOUT_MS = 45_000;
 /**
  * The reservation: the free tier gets two models, the paid fallback exactly one. The
  * paid budget is separate from the free one, so two free failures still leave the
  * curated fallback reachable — that is the whole point of "free first, paid as the
- * fallback". Both together are the 114 s hang bound above.
+ * fallback". Both together are the 135 s hang bound above.
  */
 const VISION_FREE_MODELS = 2;
 const VISION_PAID_MODELS = 1;
 
+/**
+ * The wording here is load-bearing; a real photo on a ruled "Notizen" pad taught us why.
+ *
+ * 1. Items with a pen stroke through them are already in the trolley. Skipping them is
+ *    the point of photographing a ticked-off list — but the model must say how many it
+ *    skipped, because "nothing left to buy" and "I could not read this" used to collapse
+ *    into the same empty answer and the shopper was told their readable list was
+ *    unreadable.
+ * 2. The JSON example used to spell out "Milch 1,5"/"Brot". One paid model answered the
+ *    fixture photo by echoing that example instead of reading the image, which made a
+ *    model look verified when it was not. Placeholders cannot be mistaken for an answer.
+ */
 const PROMPT = [
   'The attached photo shows a handwritten shopping list for a German supermarket.',
-  'Transcribe every item as the shopper meant it. Keep product words, brand names and',
+  'Transcribe every open item as the shopper meant it. Keep product words, brand names and',
   'sizes exactly as written ("1,5", "500g", "1 l"). A leading quantity like "2x" or "3 ×"',
-  'belongs to the quantity field. Keep each line short: what to buy and its size, without',
-  'the packaging description. Ignore checkboxes, dates, page numbers, crossed-out words',
-  'and anything that is not a list item. Never invent an item that is not in the photo.',
-  'Return JSON only: {"lines":[{"text":"Milch 1,5","quantity":2},{"text":"Brot","quantity":1}]}',
+  'belongs to the quantity field.',
+  'An item with a line or strike drawn through it is already ticked off: leave it out of',
+  '"lines" and count it in "ticked". Also ignore non-items: checkboxes, dates, page numbers,',
+  'a printed heading such as "NOTIZEN", and decorative borders.',
+  'Keep each line short: what to buy and its size, without the packaging description.',
+  'Never invent an item that is not in the photo.',
+  'Return JSON only, using this shape (do not copy the placeholders):',
+  '{"lines":[{"text":"<item>","quantity":<number>}],"ticked":<number>}',
   'quantity is the number written before the item, or 1 when there is none.',
+  '"ticked" is how many struck-through items you left out, 0 when there were none.',
 ].join(' ');
 
 export interface ExtractedList {
   lines: ListLine[];
+  /** Struck-through items the model left out; > 0 with no lines means "all bought". */
+  ticked: number;
   /** `provider:id` of the model that answered, e.g. a paid fallback. */
   model?: string;
   /** True when the answer came from the paid fallback tier. */
   paid?: boolean;
+}
+
+/** How many struck-through items the model skipped; garbage counts as none. */
+export function normalizeTickedCount(raw: unknown): number {
+  const value = (raw as { ticked?: unknown } | null)?.ticked;
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_LINES
+    ? (value as number)
+    : 0;
 }
 
 /**
@@ -157,9 +186,10 @@ export async function extractListLines(imageBase64: string): Promise<ExtractedLi
       timeoutMs: VISION_TIMEOUT_MS,
       maxModels: VISION_FREE_MODELS,
       maxPaid: VISION_PAID_MODELS,
-      // A model that never received the image still answers happily, with no lines;
-      // that is not an answer, so the next model in the chain gets it.
-      accept: (reply) => normalizeExtractedLines(reply).length > 0,
+      // A model that never received the image still answers happily, with no lines and no
+      // ticks; that is not an answer, so the next model in the chain gets it. A reply that
+      // read the list and found every item ticked off *is* an answer.
+      accept: (reply) => normalizeExtractedLines(reply).length > 0 || normalizeTickedCount(reply) > 0,
       onModelUsed: (model) => {
         answered = model;
       },
@@ -177,13 +207,20 @@ export async function extractListLines(imageBase64: string): Promise<ExtractedLi
   }
 
   const lines = normalizeExtractedLines(raw);
+  const ticked = normalizeTickedCount(raw);
   if (lines.length === 0) {
+    // Struck-through items are a real, successful read: nothing left to buy. The caller
+    // reports that as a plain note, not as a failure.
+    if (ticked > 0) {
+      return { lines: [], ticked, model: answered ? `${answered.providerID}:${answered.id}` : undefined, paid: answered?.paid === true };
+    }
     // Defensive: `accept` already refuses such a reply, so this only catches a client
     // that returns one anyway.
     throw new Error(NO_READABLE_LIST);
   }
   return {
     lines,
+    ticked,
     model: answered ? `${answered.providerID}:${answered.id}` : undefined,
     paid: answered?.paid === true,
   };

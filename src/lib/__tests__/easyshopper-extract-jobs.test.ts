@@ -53,6 +53,7 @@ describe('startExtractJob', () => {
         { text: 'Milch 1,5', quantity: 2 },
         { text: 'Brot', quantity: 1 },
       ],
+      ticked: 2,
       model: 'opencode-go:gpt-6-luna',
       paid: true,
     });
@@ -68,6 +69,7 @@ describe('startExtractJob', () => {
       { text: 'Milch 1,5', quantity: 2 },
       { text: 'Brot', quantity: 1 },
     ]);
+    expect(settled.ticked).toBe(2);
     expect(settled.model).toBe('opencode-go:gpt-6-luna');
     expect(settled.paid).toBe(true);
     expect(settled.error).toBeUndefined();
@@ -75,6 +77,19 @@ describe('startExtractJob', () => {
     // The photo itself is passed straight through and never kept.
     expect(settled).not.toHaveProperty('imageBase64');
     expect(mockExtract).toHaveBeenCalledWith('data:image/jpeg;base64,AAAA');
+  });
+
+  it('settles an all-ticked list successfully with no lines', async () => {
+    mockExtract.mockResolvedValueOnce({ lines: [], ticked: 4 });
+
+    const started = startExtractJob('alice', 'data:image/jpeg;base64,AAAA');
+    const settled = await settle((started as ExtractJob).id);
+
+    // Nothing to add is not a failure: the UI shows a note, not an error.
+    expect(settled.status).toBe('done');
+    expect(settled.lines).toEqual([]);
+    expect(settled.ticked).toBe(4);
+    expect(settled.error).toBeUndefined();
   });
 
   it('keeps the shopper-facing message for an unreadable photo', async () => {

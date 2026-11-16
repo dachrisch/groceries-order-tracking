@@ -32,6 +32,8 @@ export interface ExtractJob {
   createdAt: number;
   finishedAt?: number;
   lines?: ListLine[];
+  /** Struck-through items the model skipped: > 0 with no lines means "all bought". */
+  ticked?: number;
   /** `provider:id` that answered, so a paid fallback is visible. */
   model?: string;
   /** True when the curated paid tier answered instead of a free model. */
@@ -55,13 +57,17 @@ const JOB_TTL_MS = 60 * 60 * 1000;
 const MAX_JOBS_PER_USER = 5;
 
 /**
- * The UI gives up after roughly three minutes, so a job that is still unswept at two
- * is answering a poller that has already left. The race bounds the JOB, not the chain:
+ * The UI gives up after about 2.5 minutes, so a job still unswept at 160 s is answering
+ * a poller that has already left. The race bounds the JOB, not the chain:
  * `extractListLines` cannot be cancelled, so its in-flight model call keeps running
  * (and can still cost money) after the job has settled. That is why a timed-out read
  * may be followed by another one, and why the sweep below never deletes a live job.
+ *
+ * 160 s covers the photo chain's own worst case (2 free + 1 paid attempts × 45 s = 135 s,
+ * see `VISION_TIMEOUT_MS`). Raising one without the other makes the job lie about its
+ * work.
  */
-const JOB_DEADLINE_MS = 120_000;
+const JOB_DEADLINE_MS = 160_000;
 
 /** The one distance between a job's timer and its message: keep them in sync. */
 const PHOTO_TIMEOUT = 'reading the photo took too long — type the list instead';
@@ -141,6 +147,7 @@ export function startExtractJob(
     try {
       const extracted = await withDeadline(extractListLines(imageBase64), deadlineMs);
       job.lines = extracted.lines;
+      job.ticked = extracted.ticked;
       job.model = extracted.model;
       job.paid = extracted.paid;
       job.status = 'done';

@@ -15,8 +15,8 @@ shape comes from the shipped app's own bytecode.
 | `match.ts` | Deterministic line → product matching (token coverage + size compatibility). No LLM, no I/O. |
 | `choose.ts` | `buildMatchPrompt` / `readPicks` / `chooseWithModel`: one batched text call that offers each line's candidate **names by positional index**. A pick outside that line's menu is discarded and the rules score stands; the model's `why` never decides anything. `ChooseOptions` cannot express a photo or a paid call, so `allowPaid` is unreachable at this call site. Budgeted by the caller — `list.ts` passes `timeoutMs: 15_000`, `maxModels: 2`. |
 | `list.ts` | `searchListCandidates` builds one scored, deduped menu per line → `buildPlan` (rules) → `applyPicks` (model picks inside that menu), composed by `planShoppingList`; `rerankWithHistory` corrects a weak *rules* line with what the user bought before and never outranks a model pick. |
-| `extract.ts` | `extractListLines`: one opencode vision *chain* for a photographed list — **two free models, then one curated paid model** (`allowPaid`), 38 s per attempt, so the worst hang path is 2 × 38 + 1 × 38 = 114 s and stays inside the job's 120 s deadline. The paid reservation (`maxPaid: 1`) is separate from the free one, so two free failures still leave the fallback reachable. The reply is validated into `ListLine`s: a legible line is never dropped, only its quantity falls back to 1. It never sees or picks products. |
-| `extract-jobs.ts` | The in-memory registry behind `POST /list/extract`: at most one running read per user, a 2-minute deadline per job, a 1 h TTL and 5 jobs/user, and error text written for the shopper. One process only. |
+| `extract.ts` | `extractListLines`: one opencode vision *chain* for a photographed list — **two free models, then one curated paid model** (`allowPaid`), 45 s per attempt, so the worst hang path is 2 × 45 + 1 × 45 = 135 s and stays inside the job's 160 s deadline. The paid reservation (`maxPaid: 1`) is separate from the free one, so two free failures still leave the fallback reachable. The reply is validated into `ListLine`s: a legible *open* line is never dropped, only its quantity falls back to 1. Items the shopper struck through are already in the trolley, so they are left out and counted in `ticked` — a read where every item is ticked is a **success with no lines**, reported as a note, never as "unreadable". It never sees or picks products. |
+| `extract-jobs.ts` | The in-memory registry behind `POST /list/extract`: at most one running read per user, a 160 s deadline per job, a 1 h TTL and 5 jobs/user, and error text written for the shopper. One process only. |
 | `insights.ts` | Deterministic spend/units/product aggregates: store-name merging, deposit returns kept separate, POS summary lines excluded. |
 | `capture-parse.ts` | Pure parsers for the purchase screens (money, rows, reconciliation) with unit tests. |
 
@@ -62,9 +62,9 @@ chain runs. Operational limits, because a vision chain can reach a paid model:
 
 - **One running read per user.** A second request answers `429`; a settled job is the only
   thing a new read may evict (5 jobs/user, 1 h TTL).
-- **A 2-minute deadline per job, and a chain that fits inside it.** A timeout is not
-  retried, so the hang path is the whole reserved chain: 2 free × 38 s + 1 paid × 38 s =
-  114 s; the UI polls for 110 s and then says so. `extractListLines` still cannot be
+- **A 160 s deadline per job, and a chain that fits inside it.** A timeout is not
+  retried, so the hang path is the whole reserved chain: 2 free × 45 s + 1 paid × 45 s =
+  135 s; the UI polls for 150 s and then says so. `extractListLines` still cannot be
   cancelled, so a call already in flight can finish — and cost money — after its job has
   settled.
 - **In memory, one process.** A restart or a second instance answers `404` ("read the
@@ -115,7 +115,7 @@ Units vs rows: the `ITEMS` header counts **units**, so a receipt with 28 rows an
 and `src/api/__tests__/easyshopper.test.ts` (photo intake: `202` + poll, `404` for someone
 else's or a lost job). `easyshopper-extract.test.ts` feeds the synthetic fixture photo
 `src/lib/__tests__/fixtures/shopping-list.png` through the prompt shape and mocks
-`runPrompt`, and asserts the chain's budget (2 free models × 38 s + 1 paid × 38 s). `opencode-client.test.ts`
+`runPrompt`, and asserts the chain's budget (2 free models × 45 s + 1 paid × 45 s). `opencode-client.test.ts`
 owns the vision chain and the paid tagging (one attempt, kill switch, pin).
 `src/frontend/lib/__tests__/listForm.test.ts` covers the textarea's line and character
 caps, the merge with a photo's lines and the wording for a refused body. The client

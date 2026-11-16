@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, onMount, Show, For } from 'solid-js';
-import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert } from 'lucide-solid';
+import { ShoppingBasket, Sparkles, ScanText, Share2, RefreshCw, ImageUp, TriangleAlert, Info } from 'lucide-solid';
 import QRCode from 'qrcode';
 import {
   FULL_LIST_MESSAGE,
@@ -32,6 +32,8 @@ interface Plan {
 interface ExtractStatus {
   status: 'pending' | 'running' | 'done' | 'error';
   lines: Array<{ text: string; quantity: number }> | null;
+  /** Struck-through items the model skipped; > 0 with no lines means "all bought". */
+  ticked: number;
   model: string | null;
   paid: boolean | null;
   error: string | null;
@@ -98,14 +100,14 @@ async function prepareImage(file: File): Promise<string> {
 
 /**
  * The plan route is bounded at 2 models × 3 attempts × 15 s ≈ 90 s on repeated fast
- * errors (`MATCH_CALL`), and the photo read is bounded server-side at 120 s. Waiting
+ * errors (`MATCH_CALL`), and the photo read is bounded server-side at 160 s. Waiting
  * that long in a button is not an option, so both calls carry a client budget and
  * report it as a sentence rather than as "aborted".
  */
 const POST_TIMEOUT_MS = 45_000;
 const EXTRACT_POST_TIMEOUT_MS = 20_000;
-/** Well under the server's 120 s deadline, so the shopper learns first. */
-const EXTRACT_POLL_BUDGET_MS = 110_000;
+/** Well under the server's 160 s deadline, so the shopper learns first. */
+const EXTRACT_POLL_BUDGET_MS = 150_000;
 /** One hung poll must not eat the whole budget; the loop's deadline stays the ceiling. */
 const EXTRACT_POLL_TIMEOUT_MS = 10_000;
 /** 1 s, growing ×1.5 up to 5 s: ~27 polls, not the 90 a fixed 2 s would spend against
@@ -169,6 +171,8 @@ export function InStore() {
   const [busy, setBusy] = createSignal<'plan' | 'create' | 'sync' | 'share' | 'extract' | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [syncStatus, setSyncStatus] = createSignal<SyncStatus | null>(null);
+  // A read that succeeded but had nothing to add is a note, not a failure.
+  const [notice, setNotice] = createSignal<string | null>(null);
   const [expiresAt, setExpiresAt] = createSignal<string | null>(null);
 
   /**
@@ -277,6 +281,7 @@ export function InStore() {
     const generation = ++photoGeneration;
     setBusy('extract');
     setError(null);
+    setNotice(null);
     try {
       const started = await postJson<{ jobId: string }>('/api/easyshopper/list/extract', { imageBase64: image }, {
         timeoutMs: EXTRACT_POST_TIMEOUT_MS,
@@ -321,6 +326,13 @@ export function InStore() {
           setReadPaid(data.paid === true);
           setImageBase64(null);
           setImageName(null);
+          // Everything was already ticked off: the read worked, there is simply nothing
+          // to add. Saying "unreadable" here was the bug that started all this.
+          setNotice(
+            (data.lines ?? []).length === 0 && (data.ticked ?? 0) > 0
+              ? `every item on the photo is already ticked off (${data.ticked}) — nothing to add`
+              : null
+          );
           // The matches and the share card were built from the old lines.
           setPlan(null);
           setShareLink(null);
@@ -379,6 +391,7 @@ export function InStore() {
 
   const onFile = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
+    setNotice(null);
     const file = input.files?.[0];
     if (!file) return;
     // Reset the input so picking the same file again still fires a change event.
@@ -612,6 +625,12 @@ export function InStore() {
           </div>
         </div>
       </section>
+
+      <Show when={notice()}>
+        <div class="alert alert-info text-sm">
+          <Info class="w-4 h-4" /> {notice()}
+        </div>
+      </Show>
 
       <Show when={error()}>
         <div class="alert alert-error text-sm">

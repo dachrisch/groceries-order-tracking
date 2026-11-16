@@ -75,7 +75,10 @@ narrow.
    model candidate *names* with positional indices only — an index outside that
    line's menu is discarded and the deterministic score stands — so it can point at
    a product but never introduce one. The backend owns the catalogue ids and the
-   rule score. Local OCR is gone: nothing in the repo reads a photo offline any more.
+   rule score. Struck-through items are the shopper's own ticks: they are left out of the
+   lines and counted, and a list where every item is ticked is a successful read with
+   nothing to add — not an unreadable photo. Local OCR is gone: nothing in the repo reads
+   a photo offline any more.
 
 ## Environment
 
@@ -92,7 +95,7 @@ every free vision model has failed; `off|false|0|no` drops that tier, though a p
 model pinned in `OPENCODE_VISION_MODELS` is still used. `OPENCODE_VISION_MODELS`
 (`provider:id,...`) pins the photo chain, never the text one. The photo read reserves
 **two free models, then one paid one** (`maxModels: 2`, `maxPaid: 1`): a hang costs
-2 × 38 s + 1 × 38 s = 114 s, inside the job deadline, and the paid budget is separate
+2 × 45 s + 1 × 45 s = 135 s, inside the job deadline, and the paid budget is separate
 from the free one so a free failure never swallows the fallback. `maxPaid` defaults to
 0 everywhere else — appending the paid tier to a chain is not permission to buy it —
 except an operator pin, which is a deliberate choice. No other LLM call may use a paid

@@ -239,6 +239,7 @@ export async function handleExtractStatus(req: Request, res: Response) {
     status: job.status,
     // Nothing is known before the answer: report `null`, not "no lines" and not "free".
     lines: job.lines ?? null,
+    ticked: job.ticked ?? 0,
     model: job.model ?? null,
     paid: job.paid ?? null,
     error: job.error ?? null,

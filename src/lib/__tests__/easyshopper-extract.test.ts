@@ -11,7 +11,7 @@ vi.mock('../opencode-client', async (importOriginal) => {
 });
 
 import { NOT_AN_ANSWER, runPrompt } from '../opencode-client';
-import { extractListLines, normalizeExtractedLines } from '../easyshopper/extract';
+import { extractListLines, normalizeExtractedLines, normalizeTickedCount } from '../easyshopper/extract';
 
 const mockRunPrompt = vi.mocked(runPrompt);
 
@@ -152,6 +152,7 @@ describe('extractListLines', () => {
         { text: 'Milch 1,5', quantity: 2 },
         { text: 'Brot', quantity: 1 },
       ],
+      ticked: 0,
       model: 'opencode:mimo-v2.6-flash-free',
       paid: false,
     });
@@ -167,9 +168,9 @@ describe('extractListLines', () => {
 
     await extractListLines('data:image/jpeg;base64,AAAA');
 
-    // A timeout is not retried, so a hang costs the whole named chain: (2 × 38 s) +
-    // (1 × 38 s) = 114 s, under the 120 s job deadline and the UI's 110 s poll budget.
-    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(38_000);
+    // A timeout is not retried, so a hang costs the whole named chain: (2 × 45 s) +
+    // (1 × 45 s) = 135 s, under the 160 s job deadline and the UI's 150 s poll budget.
+    expect(mockRunPrompt.mock.calls[0][1]?.timeoutMs).toBe(45_000);
     expect(mockRunPrompt.mock.calls[0][1]?.maxModels).toBe(2);
     // The paid tier has its own budget, so two free failures still leave it reachable.
     expect(mockRunPrompt.mock.calls[0][1]?.maxPaid).toBe(1);
@@ -185,6 +186,8 @@ describe('extractListLines', () => {
     expect(accept?.({ lines: [] })).toBe(false);
     expect(accept?.({ lines: ['---'] })).toBe(false);
     expect(accept?.({ lines: [{ text: 'Brot', quantity: 2 }] })).toBe(true);
+    // A read that found every item ticked off is an answer, not an unreadable photo.
+    expect(accept?.({ lines: [], ticked: 4 })).toBe(true);
   });
 
   it('reports a paid fallback as the answering model', async () => {
@@ -195,6 +198,7 @@ describe('extractListLines', () => {
 
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).resolves.toEqual({
       lines: [{ text: 'Butter', quantity: 1 }],
+      ticked: 0,
       model: 'opencode-go:gpt-6-luna',
       paid: true,
     });
@@ -262,5 +266,50 @@ describe('extractListLines', () => {
   it('passes the model failure through', async () => {
     mockRunPrompt.mockRejectedValueOnce(new Error('no vision-capable opencode model is available'));
     await expect(extractListLines('data:image/jpeg;base64,AAAA')).rejects.toThrow(/vision-capable/);
+  });
+
+  it('reports an all-ticked list as nothing to add, not as a failure', async () => {
+    mockRunPrompt.mockResolvedValueOnce({ lines: [], ticked: 4 });
+
+    await expect(extractListLines('data:image/jpeg;base64,AAAA')).resolves.toMatchObject({
+      lines: [],
+      ticked: 4,
+    });
+  });
+
+  it('treats a garbage ticked count as none', () => {
+    expect(normalizeTickedCount(undefined)).toBe(0);
+    expect(normalizeTickedCount({ ticked: '4' })).toBe(0);
+    expect(normalizeTickedCount({ ticked: -1 })).toBe(0);
+    expect(normalizeTickedCount({ ticked: 999 })).toBe(0);
+    expect(normalizeTickedCount({ ticked: 3 })).toBe(3);
+  });
+});
+
+describe('the extraction prompt', () => {
+  it('skips struck-through items and asks the model to count them', async () => {
+    // On a shopping list a pen stroke means "already in the trolley", so those items are
+    // deliberately left out. What must not happen is the two empty answers — "all bought"
+    // and "could not read" — being indistinguishable, which is what told a shopper their
+    // readable list was unreadable.
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    const prompt = String(mockRunPrompt.mock.calls[0][0]);
+    expect(prompt).toMatch(/already ticked off/i);
+    expect(prompt).toMatch(/"ticked"/i);
+  });
+
+  it('does not put a real list into the JSON example', async () => {
+    // The example used to read "Milch 1,5"/"Brot" — the fixture's own content — and a
+    // paid model answered the fixture by echoing it, which looked like a successful read.
+    mockRunPrompt.mockResolvedValueOnce({ lines: [{ text: 'Brot', quantity: 1 }] });
+
+    await extractListLines('data:image/jpeg;base64,AAAA');
+
+    const prompt = String(mockRunPrompt.mock.calls[0][0]);
+    expect(prompt).toContain('<item>');
+    expect(prompt).not.toContain('Milch 1,5');
   });
 });
