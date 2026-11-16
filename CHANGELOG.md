@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.15.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.14.3...v1.15.0) (2026-11-16)
+
+
+### Features
+
+* **easyshopper:** share the list via the app's own Aztec code ([93e8f42](https://github.com/dachrisch/groceries-order-tracking/commit/93e8f42a9ccba73f2ba75653fc5ea97ea75bed3a))
+* **easyshopper:** share the list with the phone via the app's own Aztec code ([7fae98d](https://github.com/dachrisch/groceries-order-tracking/commit/7fae98d94871c6ce57406ddd370583c6e2a10512))
+
 ## [1.14.3](https://github.com/dachrisch/groceries-order-tracking/compare/v1.14.2...v1.14.3) (2026-11-16)
 
 
