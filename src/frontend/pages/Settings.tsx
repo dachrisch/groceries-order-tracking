@@ -71,6 +71,35 @@ export function Settings() {
 
   const [sync, setSync] = createSignal<SyncStatus | null>(null);
   const [edekaBusy, setEdekaBusy] = createSignal(false);
+  const [connectingEdeka, setConnectingEdeka] = createSignal(false);
+
+  /**
+   * Writing a list needs the store app's own device account. It is created only
+   * here, on this button — never as a side effect of adding a product.
+   */
+  const edekaAccount = () => location.state()?.providers.find((entry) => entry.provider === 'edeka');
+
+  const connectEdeka = async () => {
+    if (connectingEdeka()) return;
+    setConnectingEdeka(true);
+    try {
+      const res = await fetch('/api/easyshopper/connect', { method: 'POST' });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; alreadyConnected?: boolean };
+      if (!res.ok) {
+        showMessage('error', body.error ?? 'Could not connect EDEKA');
+        return;
+      }
+      showMessage(
+        'success',
+        body.alreadyConnected ? 'EDEKA was already connected' : 'EDEKA connected'
+      );
+      await location.refresh();
+    } catch {
+      showMessage('error', 'Network error while connecting EDEKA');
+    } finally {
+      setConnectingEdeka(false);
+    }
+  };
 
   const [homeCity, setHomeCity] = createSignal('');
   const [windows, setWindows] = createSignal<WindowRow[]>([]);
@@ -505,6 +534,37 @@ export function Settings() {
                 A capture is a request to the sidecar, not an instant refresh. Until the phone
                 uploads, nothing changes.
               </p>
+
+              {/*
+                Two different things: capturing receipts needs the phone, writing a
+                list needs an account in the store app. Saying so is the point.
+              */}
+              <div class="rounded-lg border border-base-300 bg-base-200/50 p-3">
+                <Show
+                  when={!edekaAccount()?.connected}
+                  fallback={
+                    <p class="text-[11px] opacity-60">
+                      The store app's device account exists, so a shopping list can be written and
+                      shared as a code.
+                    </p>
+                  }
+                >
+                  <p class="text-[11px] opacity-70">
+                    Writing a shopping list needs EDEKA's own device account. This creates one in
+                    the store app; nothing is ordered and no purchase happens.
+                  </p>
+                  <button
+                    class="btn btn-outline btn-sm mt-2 gap-2"
+                    onClick={connectEdeka}
+                    disabled={connectingEdeka()}
+                  >
+                    <Show when={connectingEdeka()}>
+                      <span class="loading loading-spinner loading-xs" />
+                    </Show>
+                    Connect EDEKA
+                  </button>
+                </Show>
+              </div>
             </div>
           </Show>
         </div>

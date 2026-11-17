@@ -9,6 +9,7 @@
  * reason, not protect the cart.
  */
 import { createSignal, onCleanup, Show } from 'solid-js';
+import { A } from '@solidjs/router';
 import { Check, Plus } from 'lucide-solid';
 import { destinationLabel, type Destination } from '../lib/location';
 import type { AddTarget } from '../lib/browse';
@@ -24,6 +25,8 @@ export function BasketAddButton(props: {
   const [busy, setBusy] = createSignal(false);
   const [done, setDone] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  // A refusal that a connection would fix must not read like a dead end.
+  const [needsConnect, setNeedsConnect] = createSignal(false);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
 
   onCleanup(() => {
@@ -45,6 +48,7 @@ export function BasketAddButton(props: {
     if (busy()) return;
     setBusy(true);
     setError(null);
+    setNeedsConnect(false);
     try {
       const res = await fetch('/api/basket/add', {
         method: 'POST',
@@ -64,14 +68,17 @@ export function BasketAddButton(props: {
       });
       const body = (await res.json().catch(() => ({}))) as {
         status?: string;
+        code?: string;
         error?: string;
         added?: unknown[];
         skipped?: Array<{ name: string; reason: string }>;
       };
 
       if (!res.ok) {
-        // 409 is the availability or guardrail refusal; its message is the copy.
+        // 409 is the availability, connection or guardrail refusal; its message
+        // is the copy, and a missing account gets the action that fixes it.
         setError(body.error ?? 'That could not be added.');
+        setNeedsConnect(body.code === 'edeka-not-connected');
         return;
       }
       if (body.status === 'added' && (body.added?.length ?? 0) > 0) {
@@ -115,6 +122,11 @@ export function BasketAddButton(props: {
       </button>
       <Show when={error()}>
         <span class="max-w-[11rem] text-right text-[10px] leading-tight text-error">{error()}</span>
+      </Show>
+      <Show when={needsConnect()}>
+        <A href="/settings" class="text-[10px] font-semibold text-primary underline">
+          Connect EDEKA
+        </A>
       </Show>
     </div>
   );

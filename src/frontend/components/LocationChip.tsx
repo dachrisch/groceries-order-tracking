@@ -6,6 +6,7 @@
  * belongs to Settings; this sheet only explains what the app currently thinks
  * and why each source is or is not reachable.
  */
+import { A } from '@solidjs/router';
 import { createSignal, For, Show } from 'solid-js';
 import { MapPin, RefreshCw } from 'lucide-solid';
 import { Sheet } from './Sheet';
@@ -122,15 +123,26 @@ export function LocationChip(props: { compact?: boolean }) {
                               provider.available ? 'badge-success' : 'badge-ghost'
                             }`}
                           >
-                            {provider.available ? 'Available' : 'Not here'}
+                            {provider.available ? 'Available here' : 'Not here'}
                           </span>
                         </div>
                         <p class="text-[11px] text-base-content/65">{provider.reason}</p>
+                        {/*
+                          Reach and connection are different questions: a shop can
+                          be reachable here and still have no account, which is why
+                          "+" would refuse until Settings connects one.
+                        */}
                         <p class="mt-0.5 text-[10px] text-base-content/45">
-                          {provider.connected ? 'Account connected' : 'No account connected'}
+                          {provider.connected ? 'Account connected' : 'Not connected'}
                           {provider.lastSyncAt
                             ? ` · last sync ${new Date(provider.lastSyncAt).toLocaleDateString()}`
                             : ''}
+                          <Show when={!provider.connected}>
+                            {' · '}
+                            <A href="/settings" class="link link-primary">
+                              Connect in Settings
+                            </A>
+                          </Show>
                         </p>
                       </div>
                     </div>
