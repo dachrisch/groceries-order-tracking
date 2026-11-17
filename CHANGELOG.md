@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.15.2...v1.16.0) (2026-11-17)
+
+
+### Features
+
+* **activity:** merge deliveries and shop runs into one timeline ([e5a6662](https://github.com/dachrisch/groceries-order-tracking/commit/e5a6662284f9fb595d6be3bd5e6d8676c4891ec8))
+* **api:** merged products, activity, search and location routes ([b8885e0](https://github.com/dachrisch/groceries-order-tracking/commit/b8885e0fc437e0860e15b07b82d8dcb02c6a0a5f))
+* **basket:** write one basket to Knuspr or EDEKA by destination ([f38c0c7](https://github.com/dachrisch/groceries-order-tracking/commit/f38c0c74f26d030b8a76dc3b91a10df62cd2e191))
+* **frontend:** add one state panel and the shared capture banner ([35919a5](https://github.com/dachrisch/groceries-order-tracking/commit/35919a509917eb4cfb90503d974f3c929c527171))
+* **frontend:** name the non-happy path on every destination ([15d6418](https://github.com/dachrisch/groceries-order-tracking/commit/15d6418bec0e4ab7d771942bafdc0086cba71395))
+* **frontend:** put the one-flow app behind five destinations ([95c6da7](https://github.com/dachrisch/groceries-order-tracking/commit/95c6da750355a8eac1020bd284f78c0d6029cb10))
+* **frontend:** return the EDEKA list flow with the Aztec share ([d8f77b5](https://github.com/dachrisch/groceries-order-tracking/commit/d8f77b54bab8f13501cb72cee403318160a107c7))
+* **frontend:** return the EDEKA list flow with the Aztec share ([13c0e8e](https://github.com/dachrisch/groceries-order-tracking/commit/13c0e8e44469c2fee11dd16073b1e5574cfffbcd))
+* **groceries:** merge the product list into one sheet per product ([dac8811](https://github.com/dachrisch/groceries-order-tracking/commit/dac8811f11f08b985b00db2a4ce7b2210e261776))
+* **lib:** one read model over Knuspr and EDEKA purchases ([8e10753](https://github.com/dachrisch/groceries-order-tracking/commit/8e1075336434b8cb06dc612c0260fe0c0b22d1e2))
+* **overview:** show one rate per store and add due items directly ([4690933](https://github.com/dachrisch/groceries-order-tracking/commit/4690933d43f388264edeabfd43acf10925327c2d))
+* **products:** show a Knuspr product's EDEKA match beside it ([ed2c1d1](https://github.com/dachrisch/groceries-order-tracking/commit/ed2c1d13be62bc791161728a5884ac0d8002af29))
+* **settings:** make location, coverage and the EDEKA capture explicit ([2a623d9](https://github.com/dachrisch/groceries-order-tracking/commit/2a623d9c9ba9c6e9a2da7b8cce39dd4aac18a878))
+
+
+### Bug Fixes
+
+* **basket:** never create an EDEKA account as a side effect ([8a27149](https://github.com/dachrisch/groceries-order-tracking/commit/8a271498eec8e076429aea70542f9dd2f7f7d27a))
+* **bot:** refuse the weekly fill where Knuspr cannot deliver ([e24263f](https://github.com/dachrisch/groceries-order-tracking/commit/e24263f0fcacff57ce1ec3571ddd68fdc0c23d23))
+* **frontend:** treat an unanswered session read as a retry, not a logout ([eb320d6](https://github.com/dachrisch/groceries-order-tracking/commit/eb320d66fddf49cfa527dd170d13cad60043d53d))
+* **groceries:** say last bought for a product outside the rate window ([2a93014](https://github.com/dachrisch/groceries-order-tracking/commit/2a9301407043491e696c41482017107afdf043ee))
+* **groups:** carry the document id so a manual group can be split ([49d45f5](https://github.com/dachrisch/groceries-order-tracking/commit/49d45f5ea1aed8862dd36e87bd3d55fab9856020))
+* **list-flow:** name the missing account and link to the connect action ([cd538ca](https://github.com/dachrisch/groceries-order-tracking/commit/cd538ca7483d46727faf2bd8373b964b8b0ca112))
+* **products:** never link two fat percentages to each other ([eda292a](https://github.com/dachrisch/groceries-order-tracking/commit/eda292a4874921b8a99a7a0b817e9ed7177af9f0))
+* **read-layer:** list and search every product ever bought, not just the last 26 weeks ([05c6c2f](https://github.com/dachrisch/groceries-order-tracking/commit/05c6c2fd42ce4caf1ca7bed193c67fc3ace52da8))
+* **read-layer:** read a Knuspr line's unit price from unit, not total ([5de954f](https://github.com/dachrisch/groceries-order-tracking/commit/5de954f7f4e350a44ef7195c51d64d5dc5740f8d))
+* **shell:** give browsing its own rate budget and stop reading 429 as a logout ([61a7469](https://github.com/dachrisch/groceries-order-tracking/commit/61a746937b731989e4c8de0b79c824f381045e3a))
+* **shell:** offer the explicit EDEKA connect where a refusal points at it ([f5bf740](https://github.com/dachrisch/groceries-order-tracking/commit/f5bf740506beee486812bfb7e9ec2bbe3bc4bfb6))
+
 ## [1.15.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.15.1...v1.15.2) (2026-11-17)
 
 
