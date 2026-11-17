@@ -13,6 +13,7 @@ import {
 } from 'lucide-solid';
 import { BotPanel } from './components/BotPanel';
 import { AskHub } from './components/AskHub';
+import { ListFlow } from './components/ListFlow';
 import { SearchOverlay } from './components/SearchOverlay';
 import { LocationChip } from './components/LocationChip';
 import { StatePanel } from './components/StatePanel';
@@ -378,6 +379,7 @@ export function App(props: { children?: JSX.Element }) {
 
           <BotPanel />
           <AskHub />
+          <ListFlow />
           <SearchOverlay />
           </LocationProvider>
         </Show>

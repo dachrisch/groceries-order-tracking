@@ -3,17 +3,19 @@
 ## Layout
 
 - `index.tsx` — router and page routes. Five destinations, plus redirects for
-  the old paths (`/products`, `/inventory`, `/orders`, `/in-store`, `/bot`).
+  the old paths (`/products`, `/inventory`, `/orders`, `/in-store`), and the
+  `/bot` and `/lists` entry pages that open an overlay over a destination.
 - `App.tsx` — root layout: session check, desktop drawer, mobile bottom tabs,
-  search and location headers. Mounts `AskHub`, `SearchOverlay` and `BotPanel`
-  so Ask, search and location are reachable from every page.
+  search and location headers. Mounts `AskHub`, `ListFlow`, `SearchOverlay` and
+  `BotPanel` so Ask, the shopping list, search and location are reachable from
+  every page.
 - `pages/` — the five destinations: `Overview` (two-rate week card, due cards,
   recent activity and month spend), `Groceries` (one product list over both
   sources, with the product sheet), `Activity` (merged timeline plus bot runs),
   `Settings`, `Login`, `Register`. The legacy bodies the merge replaced
-  (`Dashboard`, `Orders`, `Products`, `Inventory`, `Bot`) were deleted in Phase
-  5. `InStore.tsx` still exists but is **unrouted** — Phase 6 rebuilds the list
-  flow from it, and until then the EDEKA list feature has no entry point.
+  (`Dashboard`, `Orders`, `Products`, `Inventory`, `Bot`, `InStore`) were
+  deleted. `AskEntry` and `ListsEntry` are bookmark shims that open their
+  overlay and replace the history entry.
 - `components/StatePanel.tsx` — the one shape for every non-happy path: title,
   reason, at most one action. A disabled action always renders its
   `disabledReason`; never a greyed button without an explanation.
@@ -23,6 +25,12 @@
 - `components/AskHub.tsx` — the Ask sheet: Chat | Occasions | Groups.
   `components/ask/` holds the panes; `ChatPane` owns the job protocol.
 - `components/Sheet.tsx` — the shared bottom-sheet/desktop-panel primitive.
+- `components/ListFlow.tsx` — the EDEKA shopping list sheet: typed or
+  photographed lines, the matches, then the Aztec share code. Activity opens it
+  with "New list", Groceries when the destination is the EDEKA list or a
+  checklist, and `/lists` over Activity. The photo outcomes (read by a paid
+  model, every line ticked, unreadable, an unmatched line kept as free text)
+  each have their own copy; the share copy states the swap before the code.
 - `components/ProductSheet.tsx` — one product with a stat row per provider, its
   offers, the EDEKA display match and the group merge/split corrections.
 - `components/BasketAddButton.tsx` — the one `+`: posts `/api/basket/add` and
@@ -42,7 +50,8 @@
   spinner with no way out.
 - `lib/sync.ts` — the one reading of the EDEKA capture state (`waiting`,
   `connected`, `offline`) plus the seven-day staleness threshold.
-- `lib/overlays.ts` — signals that let any surface open Ask or search.
+- `lib/overlays.ts` — signals that let any surface open Ask, search or the
+  shopping-list flow.
 - `index.css` — Tailwind 4 + DaisyUI theme.
 
 ## Conventions

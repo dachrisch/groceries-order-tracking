@@ -14,14 +14,16 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ListPlus,
   RefreshCw,
   Undo2,
-} from 'lucide-solid';import { CapturePanel } from '../components/CapturePanel';
+} from 'lucide-solid';
+import { CapturePanel } from '../components/CapturePanel';
 import { Sheet } from '../components/Sheet';
 import { StatePanel } from '../components/StatePanel';
 import { ProviderChip } from '../components/ProviderBadges';
 import { destinationLabel, type Destination, type Provider } from '../lib/location';
-import { openAsk } from '../lib/overlays';
+import { openAsk, openListFlow } from '../lib/overlays';
 import {
   activityTitle,
   monthRange,
@@ -302,7 +304,12 @@ export function Activity() {
           <h1 class="page-title">Activity</h1>
           <p class="mt-1 text-base-content/85">Deliveries and in-store runs, one timeline</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          {/* The EDEKA list is an action, not a sixth destination. */}
+          <button class="btn btn-primary btn-sm gap-2 rounded-xl" onClick={openListFlow}>
+            <ListPlus size={16} />
+            New list
+          </button>
           <div class="flex gap-1 rounded-xl bg-base-200 p-1">
             <button class={chip(tab() === 'timeline')} onClick={() => setTab('timeline')}>
               Timeline

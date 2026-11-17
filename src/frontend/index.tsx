@@ -10,6 +10,7 @@ import { Groceries } from './pages/Groceries';
 import { Activity } from './pages/Activity';
 import { Settings } from './pages/Settings';
 import { AskEntry } from './pages/AskEntry';
+import { ListsEntry } from './pages/ListsEntry';
 import './index.css';
 
 patchFetch();
@@ -36,6 +37,7 @@ render(
       <Route path="/activity" component={Activity} />
       <Route path="/settings" component={Settings} />
       <Route path="/bot" component={AskEntry} />
+      <Route path="/lists" component={ListsEntry} />
 
       <Route path="/products" component={redirectTo('/groceries')} />
       <Route path="/products/:productId" component={redirectTo('/groceries')} />

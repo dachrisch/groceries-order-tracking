@@ -12,7 +12,7 @@
  */
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
-import { Link2Off, MapPin, Package, Search } from 'lucide-solid';
+import { ClipboardList, Link2Off, ListPlus, MapPin, Package, Search } from 'lucide-solid';
 import { BasketAddButton } from '../components/BasketAddButton';
 import { ProviderBadges } from '../components/ProviderBadges';
 import { ProductSheet } from '../components/ProductSheet';
@@ -29,6 +29,7 @@ import {
   type ProductsResponse,
 } from '../lib/browse';
 import { euro, relativeDays } from '../lib/format';
+import { openListFlow } from '../lib/overlays';
 import { fetchWithTimeout, loadFailureCopy } from '../lib/request';
 
 type SourceFilter = 'both' | 'knuspr' | 'edeka';
@@ -65,6 +66,17 @@ export function Groceries() {
   const [error, setError] = createSignal<string | null>(null);
 
   const destination = () => location.state()?.destination ?? 'checklist';
+
+  /**
+   * The list flow is the EDEKA-side action: when this location writes a `+` to
+   * the EDEKA list (or to a plain checklist), the page also offers the list the
+   * shopper photographs or types. In Munich a `+` goes to the Knuspr cart, so
+   * the flow stays on Activity instead of competing with the cart.
+   */
+  const listDestination = () => {
+    const derived = location.state()?.destination;
+    return derived === 'edeka-list' || derived === 'checklist' ? derived : null;
+  };
 
   const loadList = async () => {
     const params = new URLSearchParams();
@@ -249,6 +261,31 @@ export function Groceries() {
           </p>
         </div>
       </div>
+
+      <Show when={listDestination()}>
+        {(kind) => (
+          <div class="flex flex-wrap items-center gap-3 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-sm">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <ClipboardList size={18} />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-bold">Shopping with a list?</div>
+              <p class="mt-0.5 text-xs text-base-content/60">
+                <Show
+                  when={kind() === 'edeka-list'}
+                  fallback="No store reaches here, so a + keeps items on a checklist. A typed or photographed list can still go to your EASY Shopper account."
+                >
+                  This location writes a + to your EDEKA list. Type or photograph a list to send it to
+                  your phone.
+                </Show>
+              </p>
+            </div>
+            <button class="btn btn-primary btn-sm gap-2 rounded-xl" onClick={openListFlow}>
+              <ListPlus size={16} /> New list
+            </button>
+          </div>
+        )}
+      </Show>
 
       <div class="rounded-2xl border border-base-300 bg-base-100 p-3 shadow-sm">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
