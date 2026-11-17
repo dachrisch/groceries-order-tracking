@@ -7,6 +7,22 @@ const botSettingsSchema = new mongoose.Schema({
   horizonDays: { type: Number, default: 7 },
   deliveryLeadDays: { type: Number, default: 2 },
   opencodeEnabled: { type: Boolean, default: true },
+  /**
+   * Where the shopper lives. Knuspr delivers inside one city only, so this is
+   * what decides whether a cart or a list is the sensible destination.
+   * Deliberately outside `BotSettingsShape`: that shape is the guardrails
+   * contract behind `/api/bot/settings`, while this is read by `/api/location`.
+   */
+  homeCity: { type: String, default: null },
+  /** ISO 3166-1 alpha-2; both sources only exist in Germany. */
+  homeCountry: { type: String, default: 'DE' },
+  /** Dates outside the home city. Derived from the date, editable for corrections. */
+  awayWindows: [{
+    _id: false,
+    from: { type: Date },
+    to: { type: Date },
+    city: { type: String },
+  }],
   /** What the last occasion detection looked at, shown when nothing was found. */
   lastDetection: {
     at: { type: Date },

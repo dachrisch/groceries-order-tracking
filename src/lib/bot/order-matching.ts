@@ -62,6 +62,9 @@ export async function matchRunsToOrders(userId: string): Promise<number> {
   const runs = await BotRun.find({
     userId,
     status: { $in: ['in-cart', 'partially-delivered'] },
+    // A list or checklist run never becomes a Knuspr delivery. `$nin` also
+    // matches runs created before `destination` existed, so history stays valid.
+    destination: { $nin: ['edeka-list', 'checklist'] },
   }).sort({ createdAt: 1 });
 
   if (runs.length === 0) return 0;

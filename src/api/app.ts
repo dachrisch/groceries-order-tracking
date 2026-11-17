@@ -9,8 +9,12 @@ import { handleLogin, handleRegister, handleSession, handleLogout } from './cont
 import { handleGetAggregates, handleGetProductTrends, handleGetOrders, handleGetOrderDetail, handleGetStats, handleGetProductPrice } from './controllers/order.controller';
 
 import { handleGetInventory } from './controllers/inventory.controller';
+import { handleGetLocation, handleUpdateLocation } from './controllers/location.controller';
+import { handleGetProducts, handleSearch, handleUpdateProductLink } from './controllers/browse.controller';
+import { handleGetActivity, handleGetActivityEntry } from './controllers/activity.controller';
 import { handleListIntegrations, handleConnectKnuspr, handleDisconnectKnuspr, handleSyncKnuspr } from './controllers/settings.controller';
 import { handleAddToCart, handleGetCart } from './controllers/cart.controller';
+import { handleAddToBasket, handleUndoBasketRun } from './controllers/basket.controller';
 import {
   handleImportPurchases,
   handleGetPurchases,
@@ -23,6 +27,7 @@ import {
   handleExtractList,
   handleExtractStatus,
   handleShareCode,
+  handleConnectEdeka,
 } from './controllers/easyshopper.controller';
 import {
   handleBotMessage,
@@ -70,15 +75,38 @@ const csrfProtection = csurf({
 
 app.use(csrfProtection);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
-  standardHeaders: 'draft-7', // set `RateLimit` and `RateLimit-Policy` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
-  skip: () => process.env.NODE_ENV === 'test',
+/**
+ * Two budgets, because they protect different things.
+ *
+ * The general limit is there to stop a runaway client, not to police a normal
+ * session: the merged shell reads about seven endpoints per page, so a person
+ * clicking around reached 100 requests in a few minutes and was locked out.
+ *
+ * Credential endpoints keep the strict budget — that is the brute-force door,
+ * and it has nothing to do with how a logged-in shopper browses.
+ *
+ * `RATE_LIMITS=on` re-enables the limiters under NODE_ENV=test, which the test
+ * that proves both behaviours needs.
+ */
+const limitersSkipped = () => process.env.NODE_ENV === 'test' && process.env.RATE_LIMITS !== 'on';
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: limitersSkipped,
 });
 
-app.use(limiter);
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: limitersSkipped,
+});
+
+app.use(apiLimiter);
 app.use(derivedKeyMiddleware);
 
 app.get('/health', (_req, res) => {
@@ -106,8 +134,8 @@ const auth = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-app.post('/api/register', handleRegister);
-app.post('/api/login', handleLogin);
+app.post('/api/register', authLimiter, handleRegister);
+app.post('/api/login', authLimiter, handleLogin);
 app.post('/api/logout', handleLogout);
 app.get('/api/session', auth, handleSession);
 
@@ -118,8 +146,21 @@ app.get('/api/orders/:id', auth, handleGetOrderDetail);
 app.get('/api/products/:id/price', auth, handleGetProductPrice);
 app.get('/api/product-trends', auth, handleGetProductTrends);
 app.get('/api/inventory', auth, handleGetInventory);
+app.get('/api/products', auth, handleGetProducts);
+// The cross-store link is a correction surface, not a merge: it changes what the
+// list displays and never what the bot learned.
+app.put('/api/product-links', auth, handleUpdateProductLink);
+app.get('/api/search', auth, handleSearch);
+app.get('/api/activity', auth, handleGetActivity);
+app.get('/api/activity/:id', auth, handleGetActivityEntry);
+app.get('/api/location', auth, handleGetLocation);
+app.put('/api/location', auth, handleUpdateLocation);
 app.get('/api/cart', auth, handleGetCart);
 app.post('/api/cart/add', auth, handleAddToCart);
+// One basket contract, two adapters: the destination decides whether the write
+// lands in the Knuspr cart, on the EDEKA list, or stays a local checklist.
+app.post('/api/basket/add', auth, handleAddToBasket);
+app.post('/api/basket/undo/:runId', auth, handleUndoBasketRun);
 
 app.post('/api/bot/message', auth, handleBotMessage);
 app.get('/api/bot/jobs/:id', auth, handleGetJob);
@@ -158,5 +199,6 @@ app.post('/api/easyshopper/list/extract', auth, handleExtractList);
 app.get('/api/easyshopper/list/extract/:id', auth, handleExtractStatus);
 app.post('/api/easyshopper/list/share', auth, handleShareList);
 app.get('/api/easyshopper/share-code', auth, handleShareCode);
+app.post('/api/easyshopper/connect', auth, handleConnectEdeka);
 app.post('/api/easyshopper/sync/request', auth, handleRequestSync);
 app.get('/api/easyshopper/sync/status', auth, handleSyncStatus);

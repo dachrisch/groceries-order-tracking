@@ -195,7 +195,7 @@ export interface PlanOptions {
  * axes: two free models at 15 s each. A timeout is not retried, so a chain that hangs
  * costs 2 × 15 s = 30 s. The 3-attempt retry only applies to fast transport errors, so
  * the worst realistic path is 2 × 3 × 15 s = 90 s of real wall clock — and the UI gives
- * up first: `/list/plan` and `/list/create` abort the fetch at 45 s (`InStore.tsx`),
+ * up first: `/list/plan` and `/list/create` abort the fetch at 45 s (`ListFlow.tsx`),
  * which covers the normal case and leaves the rules plan in place.
  *
  * No `maxPaid`: the matcher must never buy a model, so the paid tier is unreachable

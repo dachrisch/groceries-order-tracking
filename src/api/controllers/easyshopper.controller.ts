@@ -11,6 +11,7 @@ import { getExtractJob, startExtractJob } from '../../lib/easyshopper/extract-jo
 import { planShoppingList, rerankWithHistory } from '../../lib/easyshopper/list';
 import { toCandidate, type MatchCandidate } from '../../lib/easyshopper/match';
 import { summarizePurchases } from '../../lib/easyshopper/insights';
+import { EdekaNotConnectedError, isEdekaNotConnected } from '../../lib/easyshopper/errors';
 import '../utils';
 
 /** Store the app falls back to when the user has not picked one (BuildConfig default). */
@@ -157,11 +158,29 @@ export async function handleGetInsights(req: Request, res: Response) {
   }
 }
 
-/** Load or create the integration's own anonymous device account. */
-async function ensureSession(
+/**
+ * Refuse an operation that needs the store account when none is stored.
+ *
+ * Separate from the handlers so the code and the human explanation cannot drift
+ * apart: the UI branches on `code`, the shopper reads `reason`.
+ */
+function respondNotConnected(res: Response) {
+  const reason = 'Connect EDEKA in Settings first';
+  return res.status(409).json({ code: 'edeka-not-connected', reason, error: reason });
+}
+
+/**
+ * Load the integration's own anonymous device account.
+ *
+ * `allowSignup` is false by default on purpose. Signing up creates a real user
+ * in the store app, so only the explicit connect endpoint may pass `true` —
+ * every other caller answers `edeka-not-connected` instead.
+ */
+export async function ensureSession(
   userId: string,
   key: Buffer,
-  preferredStoreGuid?: string
+  preferredStoreGuid?: string,
+  options: { allowSignup?: boolean } = {}
 ): Promise<{ client: EasyShopperClient; session: EasyShopperSession; storeGuid: string }> {
   const client = new EasyShopperClient();
   const integration = await Integration.findOne({
@@ -175,6 +194,7 @@ async function ensureSession(
   if (integration?.encryptedCredentials) {
     account = JSON.parse(decrypt(integration.encryptedCredentials, key)) as StoredAccount;
   } else {
+    if (!options.allowSignup) throw new EdekaNotConnectedError();
     const credentials = await client.signup(storeGuid);
     account = { ...credentials, uniqueDeviceId: randomUUID(), storeGuid };
     await Integration.findOneAndUpdate(
@@ -189,6 +209,34 @@ async function ensureSession(
 
   const session = await client.login(account, account.uniqueDeviceId);
   return { client, session, storeGuid: preferredStoreGuid ?? session.storeGuid ?? storeGuid };
+}
+
+/**
+ * POST /api/easyshopper/connect — the one place an account may be created.
+ *
+ * Idempotent: an existing account is reused, so a double tap cannot register a
+ * second device user.
+ */
+export async function handleConnectEdeka(req: Request, res: Response) {
+  const key = req.derivedKey;
+  if (!key) return res.status(401).json({ error: 'Session key missing — please re-login' });
+
+  try {
+    const existing = await Integration.findOne({
+      userId: req.userId,
+      provider: IntegrationProvider.EASySHOPPER,
+    }).lean();
+
+    const { storeGuid } = await ensureSession(req.userId, key, undefined, { allowSignup: true });
+    res.json({
+      connected: true,
+      alreadyConnected: Boolean(existing?.encryptedCredentials),
+      storeGuid,
+    });
+  } catch (error) {
+    console.error('EASY Shopper connect failed:', error);
+    res.status(502).json({ error: 'could not create the store account — try again later' });
+  }
 }
 
 const planSchema = z.object({
@@ -272,6 +320,7 @@ export async function handlePlanList(req: Request, res: Response) {
     );
     res.json(plan);
   } catch (err: unknown) {
+    if (isEdekaNotConnected(err)) return respondNotConnected(res);
     console.error('EASY Shopper plan failed:', err);
     const message = err instanceof Error ? err.message : 'planning failed';
     res.status(502).json({ error: message });
@@ -358,6 +407,7 @@ export async function handleCreateList(req: Request, res: Response) {
 
     res.json({ added, plan, shareLink });
   } catch (err: unknown) {
+    if (isEdekaNotConnected(err)) return respondNotConnected(res);
     console.error('EASY Shopper list create failed:', err);
     const message = err instanceof Error ? err.message : 'list creation failed';
     res.status(502).json({ error: message });
@@ -415,6 +465,7 @@ export async function handleShareCode(req: Request, res: Response) {
     const { session, storeGuid } = await ensureSession(req.userId, key);
     res.json({ userGuid: session.userGuid, storeGuid, format: 'aztec' });
   } catch (err: unknown) {
+    if (isEdekaNotConnected(err)) return respondNotConnected(res);
     console.error('EASY Shopper share code failed:', err);
     res.status(502).json({ error: err instanceof Error ? err.message : 'share code failed' });
   }
@@ -439,6 +490,7 @@ export async function handleShareList(req: Request, res: Response) {
     if (!shareLink) return res.status(502).json({ error: 'the API returned no invite link' });
     res.json({ shareLink, expiresAt: new Date(Date.now() + SHARE_LINK_TTL_MS).toISOString() });
   } catch (err: unknown) {
+    if (isEdekaNotConnected(err)) return respondNotConnected(res);
     console.error('EASY Shopper share failed:', err);
     const message = err instanceof Error ? err.message : 'share failed';
     res.status(502).json({ error: message });

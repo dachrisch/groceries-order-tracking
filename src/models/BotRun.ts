@@ -1,7 +1,14 @@
 import mongoose from 'mongoose';
 
 const botRunItemSchema = new mongoose.Schema({
-  productId: { type: Number, required: true },
+  /** Knuspr product id. An EDEKA list line may have none and be identified by `textKey`. */
+  productId: { type: Number },
+  /** Which provider's basket this line was written to. Older runs predate it and are Knuspr. */
+  provider: { type: String, enum: ['knuspr', 'edeka'] },
+  /** EDEKA free-text identity: a line with no catalogue id is remembered by its name. */
+  textKey: { type: String },
+  /** EASY Shopper row id, when the write returned one, so undo removes exactly that row. */
+  listItemGuid: { type: String },
   name: { type: String, required: true },
   qty: { type: Number, required: true },
   reason: { type: String },
@@ -28,6 +35,24 @@ const botRunSchema = new mongoose.Schema({
   },
   items: [botRunItemSchema],
   totalPrice: { type: Number, default: 0 },
+  /**
+   * Where the items went. A plain cart run is the default, so every run written
+   * before destinations existed stays a Knuspr run without a migration.
+   */
+  destination: {
+    type: String,
+    enum: ['knuspr-cart', 'edeka-list', 'checklist'],
+    default: 'knuspr-cart',
+  },
+  /**
+   * Where the shopper was when the run happened. The default destination is
+   * derived from this, so recording it keeps a derived default auditable later.
+   */
+  locationContext: {
+    source: { type: String },
+    city: { type: String },
+    country: { type: String },
+  },
   status: {
     type: String,
     enum: ['in-cart', 'undone', 'delivered', 'partially-delivered'],

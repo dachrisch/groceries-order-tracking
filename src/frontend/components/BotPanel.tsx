@@ -1,254 +1,57 @@
-import { createSignal, For, Show } from 'solid-js';
-import { Bot as BotIcon, Send, Sparkles, Undo2, X } from 'lucide-solid';
-
-interface ChatRun {
-  _id: string;
-  items: Array<{ productId: number; name: string; qty: number; reason?: string }>;
-  totalPrice: number;
-}
-
-interface ChatDraft {
-  occasionId: string;
-  name: string;
-  servings: number;
-  date?: string;
-  style?: string;
-  items: Array<{ name: string; qty: number }>;
-  missing: string[];
-}
-
-interface ChatMessage {
-  role: 'user' | 'bot';
-  text: string;
-  run?: ChatRun;
-  requiresConfirmation?: boolean;
-  drafts?: ChatDraft[];
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * The desktop chat drawer.
+ *
+ * Chat itself lives in `ask/ChatPane` so this panel and the Ask hub cannot
+ * disagree about job polling, undo or `bot-run-complete`. On a phone the centre
+ * tab opens the Ask hub instead, so the floating launcher is desktop-only.
+ */
+import { createSignal } from 'solid-js';
+import { Bot as BotIcon, X } from 'lucide-solid';
+import { ChatPane } from './ask/ChatPane';
+import { openAsk } from '../lib/overlays';
 
 export function BotPanel() {
   const [open, setOpen] = createSignal(false);
-  const [input, setInput] = createSignal('');
-  const [messages, setMessages] = createSignal<ChatMessage[]>([
-    {
-      role: 'bot',
-      text: 'Hi! Try “pizza for 6 on Wednesday and food till Sunday”.',
-    },
-  ]);
-  const [busy, setBusy] = createSignal(false);
-  const [progress, setProgress] = createSignal('');
-  const [undoing, setUndoing] = createSignal<string | null>(null);
 
-  const addMessage = (message: ChatMessage) => setMessages((previous) => [...previous, message]);
-
-  const send = async (textOverride?: string) => {
-    const text = (textOverride ?? input()).trim();
-    if (!text || busy()) return;
-
-    addMessage({ role: 'user', text });
-    setInput('');
-    setBusy(true);
-    setProgress('Thinking…');
-
-    try {
-      const start = await fetch('/api/bot/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-      const startBody = await start.json();
-      if (!start.ok) {
-        addMessage({ role: 'bot', text: startBody.error ?? 'Could not start the bot.' });
-        return;
-      }
-
-      const deadline = Date.now() + 140_000;
-      while (Date.now() < deadline) {
-        await sleep(1000);
-        const response = await fetch(`/api/bot/jobs/${startBody.jobId}`);
-        if (!response.ok) continue;
-        const job = await response.json();
-
-        if (job.status === 'done') {
-          const result = job.result ?? {};
-          addMessage({
-            role: 'bot',
-            text: result.reply ?? 'Done.',
-            run: result.run,
-            requiresConfirmation: result.status === 'requires-confirmation',
-            drafts: result.drafts,
-          });
-          if (result.run || result.status === 'added') {
-            window.dispatchEvent(new CustomEvent('bot-run-complete'));
-          }
-          return;
-        }
-
-        if (job.status === 'error') {
-          addMessage({ role: 'bot', text: job.error ?? 'The bot failed.' });
-          return;
-        }
-
-        setProgress(job.status === 'running' ? 'Working on it…' : 'Queued…');
-      }
-
-      addMessage({ role: 'bot', text: 'That took too long. Check the Bot page in a moment.' });
-    } catch {
-      addMessage({ role: 'bot', text: 'Connection error. Please try again.' });
-    } finally {
-      setBusy(false);
-      setProgress('');
-    }
-  };
-
-  const undo = async (run: ChatRun) => {
-    setUndoing(run._id);
-    try {
-      const response = await fetch(`/api/bot/runs/${run._id}/undo`, { method: 'POST' });
-      const body = await response.json();
-      if (!response.ok) {
-        addMessage({ role: 'bot', text: body.error ?? 'Undo failed.' });
-        if (body.cartUrl) window.open(body.cartUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        addMessage({ role: 'bot', text: 'Undone — those items were removed from your cart.' });
-        window.dispatchEvent(new CustomEvent('bot-run-complete'));
-      }
-    } catch {
-      addMessage({ role: 'bot', text: 'Undo failed.' });
-    } finally {
-      setUndoing(null);
-    }
+  const openOccasions = () => {
+    setOpen(false);
+    openAsk('occasions');
   };
 
   return (
     <>
       <button
-        class="btn btn-primary btn-circle btn-lg fixed bottom-6 right-6 z-30 shadow-2xl"
+        class="btn btn-primary btn-circle btn-lg fixed bottom-6 right-6 z-30 hidden shadow-2xl lg:flex"
         title="Order bot"
         onClick={() => setOpen(true)}
       >
         <BotIcon size={26} />
       </button>
 
-      <Show when={open()}>
-        <div class="fixed inset-0 bg-black/20 z-40" onClick={() => setOpen(false)} />
-        <aside class="fixed right-0 top-0 h-full w-full max-w-md bg-base-100 shadow-2xl z-50 flex flex-col">
-          <header class="flex items-center gap-3 p-4 border-b border-base-300 bg-base-100">
-            <div class="bg-primary/10 text-primary rounded-xl p-2">
-              <BotIcon size={22} />
-            </div>
-            <div class="flex-1">
-              <h2 class="font-black text-lg leading-tight">Order bot</h2>
-              <p class="text-xs opacity-70">Weekly fills and learned occasions</p>
-            </div>
-            <button class="btn btn-ghost btn-sm btn-square" onClick={() => setOpen(false)}>
-              <X size={20} />
-            </button>
-          </header>
-
-          <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-base-200/40">
-            <For each={messages()}>
-              {(message) => (
-                <div class={`chat ${message.role === 'user' ? 'chat-end' : 'chat-start'}`}>
-                  <div
-                    class={`chat-bubble ${
-                      message.role === 'user' ? 'chat-bubble-primary' : 'chat-bubble-neutral'
-                    }`}
-                  >
-                    <p class="whitespace-pre-wrap">{message.text}</p>
-
-                    <Show when={message.run}>
-                      {(run) => (
-                        <div class="mt-3 pt-3 border-t border-white/20 space-y-2">
-                          <div class="flex items-center justify-between text-xs font-bold">
-                            <span>{run().items.length} items</span>
-                            <span>€{run().totalPrice.toFixed(2)}</span>
-                          </div>
-                          <button
-                            class="btn btn-xs btn-outline gap-1"
-                            onClick={() => undo(run())}
-                            disabled={undoing() === run()._id}
-                          >
-                            <Show when={undoing() === run()._id} fallback={<Undo2 size={14} />}>
-                              <span class="loading loading-spinner loading-xs" />
-                            </Show>
-                            Undo
-                          </button>
-                        </div>
-                      )}
-                    </Show>
-
-                    <For each={message.drafts ?? []}>
-                      {(draft) => (
-                        <div class="mt-3 pt-3 border-t border-white/20 space-y-1">
-                          <div class="text-xs font-bold">
-                            🍳 {draft.name} ×{draft.servings}
-                            {draft.date ? ` · ${draft.date}` : ''}
-                            {draft.style ? ` · ${draft.style}` : ''}
-                          </div>
-                          <ul class="text-xs space-y-0.5">
-                            <For each={draft.items}>
-                              {(item) => (
-                                <li class="flex justify-between gap-3">
-                                  <span class="truncate">{item.name}</span>
-                                  <span class="font-mono">×{item.qty}</span>
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                          <Show when={draft.missing.length > 0}>
-                            <p class="text-xs opacity-80">Add yourself: {draft.missing.join(', ')}</p>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-
-                    <Show when={message.requiresConfirmation}>
-                      <div class="flex flex-wrap gap-2 mt-2">
-                        <button class="btn btn-xs btn-warning gap-1" onClick={() => send('yes')} disabled={busy()}>
-                          <Sparkles size={14} /> {message.drafts?.length ? 'Add' : 'Confirm'}
-                        </button>
-                        <Show when={message.drafts?.length}>
-                          <a class="btn btn-xs btn-ghost" href="/bot">Edit on Occasions page</a>
-                        </Show>
-                      </div>
-                    </Show>
-                  </div>
-                </div>
-              )}
-            </For>
-
-            <Show when={busy()}>
-              <div class="chat chat-start">
-                <div class="chat-bubble chat-bubble-neutral">
-                  <span class="loading loading-dots loading-sm" />
-                  <span class="text-xs ml-2">{progress()}</span>
-                </div>
-              </div>
-            </Show>
+      <div
+        class={`${open() ? 'fixed' : 'hidden'} inset-0 z-40 bg-black/20`}
+        onClick={() => setOpen(false)}
+      />
+      <aside
+        class={`${open() ? 'flex' : 'hidden'} fixed right-0 top-0 z-50 h-full w-full max-w-md flex-col bg-base-100 shadow-2xl`}
+      >
+        <header class="flex items-center gap-3 border-b border-base-300 bg-base-100 p-4">
+          <div class="rounded-xl bg-primary/10 p-2 text-primary">
+            <BotIcon size={22} />
           </div>
+          <div class="flex-1">
+            <h2 class="text-lg font-black leading-tight">Order bot</h2>
+            <p class="text-xs opacity-70">Weekly fills and learned occasions</p>
+          </div>
+          <button class="btn btn-ghost btn-sm btn-square" onClick={() => setOpen(false)}>
+            <X size={20} />
+          </button>
+        </header>
 
-          <form
-            class="p-3 border-t border-base-300 flex items-center gap-2 bg-base-100"
-            onSubmit={(event) => {
-              event.preventDefault();
-              send();
-            }}
-          >
-            <input
-              class="input input-bordered flex-1"
-              placeholder="e.g. fill my inventory for this week"
-              value={input()}
-              onInput={(event) => setInput(event.currentTarget.value)}
-              disabled={busy()}
-            />
-            <button class="btn btn-primary btn-square" type="submit" disabled={busy() || !input().trim()}>
-              <Send size={20} />
-            </button>
-          </form>
-        </aside>
-      </Show>
+        <div class="min-h-0 flex-1">
+          <ChatPane onEditOccasions={openOccasions} />
+        </div>
+      </aside>
     </>
   );
 }

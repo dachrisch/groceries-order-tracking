@@ -8,6 +8,24 @@
     "typescript/no-namespace": "off",
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
   },
+  "overrides": [
+    {
+      "files": ["src/lib/bot/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/models/ProductLink"],
+                "message": "The cross-store product link is display only. Learning code must not read ProductLink (invariant D5); the merge then cannot leak into a rate, stock or a due decision."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
   "env": {
     "browser": true,
     "node": true
