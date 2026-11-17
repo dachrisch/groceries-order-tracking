@@ -22,7 +22,15 @@
 - Knuspr sessions need `req.derivedKey`; use `requireKey()` in the bot
   controller, and return `401` when it is missing.
 - Never throw raw errors to the client; log server-side and return
-  `{ error: string }`.
+  `{ error: string }`. A refusal the UI has an action for also carries a `code`
+  (`edeka-not-connected` is the only one today), so a missing step does not read
+  as a bug.
+- **Two rate budgets.** `apiLimiter` covers every `/api` call at 1000 per 15
+  minutes: the merged shell reads about seven endpoints per page, so the old 100
+  locked a person out after roughly fourteen page views. `authLimiter` covers
+  `/api/login` and `/api/register` at 10 per 15 minutes, which is the
+  brute-force door and has nothing to do with browsing. Both are skipped under
+  `NODE_ENV=test`; `RATE_LIMITS=on` re-enables them for `rate-limit.test.ts`.
 
 ## Routes
 
@@ -108,6 +116,7 @@ EASY Shopper (in-store, `src/lib/easyshopper/AGENTS.md`):
 | GET | `/api/easyshopper/list/extract/:id` | poll one photo read: `{status, lines, model, paid, error}`; `404` `that photo read was lost — read the photo again` |
 | POST | `/api/easyshopper/list/plan` | search + opencode match (rules fallback), no writes; `lines` max 60 × 200 chars, `useModel: false` forces the rules plan |
 | POST | `/api/easyshopper/list/create` | write the plan to the account's list, then mint a share link (plans again, so the preview is advisory) |
+| POST | `/api/easyshopper/connect` | the only place the store account may be created; idempotent, and it names the side effect it has |
 | GET | `/api/easyshopper/share-code` | the account's `userGuid` — payload of the Aztec code the phone scans |
 | POST | `/api/easyshopper/list/share` | (re)mint the 24 h invite link |
 | POST | `/api/easyshopper/sync/request` | flag a capture for the laptop sidecar |
