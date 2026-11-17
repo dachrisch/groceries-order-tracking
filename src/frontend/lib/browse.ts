@@ -37,6 +37,11 @@ export interface BrowseItem {
   due: boolean;
   /** Knuspr only: estimated days of stock left. */
   stockDays: number | null;
+  /**
+   * True when the last purchase is older than the rate window: the row has a
+   * name and a price but no cadence, stock or due date.
+   */
+  outsideWindow?: boolean;
   linked?: { confidence: number; source: 'auto' | 'manual' };
 }
 
@@ -44,6 +49,8 @@ export interface ProductsResponse {
   now: string;
   horizonDays: number;
   location: { context: unknown; destination: Destination };
+  /** Length of the rate window; rows outside it carry no cadence. */
+  windowDays: number;
   counts: { total: number; due: number; empty: number };
   items: BrowseItem[];
 }

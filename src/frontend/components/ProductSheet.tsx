@@ -22,7 +22,7 @@ import {
   type BrowseItem,
   type ProductGroup,
 } from '../lib/browse';
-import { cadenceLabel, euro, relativeDays } from '../lib/format';
+import { euro, relativeDays } from '../lib/format';
 
 interface EdekaBucket {
   textKey: string;
@@ -42,6 +42,8 @@ export function ProductSheet(props: {
   edekaBuckets: EdekaBucket[];
   knusprVariants: KnusprVariant[];
   destination: Destination;
+  /** Length of the rate window, so "outside it" can be said in weeks. */
+  windowDays?: number;
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -179,6 +181,20 @@ export function ProductSheet(props: {
     }
   };
 
+  /**
+   * An outside-window row has no cadence on purpose; saying "no rhythm yet"
+   * would read as a new product, when the truth is that the last purchase is
+   * simply older than the window.
+   */
+  const cadenceText = (provider: Provider, stat: { cadenceDays: number | null }) => {
+    if (stat.cadenceDays) return `every ~${Math.round(stat.cadenceDays)} d`;
+    if (provider === 'knuspr' && props.item.outsideWindow) {
+      const weeks = Math.max(1, Math.round((props.windowDays ?? 182) / 7));
+      return `not in ${weeks} weeks`;
+    }
+    return 'no rhythm yet';
+  };
+
   const statRow = (provider: Provider) => {
     const stat = props.item.statsByProvider[provider];
     if (!stat) return null;
@@ -193,7 +209,7 @@ export function ProductSheet(props: {
         <div class="mt-2 grid grid-cols-3 gap-2">
           <div>
             <div class="text-[9px] font-bold uppercase tracking-wide text-base-content/45">Every</div>
-            <div class="text-sm font-bold">{cadenceLabel(stat.cadenceDays)}</div>
+            <div class="text-sm font-bold">{cadenceText(provider, stat)}</div>
           </div>
           <div>
             <div class="text-[9px] font-bold uppercase tracking-wide text-base-content/45">Bought</div>

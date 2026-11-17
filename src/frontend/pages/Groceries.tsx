@@ -23,7 +23,7 @@ import {
   type ProductGroup,
   type ProductsResponse,
 } from '../lib/browse';
-import { euro } from '../lib/format';
+import { euro, relativeDays } from '../lib/format';
 
 type SourceFilter = 'both' | 'knuspr' | 'edeka';
 
@@ -301,7 +301,11 @@ export function Groceries() {
                             return (
                               <span>
                                 {providerLabel(provider)}
-                                {stat?.cadenceDays ? ` · every ~${Math.round(stat.cadenceDays)} d` : ''}
+                                {stat?.cadenceDays
+                                  ? ` · every ~${Math.round(stat.cadenceDays)} d`
+                                  : (item.outsideWindow && provider === 'knuspr'
+                                    ? ` · last bought ${relativeDays(stat?.lastBought)}`
+                                    : '')}
                                 {stat ? ` · ${stat.purchases}×` : ''}
                               </span>
                             );
@@ -332,6 +336,7 @@ export function Groceries() {
             edekaBuckets={edekaBuckets()}
             knusprVariants={knusprVariants()}
             destination={destination()}
+            windowDays={list()?.windowDays ?? 182}
             onClose={() => setSelectedId(null)}
             onChanged={refresh}
           />
