@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.1](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.0...v1.16.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **groceries:** stop the + from posting to a store that cannot be reached ([8ce6e08](https://github.com/dachrisch/groceries-order-tracking/commit/8ce6e08b6369fa4b2b9391578149dc96f77e9a72))
+* **groceries:** stop the + from posting to a store that cannot be reached ([92ccd9f](https://github.com/dachrisch/groceries-order-tracking/commit/92ccd9f2dd43583bb46cb6b155dc065880cf7157))
+
 ## [1.16.0](https://github.com/dachrisch/groceries-order-tracking/compare/v1.15.2...v1.16.0) (2026-11-17)
 
 
