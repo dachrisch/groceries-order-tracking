@@ -17,6 +17,7 @@
  * URL invite is dead in 4.154.0, so the code is the only share path; following
  * it swaps the phone's own list, which the copy says before the code is shown.
  */
+import { A } from '@solidjs/router';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import {
   ClipboardList,
@@ -77,6 +78,8 @@ type PhotoOutcome =
 
 interface ApiReply {
   error?: string;
+  /** Machine-readable refusal, e.g. `edeka-not-connected`, which has an action. */
+  code?: string;
 }
 
 /** Draw an already-decoded photo onto a canvas and return a JPEG data URL. */
@@ -192,6 +195,12 @@ export function ListFlow() {
   const [shareError, setShareError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<'plan' | 'create' | 'extract' | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  /**
+   * A list cannot be written without the store's device account, and creating
+   * one is an explicit action in Settings. Without this flag the refusal reads
+   * like a bug instead of a missing step.
+   */
+  const [needsConnect, setNeedsConnect] = createSignal(false);
   /** Which request failed, so "Try again" retries the right one. */
   const [failed, setFailed] = createSignal<'plan' | 'create' | null>(null);
   // A read that succeeded but had nothing to add is a note, not a failure.
@@ -400,9 +409,13 @@ export function ListFlow() {
     setNotice(null);
     setPhotoOutcome(null);
     setCreated(false);
+    setNeedsConnect(false);
     try {
       const { ok, status, data } = await postJson<Plan>('/api/easyshopper/list/plan', body());
-      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'planning failed'));
+      if (!ok) {
+        setNeedsConnect(data.code === 'edeka-not-connected');
+        throw new Error(listRefusalMessage(status, data.error, 'planning failed'));
+      }
       setPlan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'planning failed');
@@ -416,6 +429,7 @@ export function ListFlow() {
     setBusy('create');
     setError(null);
     setFailed(null);
+    setNeedsConnect(false);
     try {
       const { ok, status, data } = await postJson<{ plan: Plan; added: number }>(
         '/api/easyshopper/list/create',
@@ -423,7 +437,10 @@ export function ListFlow() {
         { ...body(), createShareLink: false },
         { timeoutMessage: 'creating the list took too long — try again' }
       );
-      if (!ok) throw new Error(listRefusalMessage(status, data.error, 'list creation failed'));
+      if (!ok) {
+        setNeedsConnect(data.code === 'edeka-not-connected');
+        throw new Error(listRefusalMessage(status, data.error, 'list creation failed'));
+      }
       setPlan(data.plan);
       setAdded(data.added);
       setCreated(true);
@@ -648,7 +665,7 @@ export function ListFlow() {
                 ? 'Some lines may already be on the phone list; matching again shows the current plan.'
                 : undefined
             }
-            action={{
+            action={needsConnect() ? undefined : {
               label: 'Try again',
               onClick: () => (failed() === 'create' ? void createList() : void runPlan()),
               busy: busy() !== null,
@@ -656,6 +673,12 @@ export function ListFlow() {
                 busy() !== null ? 'Another step is running — wait for it to finish.' : undefined,
             }}
           />
+        </Show>
+
+        <Show when={needsConnect()}>
+          <A href="/settings" class="btn btn-primary btn-sm w-full">
+            Connect EDEKA
+          </A>
         </Show>
 
         <Show when={plan()}>
