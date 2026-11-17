@@ -25,10 +25,16 @@ shape comes from the shipped app's own bytecode.
 1. **The account is not the user's account.** It is an anonymous device identity minted
    by `/v4/signup`, stored encrypted in `Integration` (`provider: easyshopper`). It can
    never read the phone's account; that is why purchase history comes from the capture
-   sidecar and lists reach the phone through a share link the user follows.
-2. **Deletion is `amount: 0`.** `addOrUpdate` is the only item mutation; there is no
+   sidecar and a list reaches the phone through the Aztec code the user scans.
+2. **Never mint an account as a side effect.** Signing up creates a real user in the
+   store app, so it happens only through `POST /api/easyshopper/connect`, which the
+   shopper presses in Settings. `ensureSession(userId, key, storeGuid, { allowSignup })`
+   refuses with `EdekaNotConnectedError` (HTTP 409 `code: edeka-not-connected`) unless
+   `allowSignup` is true; only that endpoint passes it. Adding a product, opening a
+   list, planning lines or searching must all answer the refusal instead.
+3. **Deletion is `amount: 0`.** `addOrUpdate` is the only item mutation; there is no
    delete endpoint. The app keeps a row when `amount > 0` and drops it otherwise.
-3. **Match, don't invent.** A line that does not clear the score threshold stays a
+4. **Match, don't invent.** A line that does not clear the score threshold stays a
    free-text row. Never fabricate a product id or borrow one from another store.
    `searchListCandidates` builds one menu per line — catalogue search results plus recent
    purchases, scored, deduped and capped at 8 — and that single array is the prompt's
@@ -46,9 +52,9 @@ shape comes from the shipped app's own bytecode.
    stays next to "H-Milch 1,5 %", "laktosefrei" next to the ordinary carton), and a
    purchase with no evidence for the line never *evicts* a catalogue row — it can only
    fill a slot the catalogue left empty.
-4. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
+5. **Store scoping.** Prices, categories and lists are per store GUID. A plan without a
    store is meaningless.
-5. **The photo leaves the server; the backend still owns the menu and the ids.** Photo
+6. **The photo leaves the server; the backend still owns the menu and the ids.** Photo
    intake is one bounded opencode vision chain (`extract.ts`): the image is downscaled in
    the browser, is never written to Mongo, never logged, and is not kept by the job — only
    the lines it produced are. The model returns list lines and nothing else; it never sees
