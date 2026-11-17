@@ -19,7 +19,6 @@ import { ProductSheet } from '../components/ProductSheet';
 import { StatePanel, type StateAction } from '../components/StatePanel';
 import { providerLabel, useLocation, type Provider, type ProviderStatus } from '../lib/location';
 import {
-  addTargetFor,
   offerFor,
   priceOf,
   providersOf,
@@ -346,7 +345,7 @@ export function Groceries() {
           icon={<MapPin size={18} />}
           title="Knuspr does not deliver here"
           body={knusprStatus()!.reason}
-          hint="The Knuspr rows stay visible; a + already writes to the destination your location allows."
+          hint="Knuspr rows stay visible. A row with an EDEKA match sends its + to the list; a row only Knuspr sells has its + switched off, with the reason."
           action={{ label: 'Show the EDEKA list', onClick: () => changeSource('edeka') }}
         />
       </Show>
@@ -435,11 +434,7 @@ export function Groceries() {
                         <span class="text-base-content/55">{stockLabel(item)}</span>
                       </div>
                     </button>
-                    <Show when={addTargetFor(item, destination())}>
-                      {(target) => (
-                        <BasketAddButton item={target()} destination={destination()} />
-                      )}
-                    </Show>
+                    <BasketAddButton item={item} destination={destination()} />
                   </div>
                 )}
               </For>

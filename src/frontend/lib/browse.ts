@@ -24,6 +24,11 @@ export interface BrowseOffer {
   price: number | null;
   productId?: number;
   textKey?: string;
+  /**
+   * The store's own name for the line, when it has one. A linked EDEKA offer
+   * carries the receipt name, so the button that adds it can say what it adds.
+   */
+  name?: string;
 }
 
 export interface BrowseItem {
@@ -104,26 +109,30 @@ export interface AddTarget {
   qty?: number;
 }
 
+/** The line one offer would write, with the store's own name when it has one. */
+export function targetFromOffer(item: BrowseItem, offer: BrowseOffer): AddTarget {
+  return {
+    provider: offer.provider,
+    name: offer.name ?? item.name,
+    productId: offer.productId,
+    textKey: offer.textKey,
+  };
+}
+
 /**
  * Which line a plain `+` should send for this row.
  *
  * The destination comes from the location, but a row that only one store knows
  * cannot travel to the other store's basket — the server would skip it and the
  * button would read as broken. So the matching offer of the destination's store
- * wins, and the row's own store is the fallback. Availability is still checked
- * server-side; this only picks a line that can exist.
+ * wins, and the row's own store is the fallback. Whether that store can actually
+ * be reached is `resolveAdd`'s question; this only picks a line that can exist.
  */
 export function addTargetFor(item: BrowseItem, destination: Destination): AddTarget | null {
   const preferred: Provider = destination === 'edeka-list' ? 'edeka' : 'knuspr';
   const fallback: Provider = preferred === 'knuspr' ? 'edeka' : 'knuspr';
   const offer = offerFor(item, preferred) ?? offerFor(item, fallback);
-  if (!offer) return null;
-  return {
-    provider: offer.provider,
-    name: item.name,
-    productId: offer.productId,
-    textKey: offer.textKey,
-  };
+  return offer ? targetFromOffer(item, offer) : null;
 }
 
 /** A short stock line for a row: Knuspr has stock, EDEKA only has a cadence. */

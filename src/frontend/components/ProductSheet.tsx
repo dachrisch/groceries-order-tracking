@@ -12,9 +12,8 @@ import { AlertCircle, Package } from 'lucide-solid';
 import { Sheet } from './Sheet';
 import { BasketAddButton } from './BasketAddButton';
 import { ProviderChip } from './ProviderBadges';
-import { destinationLabel, providerLabel, type Destination, type Provider } from '../lib/location';
+import { providerLabel, type Destination, type Provider } from '../lib/location';
 import {
-  addTargetFor,
   offerFor,
   priceOf,
   providersOf,
@@ -252,13 +251,10 @@ export function ProductSheet(props: {
             </div>
             <div class="mt-1 text-lg font-extrabold text-primary">{euro(priceOf(props.item))}</div>
             <p class="text-[11px] text-base-content/55">
-              + writes to {destinationLabel(props.destination)}. Each offer below can go to its own
-              store.
+              Each offer below can go to its own store; + uses the one that can take it here.
             </p>
           </div>
-          <Show when={addTargetFor(props.item, props.destination)}>
-            {(target) => <BasketAddButton item={target()} destination={props.destination} size="sm" label="Add" />}
-          </Show>
+          <BasketAddButton item={props.item} destination={props.destination} size="sm" label="Add" />
         </div>
 
         <Show when={error()}>
@@ -307,12 +303,8 @@ export function ProductSheet(props: {
                 </div>
                 <Show when={offer.available}>
                   <BasketAddButton
-                    item={{
-                      provider: offer.provider,
-                      name: props.item.name,
-                      productId: offer.productId,
-                      textKey: offer.textKey,
-                    }}
+                    item={props.item}
+                    offer={offer}
                     destination={offer.provider === 'knuspr' ? 'knuspr-cart' : 'edeka-list'}
                     size="sm"
                     label="Add"

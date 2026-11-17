@@ -33,8 +33,12 @@
   each have their own copy; the share copy states the swap before the code.
 - `components/ProductSheet.tsx` — one product with a stat row per provider, its
   offers, the EDEKA display match and the group merge/split corrections.
-- `components/BasketAddButton.tsx` — the one `+`: posts `/api/basket/add` and
-  shows the server's `409` reason instead of pre-judging availability.
+- `components/BasketAddButton.tsx` — the one `+`. It asks
+  `lib/basket-target.ts` where the line would go: a store that the location
+  cannot reach (a Knuspr row while away) disables the button with that store's
+  reason, and a cross-store match is offered instead when one exists. Anything
+  the button cannot know — the guardrail, the account, an availability race —
+  stays the server's call, and its `409` text is shown verbatim.
 - `components/ProviderBadges.tsx` — the K/E chips used by every merged page.
 - `components/SearchOverlay.tsx` — one query over history, EDEKA and Knuspr.
 - `components/LocationChip.tsx` — city chip plus the read-only "Where are you?"
@@ -43,6 +47,9 @@
 - `lib/location.tsx` — the one `GET /api/location` read, shared through context.
 - `lib/browse.ts` — wire types for `GET /api/products` and the lookups that keep
   a stat keyed per provider (`addTargetFor`, `offerFor`, `providersOf`).
+- `lib/basket-target.ts` — `resolveAdd`, the pure decision behind every `+`:
+  destination, the line to send, or the reason it cannot go anywhere. Unknown
+  location never refuses; the server shows both sources in that case.
 - `lib/activity.ts` — wire types for `/api/activity`, plus month-range helpers.
 - `lib/format.ts` — money, date and cadence formatting (no provider logic).
 - `lib/request.ts` — `fetchWithTimeout` (15 s) and the failure copy. Every page

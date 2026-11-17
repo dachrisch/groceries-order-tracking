@@ -3,25 +3,34 @@
  * through the basket contract, and all of them show the server's refusal
  * verbatim.
  *
- * The button never decides reachability: `POST /api/basket/add` answers `409`
- * with the availability reason or the guardrail that refused the run, and that
- * string is what the shopper sees. A greyed-out button would only hide the
- * reason, not protect the cart.
+ * What the button can decide locally is reach: `resolveAdd` knows, from the same
+ * location data the pages render, whether this line's store is reachable at all.
+ * A store that cannot be reached disables the button with its reason instead of
+ * firing a request whose only outcome is a red 409 — and when the row has a
+ * cross-store match, that match is offered instead.
+ *
+ * Everything else stays the server's call: the guardrail, the account, the
+ * availability race between render and click.
  */
-import { createSignal, onCleanup, Show } from 'solid-js';
+import { createMemo, createSignal, onCleanup, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Check, Plus } from 'lucide-solid';
-import { destinationLabel, type Destination } from '../lib/location';
-import type { AddTarget } from '../lib/browse';
+import { destinationLabel, useLocation, type Destination } from '../lib/location';
+import { resolveAdd } from '../lib/basket-target';
+import type { BrowseItem, BrowseOffer } from '../lib/browse';
 
 export function BasketAddButton(props: {
-  item: AddTarget;
-  /** The location's destination; a row may still fall back to its own store. */
+  /** The row, not a pre-picked line: the decision needs its offers to fall back. */
+  item: BrowseItem;
+  /** The location's destination; the row's own store is the fallback. */
   destination: Destination;
+  /** Pin one offer, for a button that sits inside "Where to get it". */
+  offer?: BrowseOffer;
   size?: 'xs' | 'sm';
   /** A label turns the square button into a wide one, e.g. in a product sheet. */
   label?: string;
 }) {
+  const location = useLocation();
   const [busy, setBusy] = createSignal(false);
   const [done, setDone] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -34,18 +43,29 @@ export function BasketAddButton(props: {
   });
 
   /**
-   * The store this line belongs to. A checklist has no store; anything else
-   * must match the line's provider, or the server would skip it.
+   * Recomputed from the location store, so a location change disables or
+   * re-enables every `+` on the page without a reload.
    */
-  const target = (): Destination => {
-    if (props.destination === 'checklist') return 'checklist';
-    if (props.destination === 'knuspr-cart' && props.item.provider === 'knuspr') return 'knuspr-cart';
-    if (props.destination === 'edeka-list' && props.item.provider === 'edeka') return 'edeka-list';
-    return props.item.provider === 'knuspr' ? 'knuspr-cart' : 'edeka-list';
+  const decision = createMemo(() =>
+    resolveAdd(props.item, props.destination, location.state()?.providers ?? null, props.offer)
+  );
+
+  const unavailableReason = () => {
+    const plan = decision();
+    return plan.kind === 'unavailable' ? plan.reason : null;
+  };
+
+  const label = () => {
+    const plan = decision();
+    if (plan.kind === 'unavailable') {
+      return `Cannot add ${props.item.name}: ${plan.reason}`;
+    }
+    return `Add ${plan.item.name} to ${destinationLabel(plan.destination)}`;
   };
 
   const add = async () => {
-    if (busy()) return;
+    const plan = decision();
+    if (plan.kind !== 'add' || busy()) return;
     setBusy(true);
     setError(null);
     setNeedsConnect(false);
@@ -54,14 +74,14 @@ export function BasketAddButton(props: {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          destination: target(),
+          destination: plan.destination,
           items: [
             {
-              provider: props.item.provider,
-              productId: props.item.productId,
-              textKey: props.item.textKey,
-              name: props.item.name,
-              qty: props.item.qty ?? 1,
+              provider: plan.item.provider,
+              productId: plan.item.productId,
+              textKey: plan.item.textKey,
+              name: plan.item.name,
+              qty: plan.item.qty ?? 1,
             },
           ],
         }),
@@ -97,6 +117,7 @@ export function BasketAddButton(props: {
   };
 
   const size = () => (props.size === 'sm' ? 'btn-sm' : 'btn-xs');
+  const disabled = () => busy() || unavailableReason() !== null;
 
   return (
     <div class="flex flex-col items-end gap-1">
@@ -104,9 +125,11 @@ export function BasketAddButton(props: {
         type="button"
         class={`btn btn-primary ${size()} ${props.label ? 'gap-1' : 'btn-square'}`}
         onClick={add}
-        disabled={busy()}
-        title={`Add to ${destinationLabel(target())}`}
-        aria-label={`Add ${props.item.name} to ${destinationLabel(target())}`}
+        disabled={disabled()}
+        title={unavailableReason() ?? label()}
+        aria-label={label()}
+        aria-description={unavailableReason() ?? undefined}
+        aria-disabled={disabled()}
       >
         <Show when={busy()}>
           <span class="loading loading-spinner loading-xs" />
