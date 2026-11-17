@@ -33,7 +33,9 @@ function order(overrides: Partial<OrderLike> = {}): OrderLike {
         id: 1001,
         name: 'Bio Vollmilch 1,5%',
         amount: 2,
-        priceComposition: { total: { amount: 1.19 } },
+        // Knuspr sends the line total and the unit price separately; the unit is
+        // the price of one pack, the total is what the line cost together.
+        priceComposition: { total: { amount: 2.38 }, unit: { amount: 1.19 } },
         images: ['https://cdn.knuspr.de/milk.jpg'],
       },
       { id: 1002, name: 'Bauernbrot', amount: 1, priceComposition: { total: { amount: 2.89 } } },
@@ -73,9 +75,34 @@ describe('fromOrder', () => {
     expect(event.lines[0]).toMatchObject({ productKey: '1001', productId: 1001, qty: 2, unitPrice: 1.19 });
   });
 
-  it('derives the total from the lines when the sum is missing', () => {
+  it('derives the total from the declared line totals when the order total is missing', () => {
     const event = fromOrder(order({ priceComposition: {} }));
+    // 2.38 for two packs of milk plus 2.89 for the bread.
     expect(event.total).toBe(5.27);
+  });
+
+  it('reads a line unit price from unit, never from the line total', () => {
+    const event = fromOrder(order({
+      priceComposition: {},
+      items: [{
+        id: 5001,
+        name: 'Miil Frische Vollmilch 3,5%',
+        amount: 2,
+        priceComposition: { total: { amount: 1.7 }, unit: { amount: 0.85 } },
+      }],
+    }));
+
+    expect(event.lines[0].qty).toBe(2);
+    expect(event.lines[0].unitPrice).toBe(0.85);
+    expect(event.total).toBe(1.7);
+  });
+
+  it('divides the line total when the unit price is missing', () => {
+    const event = fromOrder(order({
+      items: [{ id: 5002, name: 'Bauernbrot', amount: 2, priceComposition: { total: { amount: 3.98 } } }],
+    }));
+
+    expect(event.lines[0].unitPrice).toBe(1.99);
   });
 
   it('is undoable only when a bot run produced it', () => {

@@ -53,7 +53,15 @@ export interface OrderItemLike {
   amount?: number | null;
   textualAmount?: string | null;
   images?: string[] | null;
-  priceComposition?: { total?: { amount?: number | null } | null } | null;
+  /**
+   * `total` is the line total, not the price of one pack: a Knuspr line is
+   * `{ amount: 2, total: 1.70, unit: 0.85 }`. Reading `total` as a unit price
+   * doubles the line once a screen multiplies by quantity.
+   */
+  priceComposition?: {
+    total?: { amount?: number | null } | null;
+    unit?: { amount?: number | null } | null;
+  } | null;
 }
 
 export interface OrderLike {
@@ -108,21 +116,43 @@ export function parsePurchaseEventId(raw: string): { provider: Provider; id: str
   return { provider, id };
 }
 
+function lineQuantity(item: OrderItemLike): number {
+  return typeof item.amount === 'number' && item.amount > 0 ? item.amount : 1;
+}
+
+/**
+ * Price of one pack. Knuspr sends both figures; `unit` is authoritative, and
+ * `total / quantity` is the fallback when it is missing.
+ */
+function lineUnitPrice(item: OrderItemLike): number | null {
+  const unit = item.priceComposition?.unit?.amount;
+  if (typeof unit === 'number' && Number.isFinite(unit)) return unit;
+
+  const total = item.priceComposition?.total?.amount;
+  if (typeof total !== 'number' || !Number.isFinite(total)) return null;
+  return Number((total / lineQuantity(item)).toFixed(2));
+}
+
 /** A Knuspr order as one event. Total falls back to the lines when the sum is missing. */
 export function fromOrder(order: OrderLike): PurchaseEvent {
-  const lines: PurchaseLine[] = (order.items ?? []).map((item) => ({
+  const items = order.items ?? [];
+  const lines: PurchaseLine[] = items.map((item) => ({
     provider: 'knuspr',
     productKey: String(item.id),
     productId: item.id,
     name: item.name,
-    qty: typeof item.amount === 'number' && item.amount > 0 ? item.amount : 1,
-    unitPrice: typeof item.priceComposition?.total?.amount === 'number'
-      ? item.priceComposition.total.amount
-      : null,
+    qty: lineQuantity(item),
+    unitPrice: lineUnitPrice(item),
     image: item.images?.[0] ?? null,
   }));
 
-  const lineSum = lines.reduce((sum, line) => sum + money(line.unitPrice) * line.qty, 0);
+  // Use the declared line total where it exists: summing a rounded unit price
+  // would drift by a cent on lines like 3 for 10.00.
+  const lineSum = items.reduce((sum, item, index) => {
+    const declaredLine = item.priceComposition?.total?.amount;
+    if (typeof declaredLine === 'number' && Number.isFinite(declaredLine)) return sum + declaredLine;
+    return sum + money(lines[index].unitPrice) * lines[index].qty;
+  }, 0);
   const declared = order.priceComposition?.total?.amount;
   const runId = order.botRunId ? String(order.botRunId) : null;
 
