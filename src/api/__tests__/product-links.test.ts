@@ -104,6 +104,10 @@ describe('GET /api/products with a cross-store link', () => {
     expect(knuspr!.statsByProvider.edeka.provider).toBe('edeka');
     expect(knuspr!.offers.map((offer) => offer.provider)).toEqual(['knuspr', 'edeka']);
     expect(knuspr!.linked).toEqual({ confidence: 1, source: 'auto' });
+    // The linked offer names the line it would write, so a `+` that has to fall
+    // back to EDEKA can say what it is adding.
+    const edekaOffer = knuspr!.offers.find((offer) => offer.provider === 'edeka');
+    expect(edekaOffer?.name).toBe('Gut & Günstig Vollmilch 1l');
 
     // The merged bucket must not also stand on its own.
     expect(items.some((item) => item.id.startsWith('edeka:'))).toBe(false);

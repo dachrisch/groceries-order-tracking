@@ -28,12 +28,10 @@ import {
   type ProviderStatus,
 } from '../lib/location';
 import {
-  addTargetFor,
   offerFor,
   priceOf,
   providersOf,
   stockLabel,
-  type BrowseItem,
   type ProductsResponse,
 } from '../lib/browse';
 import { cadenceRange, euro, monthLabel, relativeDays } from '../lib/format';
@@ -183,8 +181,6 @@ export function Overview() {
    */
   const dueOutOfReach = () =>
     (forecast()?.week.itemCount ?? 0) > 0 && knusprStatus()?.available === false;
-
-  const addItem = (item: BrowseItem) => addTargetFor(item, destination());
 
   const monthEvents = () => month()?.events ?? [];
 
@@ -409,11 +405,7 @@ export function Overview() {
                                   {stockLabel(item)}
                                 </div>
                               </div>
-                              <Show when={addItem(item)}>
-                                {(target) => (
-                                  <BasketAddButton item={target()} destination={destination()} />
-                                )}
-                              </Show>
+                              <BasketAddButton item={item} destination={destination()} />
                             </div>
                           </div>
                         )}

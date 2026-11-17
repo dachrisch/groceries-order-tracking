@@ -34,6 +34,11 @@ interface BrowseOffer {
   price: number | null;
   productId?: number;
   textKey?: string;
+  /**
+   * The store's own name for the line. A linked EDEKA row is the receipt name,
+   * which is what the list would be written with and what the `+` says it adds.
+   */
+  name?: string;
 }
 
 interface BrowseItem {
@@ -282,6 +287,7 @@ export async function handleGetProducts(req: Request, res: Response) {
           reason: edekaReach.reason,
           price: linkedBucket.lastPrice ?? linkedBucket.avgPrice,
           textKey: linkedBucket.textKey,
+          name: linkedBucket.brand ? `${linkedBucket.brand} ${linkedBucket.name}` : linkedBucket.name,
         });
         browseItem.linked = { confidence: link.confidence, source: link.source };
       }
@@ -303,6 +309,7 @@ export async function handleGetProducts(req: Request, res: Response) {
           reason: edekaReach.reason,
           price: stat.lastPrice ?? stat.avgPrice,
           textKey: stat.textKey,
+          name: stat.brand ? `${stat.brand} ${stat.name}` : stat.name,
         }],
         due: edekaDue(stat, now) && edekaReach.available,
         stockDays: null,
