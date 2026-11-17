@@ -75,15 +75,38 @@ const csrfProtection = csurf({
 
 app.use(csrfProtection);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
-  standardHeaders: 'draft-7', // set `RateLimit` and `RateLimit-Policy` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
-  skip: () => process.env.NODE_ENV === 'test',
+/**
+ * Two budgets, because they protect different things.
+ *
+ * The general limit is there to stop a runaway client, not to police a normal
+ * session: the merged shell reads about seven endpoints per page, so a person
+ * clicking around reached 100 requests in a few minutes and was locked out.
+ *
+ * Credential endpoints keep the strict budget — that is the brute-force door,
+ * and it has nothing to do with how a logged-in shopper browses.
+ *
+ * `RATE_LIMITS=on` re-enables the limiters under NODE_ENV=test, which the test
+ * that proves both behaviours needs.
+ */
+const limitersSkipped = () => process.env.NODE_ENV === 'test' && process.env.RATE_LIMITS !== 'on';
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: limitersSkipped,
 });
 
-app.use(limiter);
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: limitersSkipped,
+});
+
+app.use(apiLimiter);
 app.use(derivedKeyMiddleware);
 
 app.get('/health', (_req, res) => {
@@ -111,8 +134,8 @@ const auth = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-app.post('/api/register', handleRegister);
-app.post('/api/login', handleLogin);
+app.post('/api/register', authLimiter, handleRegister);
+app.post('/api/login', authLimiter, handleLogin);
 app.post('/api/logout', handleLogout);
 app.get('/api/session', auth, handleSession);
 

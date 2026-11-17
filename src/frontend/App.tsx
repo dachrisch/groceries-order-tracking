@@ -41,6 +41,12 @@ export function App(props: { children?: JSX.Element }) {
   const [loading, setLoading] = createSignal(true);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
   const [version, setVersion] = createSignal('');
+  /**
+   * A session read that failed for a reason other than "not logged in". A 429 is
+   * the obvious case: treating it as a logout threw the shopper onto the login
+   * screen for browsing a little too fast.
+   */
+  const [sessionIssue, setSessionIssue] = createSignal<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -50,14 +56,21 @@ export function App(props: { children?: JSX.Element }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data as { name: string; email: string });
-      } else if (location.pathname !== '/login' && location.pathname !== '/register') {
-        navigate('/login');
+        setSessionIssue(null);
+        return;
       }
+      if (res.status === 401 || res.status === 403) {
+        if (location.pathname !== '/login' && location.pathname !== '/register') navigate('/login');
+        return;
+      }
+      setSessionIssue(
+        res.status === 429
+          ? 'Slow down for a moment — the app asked too many times in a row. Nothing was lost.'
+          : 'Could not check your session. This is not a logout.'
+      );
     } catch (e) {
       console.error('Session fetch failed', e);
-      if (location.pathname !== '/login' && location.pathname !== '/register') {
-        navigate('/login');
-      }
+      setSessionIssue('Could not reach the server. This is not a logout.');
     } finally {
       setLoading(false);
     }
@@ -355,7 +368,32 @@ export function App(props: { children?: JSX.Element }) {
           </LocationProvider>
         </Show>
 
-        <Show when={!user() || isAuthPage()}>{props.children}</Show>
+        {/*
+          A route must not mount while the session is unknown: the pages assume a
+          user and a location context. The retry is the only way out of this state.
+        */}
+        <Show when={!user() && sessionIssue() && !isAuthPage()}>
+          <div class="flex h-screen items-center justify-center p-6">
+            <div class="card w-full max-w-md bg-base-100 shadow-xl">
+              <div class="card-body gap-3 text-center">
+                <h2 class="card-title justify-center text-base">Not now</h2>
+                <p class="text-sm opacity-75">{sessionIssue()}</p>
+                <button
+                  class="btn btn-primary"
+                  onClick={() => {
+                    setSessionIssue(null);
+                    setLoading(true);
+                    void fetchUser();
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={(!user() && !sessionIssue()) || isAuthPage()}>{props.children}</Show>
       </Show>
 
       <Show when={loading()}>
