@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { setupTestDB, clearDB, teardownTestDB } from '../../api/__tests__/helpers';
 import BotRun from '../../models/BotRun';
 import BotSettings from '../../models/BotSettings';
+import Integration, { IntegrationProvider } from '../../models/Integration';
+import { encrypt } from '../crypto';
 
 // Both external baskets are mocked. The adapters themselves, the location gate,
 // the guardrails and the BotRun record all run for real.
@@ -39,6 +41,21 @@ vi.mock('../easyshopper/client', () => ({
 const { addToBasket, undoBasketRun } = await import('../basket');
 
 const KEY = Buffer.alloc(32, 7);
+
+/**
+ * A stored store account. Writing a list never creates one, so every EDEKA test
+ * has to start connected, exactly like the app does after Settings.
+ */
+async function connectStore(userId: string) {
+  await Integration.create({
+    userId,
+    provider: IntegrationProvider.EASySHOPPER,
+    encryptedCredentials: encrypt(
+      JSON.stringify({ secret: 'secret', deviceId: 'device', uniqueDeviceId: 'device-id', storeGuid: 'store' }),
+      KEY
+    ),
+  });
+}
 const EMPTY_CART = { cartId: 1, totalPrice: 0, totalSavings: 0, items: [] };
 
 beforeAll(setupTestDB);
@@ -89,6 +106,7 @@ describe('addToBasket', () => {
   });
 
   it('writes an EDEKA list line through the list client and records the run', async () => {
+    await connectStore(userId);
     await BotSettings.create({ userId, homeCity: 'Berlin' });
     shopper.upsertItem.mockResolvedValue({ shoppingListItemGuid: 'row-1' });
 
@@ -240,6 +258,7 @@ describe('undoBasketRun', () => {
   });
 
   it('undoes an EDEKA run by guid, falling back to amount 0 for a row without one', async () => {
+    await connectStore(userId);
     const run = await BotRun.create({
       userId,
       intent: { type: 'plan' },
