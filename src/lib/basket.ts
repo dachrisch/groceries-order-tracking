@@ -13,6 +13,8 @@
 import mongoose from 'mongoose';
 import BotRun from '../models/BotRun';
 import { ensureSession } from '../api/controllers/easyshopper.controller';
+import { isEdekaNotConnected } from './easyshopper/errors';
+import Integration, { IntegrationProvider } from '../models/Integration';
 import { getBotSettings } from './bot/fill';
 import { getLocationSettings } from './bot/location-settings';
 import { getKnusprSession } from './knuspr-auth';
@@ -76,6 +78,12 @@ export interface BasketResult {
   guardrail: BasketGuardrail;
   /** Why nothing was written, when that happened. */
   error?: string;
+  /**
+   * Machine-readable reason the UI branches on. Today only
+   * `edeka-not-connected`, which the shell turns into a connect action instead
+   * of a generic error.
+   */
+  code?: string;
 }
 
 export interface AddToBasketOptions {
@@ -291,6 +299,27 @@ async function writeEdekaList(
   context: LocationContext
 ): Promise<BasketResult> {
   const destination: Destination = 'edeka-list';
+
+  // One tap must not create an account in someone else's app. Without a stored
+  // integration this refuses; connecting is an explicit action in Settings.
+  const integration = await Integration.findOne({
+    userId,
+    provider: IntegrationProvider.EASySHOPPER,
+  }).lean();
+  if (!integration?.encryptedCredentials) {
+    return {
+      status: 'unavailable',
+      runId: null,
+      destination,
+      added: [],
+      skipped,
+      total: 0,
+      guardrail,
+      error: 'Connect EDEKA in Settings first',
+      code: 'edeka-not-connected',
+    };
+  }
+
   const { client, session, storeGuid } = await ensureSession(userId, derivedKey);
 
   // The list carries no prices, so the euro guardrail has nothing to add up;
@@ -401,7 +430,17 @@ export async function undoBasketRun(
 
   if (destination === 'edeka-list') {
     if (!options.derivedKey) throw new Error('Session key missing — please re-login');
-    const { client, session, storeGuid } = await ensureSession(userId, options.derivedKey);
+    let edeka;
+    try {
+      edeka = await ensureSession(userId, options.derivedKey);
+    } catch (error) {
+      // The account was disconnected after the list was written.
+      if (isEdekaNotConnected(error)) {
+        return { status: 'not-undoable', restored: 0, reason: 'Connect EDEKA in Settings first' };
+      }
+      throw error;
+    }
+    const { client, session, storeGuid } = edeka;
     let restored = 0;
     const failed: BasketSkip[] = [];
     for (const item of items) {

@@ -27,6 +27,7 @@ import {
   handleExtractList,
   handleExtractStatus,
   handleShareCode,
+  handleConnectEdeka,
 } from './controllers/easyshopper.controller';
 import {
   handleBotMessage,
@@ -172,5 +173,6 @@ app.post('/api/easyshopper/list/extract', auth, handleExtractList);
 app.get('/api/easyshopper/list/extract/:id', auth, handleExtractStatus);
 app.post('/api/easyshopper/list/share', auth, handleShareList);
 app.get('/api/easyshopper/share-code', auth, handleShareCode);
+app.post('/api/easyshopper/connect', auth, handleConnectEdeka);
 app.post('/api/easyshopper/sync/request', auth, handleRequestSync);
 app.get('/api/easyshopper/sync/status', auth, handleSyncStatus);

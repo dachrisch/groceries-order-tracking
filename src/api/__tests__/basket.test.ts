@@ -74,6 +74,17 @@ describe('/api/basket', () => {
     return { token, cookie: `${cookies}; ${csrfCookies.join('; ')}` };
   }
 
+  /** The list path needs a connected account: writing a list never creates one. */
+  async function connectEdeka() {
+    const { token, cookie } = await session();
+    const res = await request(app)
+      .post('/api/easyshopper/connect')
+      .set('Cookie', cookie)
+      .set('x-csrf-token', token)
+      .send({});
+    expect(res.status).toBe(200);
+  }
+
   it('requires a CSRF token for a basket write', async () => {
     const res = await request(app)
       .post('/api/basket/add')
@@ -109,6 +120,7 @@ describe('/api/basket', () => {
 
   it('adds to the EDEKA list and records the destination', async () => {
     await BotSettings.create({ userId, homeCity: 'Berlin' });
+    await connectEdeka();
     const { token, cookie } = await session();
 
     const res = await request(app)
@@ -224,6 +236,7 @@ describe('/api/basket', () => {
   });
 
   it('undoes an EDEKA run through the list', async () => {
+    await connectEdeka();
     await BotSettings.create({ userId, homeCity: 'Berlin' });
     let sessionCookies = await session();
 
