@@ -3,6 +3,7 @@ import request from 'supertest';
 import { app } from '../app';
 import { setupTestDB, clearDB, teardownTestDB, registerUser, loginUser, fetchCsrf, createOrder, getSessionUserId } from './helpers';
 import PurchaseSession from '../../models/PurchaseSession';
+import { getWeeklyConsumption } from '../../lib/bot/consumption';
 
 beforeAll(setupTestDB);
 afterAll(teardownTestDB);
@@ -199,5 +200,100 @@ describe('GET /api/search', () => {
     expect(res.body.edeka.state).toBe('unavailable');
     expect(res.body.edeka.reason).toContain('not connected');
     expect(res.body.knuspr.state).toBe('later');
+  });
+});
+
+describe('outside the rate window', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const daysAgo = (days: number) => new Date(Date.now() - days * DAY);
+
+  function item(id: number, name: string, unit = 1.19) {
+    return {
+      id,
+      name,
+      unit: 'l',
+      textualAmount: '1 l',
+      amount: 1,
+      images: [],
+      priceComposition: { total: { amount: unit, currency: 'EUR' }, unit: { amount: unit, currency: 'EUR' } },
+    };
+  }
+
+  it('still lists a product last bought before the window, without a rate', async () => {
+    await createOrder(userId, {
+      id: 8001,
+      orderTimeDate: daysAgo(400),
+      itemsCount: 1,
+      items: [item(9001, 'Alte Milch 3,5%')],
+    });
+
+    const res = await request(app).get('/api/products').set('Cookie', cookies);
+    const row = res.body.items.find((entry: { name: string }) => entry.name === 'Alte Milch 3,5%');
+
+    expect(row).toBeDefined();
+    expect(row.outsideWindow).toBe(true);
+    expect(row.due).toBe(false);
+    expect(row.stockDays).toBeNull();
+    expect(row.statsByProvider.knuspr.purchases).toBe(1);
+    expect(row.statsByProvider.knuspr.cadenceDays).toBeNull();
+    expect(row.statsByProvider.knuspr.lastBought).toBeTruthy();
+    expect(res.body.windowDays).toBeGreaterThan(150);
+  });
+
+  it('counts every purchase ever, not only the ones in the window', async () => {
+    for (let index = 0; index < 3; index += 1) {
+      await createOrder(userId, {
+        id: 8100 + index,
+        orderTimeDate: daysAgo(300 + index * 30),
+        itemsCount: 1,
+        items: [item(9101, 'Alte Milch 3,5%')],
+      });
+    }
+
+    const res = await request(app).get('/api/products?source=knuspr').set('Cookie', cookies);
+    const row = res.body.items.find((entry: { name: string }) => entry.name === 'Alte Milch 3,5%');
+    expect(row.statsByProvider.knuspr.purchases).toBe(3);
+  });
+
+  it('finds it in search history with its lifetime count', async () => {
+    for (let index = 0; index < 2; index += 1) {
+      await createOrder(userId, {
+        id: 8200 + index,
+        orderTimeDate: daysAgo(400 + index),
+        itemsCount: 1,
+        items: [item(9201, 'Alte Milch 3,5%')],
+      });
+    }
+
+    const res = await request(app).get('/api/search?q=alte').set('Cookie', cookies);
+    const entry = res.body.history.find((row: { provider: string }) => row.provider === 'knuspr');
+    expect(entry).toBeDefined();
+    expect(entry.name).toContain('Alte Milch');
+    expect(entry.purchases).toBe(2);
+  });
+
+  it('leaves the learned weekly rate untouched', async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await createOrder(userId, {
+        id: 8300 + index,
+        orderTimeDate: daysAgo(7 * (index + 1)),
+        itemsCount: 1,
+        items: [item(9301, 'Frische Vollmilch 1,5%')],
+      });
+    }
+
+    const now = new Date();
+    const before = await getWeeklyConsumption(userId, { now });
+    expect(before.items.length).toBeGreaterThan(0);
+
+    await createOrder(userId, {
+      id: 8399,
+      orderTimeDate: daysAgo(400),
+      itemsCount: 1,
+      items: [item(9301, 'Frische Vollmilch 1,5%')],
+    });
+
+    const after = await getWeeklyConsumption(userId, { now });
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
   });
 });

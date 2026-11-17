@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import BotSettings, { BOT_SETTINGS_DEFAULTS } from '../../models/BotSettings';
 import Integration, { IntegrationProvider } from '../../models/Integration';
+import Order from '../../models/Order';
 import PurchaseSession from '../../models/PurchaseSession';
 import { getWeeklyConsumption } from '../../lib/bot/consumption';
 import { getLocationSettings } from '../../lib/bot/location-settings';
-import { aggregateEdeka, edekaDue, knusprStat } from '../../lib/product-stats';
+import { aggregateEdeka, edekaDue } from '../../lib/product-stats';
+import { getProductGroupMap } from '../../lib/bot/product-groups';
 import { availability, derivedDestination, resolveLocation, type ProductStat } from '../../lib/providers';
 import { toCandidate } from '../../lib/easyshopper/match';
 import { ensureSession } from './easyshopper.controller';
@@ -40,6 +43,12 @@ interface BrowseItem {
   due: boolean;
   /** Knuspr only: estimated days of stock left. */
   stockDays: number | null;
+  /**
+   * True when the last purchase is older than the consumption window, so this
+   * row has a name and a price but no rate, stock or due date. The UI shows
+   * "last bought <date>" instead of a cadence for these.
+   */
+  outsideWindow: boolean;
 }
 
 /** A receipt row as the model stores it; annotated so `lean()` arrays stay typed. */
@@ -60,6 +69,95 @@ function isDueOnly(value: unknown): boolean {
   return value === '1' || value === 'true';
 }
 
+interface LifetimeGroup {
+  groupKey: string;
+  groupLabel: string;
+  name: string;
+  image: string | null;
+  productId: number;
+  /** Every purchase ever, not just the ones inside the rate window. */
+  purchases: number;
+  qty: number;
+  lastBought: Date;
+  avgPrice: number | null;
+}
+
+/**
+ * Every Knuspr product group the shopper has ever bought.
+ *
+ * `getWeeklyConsumption` deliberately looks at the last 26 weeks — that is what
+ * a rate means. Browsing is a different question: a product bought eight months
+ * ago should still be listed, and its count should be the real one. So this
+ * reads all orders and groups them with the same product-group map the learning
+ * uses, without touching any rate.
+ */
+async function loadKnusprLifetime(userId: string): Promise<LifetimeGroup[]> {
+  const rows = await Order.aggregate<{
+    _id: number;
+    name: string;
+    image: string | null;
+    qty: number;
+    purchases: number;
+    lastBought: Date;
+    avgPrice: number | null;
+  }>([
+    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.id',
+        name: { $last: '$items.name' },
+        image: { $last: { $arrayElemAt: ['$items.images', 0] } },
+        qty: { $sum: '$items.amount' },
+        purchases: { $sum: 1 },
+        lastBought: { $max: '$orderTimeDate' },
+        avgPrice: { $avg: '$items.priceComposition.unit.amount' },
+      },
+    },
+  ]);
+
+  const groupMap = await getProductGroupMap(userId);
+  const byGroup = new Map<string, LifetimeGroup>();
+
+  for (const row of rows) {
+    const group = groupMap.get(row._id);
+    const groupKey = group?.key ?? `product:${row._id}`;
+    const existing = byGroup.get(groupKey);
+
+    if (!existing) {
+      byGroup.set(groupKey, {
+        groupKey,
+        groupLabel: group?.label ?? row.name,
+        name: row.name,
+        image: row.image ?? null,
+        productId: row._id,
+        purchases: row.purchases,
+        qty: row.qty,
+        lastBought: row.lastBought,
+        avgPrice: row.avgPrice === null ? null : Number(row.avgPrice.toFixed(2)),
+      });
+      continue;
+    }
+
+    existing.purchases += row.purchases;
+    existing.qty += row.qty;
+    if (row.avgPrice !== null) {
+      existing.avgPrice = existing.avgPrice === null
+        ? Number(row.avgPrice.toFixed(2))
+        : Number(((existing.avgPrice + row.avgPrice) / 2).toFixed(2));
+    }
+    // The newest product of the group supplies the name and image the row shows.
+    if (row.lastBought > existing.lastBought) {
+      existing.lastBought = row.lastBought;
+      existing.name = row.name;
+      existing.image = row.image ?? existing.image;
+      existing.productId = row._id;
+    }
+  }
+
+  return [...byGroup.values()];
+}
+
 /** GET /api/products — the merged list, one stat row per provider. */
 export async function handleGetProducts(req: Request, res: Response) {
   try {
@@ -78,7 +176,16 @@ export async function handleGetProducts(req: Request, res: Response) {
     const edekaReach = availability('edeka', context);
     const destination = derivedDestination(context);
 
-    const consumption = await getWeeklyConsumption(req.userId, { now, horizonDays, deliveryLeadDays });
+    // Two questions, two sources: the rate comes from the window, the list from
+    // every purchase ever. Neither feeds the other.
+    const [consumption, lifetime] = await Promise.all([
+      getWeeklyConsumption(req.userId, { now, horizonDays, deliveryLeadDays }),
+      loadKnusprLifetime(req.userId),
+    ]);
+    const windowDays = Math.round(
+      (consumption.referenceNow.getTime() - consumption.windowStart.getTime()) / (24 * 60 * 60 * 1000)
+    );
+    const inWindow = new Map(consumption.items.map((item) => [item.groupKey, item]));
     const edekaStats = aggregateEdeka(
       sessions.map((session) => ({
         purchasedAt: session.purchasedAt,
@@ -97,23 +204,34 @@ export async function handleGetProducts(req: Request, res: Response) {
 
     const items: BrowseItem[] = [];
 
-    for (const item of consumption.items) {
-      const stat = knusprStat(item);
+    for (const group of lifetime) {
+      const rate = inWindow.get(group.groupKey);
+      const stat: ProductStat = {
+        provider: 'knuspr',
+        // The count the shopper sees is the lifetime one; the cadence is only
+        // claimed when the window has enough purchases to support it.
+        purchases: group.purchases,
+        cadenceDays: rate && rate.purchaseCount >= 3 ? Math.round(rate.intervalDays) : null,
+        lastBought: group.lastBought,
+        avgPrice: rate ? Number(rate.avgPrice.toFixed(2)) : group.avgPrice,
+      };
+
       items.push({
-        id: `knuspr:${item.groupKey}`,
-        name: item.name,
-        groupLabel: item.groupLabel,
-        image: item.image ?? null,
+        id: `knuspr:${group.groupKey}`,
+        name: group.name,
+        groupLabel: group.groupLabel,
+        image: group.image,
         statsByProvider: { knuspr: stat },
         offers: [{
           provider: 'knuspr',
           available: knusprReach.available,
           reason: knusprReach.reason,
           price: stat.avgPrice,
-          productId: item.productId,
+          productId: group.productId,
         }],
-        due: item.due && knusprReach.available,
-        stockDays: Math.round(item.stockDays * 10) / 10,
+        due: Boolean(rate?.due) && knusprReach.available,
+        stockDays: rate ? Math.round(rate.stockDays * 10) / 10 : null,
+        outsideWindow: rate === undefined,
       });
     }
 
@@ -133,6 +251,7 @@ export async function handleGetProducts(req: Request, res: Response) {
         }],
         due: edekaDue(stat, now) && edekaReach.available,
         stockDays: null,
+        outsideWindow: false,
       });
     }
 
@@ -153,6 +272,8 @@ export async function handleGetProducts(req: Request, res: Response) {
     res.json({
       now: now.toISOString(),
       horizonDays,
+      /** Length of the rate window; rows outside it carry no cadence. */
+      windowDays,
       location: { context, destination },
       counts: {
         total: items.length,
@@ -185,10 +306,10 @@ export async function handleSearch(req: Request, res: Response) {
   const needle = query.toLowerCase();
 
   try {
-    const [location, sessions, consumption] = await Promise.all([
+    const [location, sessions, lifetime] = await Promise.all([
       getLocationSettings(req.userId),
       PurchaseSession.find({ userId: req.userId }).sort({ purchasedAt: 1 }).lean(),
-      getWeeklyConsumption(req.userId),
+      loadKnusprLifetime(req.userId),
     ]);
 
     const context = resolveLocation(new Date(), location);
@@ -197,15 +318,17 @@ export async function handleSearch(req: Request, res: Response) {
 
     // History is free and instant, so it never waits on a remote call.
     const history: SearchHistoryEntry[] = [];
-    for (const item of consumption.items) {
-      if (!`${item.name} ${item.groupLabel}`.toLowerCase().includes(needle)) continue;
+    // History means "did I ever buy this", so it is not limited to the rate
+    // window — a product from eight months ago is still part of your history.
+    for (const group of lifetime) {
+      if (!`${group.name} ${group.groupLabel}`.toLowerCase().includes(needle)) continue;
       history.push({
-        id: `knuspr:${item.groupKey}`,
-        name: item.name,
+        id: `knuspr:${group.groupKey}`,
+        name: group.name,
         provider: 'knuspr',
-        lastBought: item.lastPurchase ? item.lastPurchase.toISOString() : null,
-        purchases: item.purchaseCount,
-        price: Number.isFinite(item.avgPrice) ? Number(item.avgPrice.toFixed(2)) : null,
+        lastBought: group.lastBought.toISOString(),
+        purchases: group.purchases,
+        price: group.avgPrice,
       });
     }
 
