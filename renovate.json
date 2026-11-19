@@ -32,6 +32,12 @@
       ],
       "automerge": true,
       "semanticCommitType": "fix"
+    },
+    {
+      "description": "Hold the Solid 2 major: solid-js 2 dropped the ./web export in favour of @solidjs/web, @solidjs/router 2 requires solid-js ^2, and the build plugin capable of v2 is still prerelease (vite-plugin-solid 3.0.0-next). lucide-solid has no 2.x release (peer solid-js ^1.7.2). Revisit when lucide-solid and vite-plugin-solid ship stable v2 support.",
+      "matchPackageNames": ["solid-js", "@solidjs/web", "@solidjs/router", "vite-plugin-solid"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ]
 }
