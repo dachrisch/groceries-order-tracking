@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.3](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.2...v1.16.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update dependency express-rate-limit to v8.7.5 ([#703](https://github.com/dachrisch/groceries-order-tracking/issues/703)) ([f9d8852](https://github.com/dachrisch/groceries-order-tracking/commit/f9d88526444cea2341fbe65c070943243aeaca34))
+* **deps:** update dependency vite-plugin-solid to v2.11.17 ([#704](https://github.com/dachrisch/groceries-order-tracking/issues/704)) ([c8e1993](https://github.com/dachrisch/groceries-order-tracking/commit/c8e19933efe1fcc9240c11617fab57b707d312fc))
+
 ## [1.16.2](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.1...v1.16.2) (2026-11-18)
 
 
