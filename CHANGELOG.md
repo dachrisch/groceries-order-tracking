@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.9](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.8...v1.16.9) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency undici to v8.13.0 ([#717](https://github.com/dachrisch/groceries-order-tracking/issues/717)) ([687739a](https://github.com/dachrisch/groceries-order-tracking/commit/687739a22f3dfa4dd04fae99f7ec26f37ecfe306))
+
 ## [1.16.8](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.7...v1.16.8) (2026-11-20)
 
 
