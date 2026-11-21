@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.12](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.11...v1.16.12) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency mongodb-memory-server to v11.4.0 ([#727](https://github.com/dachrisch/groceries-order-tracking/issues/727)) ([14f97f8](https://github.com/dachrisch/groceries-order-tracking/commit/14f97f89262d8e70f244f013a795243f1479c2b7))
+
 ## [1.16.11](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.10...v1.16.11) (2026-11-21)
 
 
