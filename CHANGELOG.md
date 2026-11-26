@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## [1.16.20](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.19...v1.16.20) (2026-11-26)
+
+
+### Bug Fixes
+
+* **deps:** update dependency daisyui to v5.8.3 ([#744](https://github.com/dachrisch/groceries-order-tracking/issues/744)) ([9752861](https://github.com/dachrisch/groceries-order-tracking/commit/9752861bd8265763fb8dcd1f9a8039c586c18aa6))
+* **deps:** update dependency lucide-solid to v1.81.0 ([#745](https://github.com/dachrisch/groceries-order-tracking/issues/745)) ([6a666b0](https://github.com/dachrisch/groceries-order-tracking/commit/6a666b0f4df0fe85c060508434083ddb1c05f631))
+
 ## [1.16.19](https://github.com/dachrisch/groceries-order-tracking/compare/v1.16.18...v1.16.19) (2026-11-25)
 
 
