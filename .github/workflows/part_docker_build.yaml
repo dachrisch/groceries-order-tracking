@@ -46,6 +46,7 @@ jobs:
           outputs: type=docker,dest=/tmp/${{ inputs.image_name }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          no-cache: ${{ github.event_name == 'schedule' }}
           build-args: |
             VITE_BUILD_VERSION=${{ inputs.version }}
 
