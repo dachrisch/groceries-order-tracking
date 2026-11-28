@@ -6,6 +6,10 @@ on:
   push:
     tags:
       - "*"
+  schedule:
+    # Weekly rebuild: re-resolve the base image and replay apt/node installs so OS
+    # patch releases land even when the app has no code change.
+    - cron: '0 4 * * 1'
 
 permissions:
   contents: write
